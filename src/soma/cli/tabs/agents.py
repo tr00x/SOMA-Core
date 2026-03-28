@@ -105,12 +105,7 @@ class AgentsTab(TabPane):
         self._selected_id: str | None = None
         self._agent_counter = 0
 
-        # Seed with some placeholder agents
-        for i in range(1, 4):
-            aid = f"Agent {i}"
-            row = AgentRow(aid)
-            self._rows[aid] = row
-            self._agent_counter = i
+        # No placeholder agents — only real agents from state file
 
     # ── Compose ──────────────────────────────────────────────────
 

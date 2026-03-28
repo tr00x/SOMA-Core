@@ -111,6 +111,7 @@ class Ladder:
         pressure: float,
         budget_health: float,
         threshold_adjustments: dict[str, float] | None = None,
+        custom_thresholds: dict | None = None,
     ) -> Level:
         """Like evaluate(), but applies learned threshold adjustments before checking.
 
@@ -118,13 +119,32 @@ class Ladder:
         ``"HEALTHY->CAUTION"`` to a float shift that is **added** to the
         escalation threshold for that step.  This lets the learning engine raise
         thresholds for transitions that have historically been false alarms.
+
+        *custom_thresholds* maps level names (lowercase, e.g. ``"caution"``) to
+        absolute escalation threshold values read from soma.toml.  When provided,
+        these replace the built-in THRESHOLDS defaults before learning shifts are
+        applied.
         """
-        if not threshold_adjustments:
+        if not threshold_adjustments and not custom_thresholds:
             return self.evaluate(pressure, budget_health)
 
         # Build an adjusted copy of THRESHOLDS keyed by level index.
+        # Start from custom_thresholds if provided, otherwise use built-in defaults.
+        if custom_thresholds:
+            _level_name_map = {lv.name.lower(): i for i, lv in enumerate(_ESCALATION_LEVELS)}
+            adjusted_thresholds = list(THRESHOLDS)
+            for level_name, esc_val in custom_thresholds.items():
+                idx = _level_name_map.get(level_name.lower())
+                if idx is not None and idx > 0:
+                    _, de = adjusted_thresholds[idx]
+                    # de-escalation threshold: keep proportional gap (default gap is 0.05)
+                    default_esc, default_de = THRESHOLDS[idx]
+                    gap = default_esc - default_de
+                    adjusted_thresholds[idx] = (float(esc_val), float(esc_val) - gap)
+        else:
+            adjusted_thresholds = list(THRESHOLDS)
+
         # Threshold adjustment keys are "<OLD_LEVEL_NAME>-><NEW_LEVEL_NAME>".
-        adjusted_thresholds = list(THRESHOLDS)
         for i, level in enumerate(_ESCALATION_LEVELS):
             if i == 0:
                 continue  # HEALTHY has no escalation transition into it
