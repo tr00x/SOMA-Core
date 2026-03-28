@@ -27,11 +27,28 @@ def main():
 
     try:
         snap = engine.get_snapshot(agent_id)
-        print(
-            f"SOMA session end: {snap['level'].name} "
-            f"(pressure: {snap['pressure']:.1%}, actions: {snap['action_count']})",
-            file=sys.stderr,
-        )
+        action_count = snap['action_count']
+        level = snap['level'].name
+        pressure = snap['pressure']
+
+        # Read action log for session stats
+        from soma.hooks.common import read_action_log
+        log = read_action_log()
+        errors = sum(1 for e in log if e.get("error"))
+        tools_used = {}
+        for e in log:
+            t = e.get("tool", "?")
+            tools_used[t] = tools_used.get(t, 0) + 1
+
+        # Build summary
+        parts = [f"SOMA session end: {level} (p={pressure:.0%}, #{action_count})"]
+        if errors:
+            parts.append(f"  errors: {errors}/{len(log)}")
+        if tools_used:
+            top_3 = sorted(tools_used.items(), key=lambda x: -x[1])[:3]
+            parts.append(f"  top tools: {', '.join(f'{t}={c}' for t, c in top_3)}")
+
+        print("\n".join(parts), file=sys.stderr)
     except Exception:
         pass  # Never crash Claude Code
 
