@@ -201,6 +201,29 @@ class LearningEngine:
             },
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LearningEngine":
+        obj = cls(
+            evaluation_window=data.get("evaluation_window", 5),
+            threshold_adj_step=data.get("threshold_adj_step", 0.02),
+            weight_adj_step=data.get("weight_adj_step", 0.05),
+            min_weight=data.get("min_weight", 0.2),
+            max_threshold_shift=data.get("max_threshold_shift", 0.10),
+            min_interventions=data.get("min_interventions", 3),
+        )
+        for key_str, v in data.get("threshold_adjustments", {}).items():
+            old_name, new_name = key_str.split("->")
+            obj._threshold_adjustments[
+                (Level[old_name], Level[new_name])
+            ] = v
+        obj._weight_adjustments = dict(data.get("weight_adjustments", {}))
+        for key_str, v in data.get("failure_counts", {}).items():
+            old_name, new_name = key_str.split("->")
+            obj._failure_counts[
+                (Level[old_name], Level[new_name])
+            ] = v
+        return obj
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

@@ -59,10 +59,6 @@ class WrappedClient:
         self._auto_export = auto_export
         self._block_at = block_at
         self._recorder = SessionRecorder()
-        self._pending_context_action = "pass"
-
-        # Push auto_export into the engine so record_action() handles it
-        self._engine._auto_export = auto_export
 
         # Register agent if not already
         from soma.errors import AgentNotFound
@@ -112,22 +108,6 @@ class WrappedClient:
 
         @functools.wraps(original_fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # 0. Apply pending context action to messages
-            if self._pending_context_action and self._pending_context_action != "pass":
-                messages = kwargs.get("messages", [])
-                if messages and self._pending_context_action == "truncate_20":
-                    # Keep newest 80% of messages
-                    keep = max(1, int(len(messages) * 0.80))
-                    kwargs["messages"] = messages[-keep:]
-                elif self._pending_context_action == "truncate_50_block_tools":
-                    keep = max(1, int(len(messages) * 0.50))
-                    kwargs["messages"] = messages[-keep:]
-                    # Can't block tools via API, but we truncate more aggressively
-                elif self._pending_context_action in ("quarantine", "restart", "safe_mode"):
-                    # Keep only system message if present
-                    kwargs["messages"] = [m for m in messages if m.get("role") == "system"][:1] or messages[-1:]
-                self._pending_context_action = "pass"
-
             # 1. Pre-check: should we block?
             level = self._engine.get_level(self._agent_id)
             if level >= self._block_at:
@@ -174,9 +154,11 @@ class WrappedClient:
                 )
 
                 result = self._engine.record_action(self._agent_id, action)
-                self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
-                # export_state() is now handled by engine.record_action() when auto_export=True
+
+                # 5. Export state for dashboard
+                if self._auto_export:
+                    self._engine.export_state()
 
         return wrapper
 

@@ -24,8 +24,11 @@ class TestSOMAEngine:
     def test_escalation_on_errors(self, error_actions):
         e = SOMAEngine(budget={"tokens": 100000})
         e.register_agent("a")
+        # Run enough actions to clear the grace period (first 10), then add errors
         for action in error_actions:
             r = e.record_action("a", action)
+        # One more error action after grace period ends
+        r = e.record_action("a", error_actions[0])
         assert r.level.value >= Level.CAUTION.value
 
     def test_multi_agent_pressure(self):

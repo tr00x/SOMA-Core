@@ -72,7 +72,12 @@ def print_status(config: dict[str, Any] | None = None) -> None:
         return
 
     # Extract agents list from state
-    agents: list[dict[str, Any]] = state.get("agents", [])
+    agents_raw = state.get("agents", {})
+    # Support both dict format {"agent_id": {...}} and list format [{...}]
+    if isinstance(agents_raw, dict):
+        agents = [(aid, data) for aid, data in agents_raw.items()]
+    else:
+        agents = [(a.get("id", f"Agent {i}"), a) for i, a in enumerate(agents_raw, 1)]
     n_agents = len(agents)
 
     # Header
@@ -84,8 +89,7 @@ def print_status(config: dict[str, Any] | None = None) -> None:
     _print("")
 
     # Agent rows
-    for i, agent in enumerate(agents, start=1):
-        agent_id = agent.get("id", f"Agent {i}")
+    for agent_id, agent in agents:
         level_str = str(agent.get("level", "HEALTHY")).upper()
         pressure = float(agent.get("pressure", 0.0))
         vitals = agent.get("vitals", {})
