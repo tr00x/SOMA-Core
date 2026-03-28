@@ -14,6 +14,7 @@ ENGINE_STATE_PATH = SOMA_DIR / "engine_state.json"
 STATE_PATH = SOMA_DIR / "state.json"
 ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
 PREDICTOR_PATH = SOMA_DIR / "predictor.json"
+FINGERPRINT_PATH = SOMA_DIR / "fingerprint.json"
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -190,6 +191,28 @@ def save_predictor(predictor) -> None:
     try:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         PREDICTOR_PATH.write_text(json.dumps(predictor.to_dict()))
+    except Exception:
+        pass
+
+
+def get_fingerprint_engine():
+    """Load or create fingerprint engine (persists across sessions)."""
+    try:
+        from soma.fingerprint import FingerprintEngine
+        if FINGERPRINT_PATH.exists():
+            data = json.loads(FINGERPRINT_PATH.read_text())
+            return FingerprintEngine.from_dict(data)
+        return FingerprintEngine()
+    except Exception:
+        from soma.fingerprint import FingerprintEngine
+        return FingerprintEngine()
+
+
+def save_fingerprint_engine(engine) -> None:
+    """Persist fingerprint engine."""
+    try:
+        SOMA_DIR.mkdir(parents=True, exist_ok=True)
+        FINGERPRINT_PATH.write_text(json.dumps(engine.to_dict()))
     except Exception:
         pass
 

@@ -169,6 +169,16 @@ def main():
         except Exception:
             pass  # Prediction is optional
 
+        # Fingerprint divergence — detect behavior shifts
+        try:
+            from soma.hooks.common import get_fingerprint_engine, _get_session_agent_id
+            fp_engine = get_fingerprint_engine()
+            div, explanation = fp_engine.check_divergence(_get_session_agent_id(), action_log)
+            if div >= 0.3 and explanation:
+                lines.append(f"[fingerprint] behavior diverging from profile ({div:.0%}): {explanation}")
+        except Exception:
+            pass
+
         # Actionable tips — the main value add
         if tips:
             for tip in tips:

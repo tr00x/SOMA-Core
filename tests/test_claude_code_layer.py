@@ -1510,3 +1510,102 @@ class TestRCA:
         assert result is not None
         # Error cascade should win (higher severity)
         assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────
+# Agent Fingerprinting
+# ──────────────────────────────────────────────────────────────────
+
+class TestFingerprinting:
+    """Tests for agent behavioral fingerprinting."""
+
+    def test_build_fingerprint_from_session(self):
+        from soma.fingerprint import FingerprintEngine
+        fe = FingerprintEngine()
+        log = [
+            {"tool": "Read", "error": False, "file": "a.py"},
+            {"tool": "Edit", "error": False, "file": "a.py"},
+            {"tool": "Read", "error": False, "file": "b.py"},
+            {"tool": "Bash", "error": False, "file": ""},
+            {"tool": "Read", "error": False, "file": "c.py"},
+        ]
+        fp = fe.update_from_session("agent-1", log)
+        assert fp.tool_distribution["Read"] == pytest.approx(0.6)
+        assert fp.avg_error_rate == 0.0
+        assert fp.sample_count == 1
+
+    def test_fingerprint_ema_update(self):
+        from soma.fingerprint import FingerprintEngine
+        fe = FingerprintEngine(alpha=0.5)
+
+        log1 = [{"tool": "Read", "error": False, "file": ""} for _ in range(10)]
+        fe.update_from_session("a", log1)
+        assert fe.get("a").tool_distribution["Read"] == 1.0
+
+        log2 = [{"tool": "Bash", "error": False, "file": ""} for _ in range(10)]
+        fe.update_from_session("a", log2)
+        # After EMA: 0.5 * 1.0 + 0.5 * 0.0 = 0.5 for Read
+        assert fe.get("a").tool_distribution["Read"] == pytest.approx(0.5)
+        assert fe.get("a").tool_distribution["Bash"] == pytest.approx(0.5)
+
+    def test_divergence_detection(self):
+        from soma.fingerprint import FingerprintEngine
+        fe = FingerprintEngine(alpha=0.1)
+
+        # Build up a fingerprint over 10 sessions of mostly Read+Edit
+        for _ in range(10):
+            log = [
+                {"tool": "Read", "error": False, "file": ""},
+                {"tool": "Edit", "error": False, "file": ""},
+                {"tool": "Read", "error": False, "file": ""},
+                {"tool": "Bash", "error": False, "file": ""},
+                {"tool": "Read", "error": False, "file": ""},
+            ]
+            fe.update_from_session("a", log)
+
+        # Now a completely different session: all Bash with errors
+        weird_log = [{"tool": "Bash", "error": True, "file": ""} for _ in range(10)]
+        div, explanation = fe.check_divergence("a", weird_log)
+        assert div > 0.2
+        assert explanation  # Should explain what changed
+
+    def test_no_divergence_for_new_agent(self):
+        from soma.fingerprint import FingerprintEngine
+        fe = FingerprintEngine()
+        div, explanation = fe.check_divergence("unknown", [])
+        assert div == 0.0
+
+    def test_serialization(self):
+        from soma.fingerprint import FingerprintEngine
+        fe = FingerprintEngine()
+        log = [{"tool": "Read", "error": False, "file": ""} for _ in range(5)]
+        fe.update_from_session("a", log)
+
+        data = fe.to_dict()
+        fe2 = FingerprintEngine.from_dict(data)
+        assert fe2.get("a").tool_distribution == fe.get("a").tool_distribution
+        assert fe2.get("a").sample_count == fe.get("a").sample_count
+
+    def test_fingerprint_divergence_score(self):
+        from soma.fingerprint import Fingerprint
+        fp1 = Fingerprint(
+            tool_distribution={"Read": 0.5, "Edit": 0.3, "Bash": 0.2},
+            avg_error_rate=0.05,
+            read_write_ratio=2.0,
+            sample_count=20,
+        )
+        # Same profile — no divergence
+        fp_same = Fingerprint(
+            tool_distribution={"Read": 0.5, "Edit": 0.3, "Bash": 0.2},
+            avg_error_rate=0.05,
+            read_write_ratio=2.0,
+        )
+        assert fp1.divergence(fp_same) < 0.1
+
+        # Very different profile
+        fp_diff = Fingerprint(
+            tool_distribution={"Bash": 0.9, "Read": 0.1},
+            avg_error_rate=0.5,
+            read_write_ratio=10.0,
+        )
+        assert fp1.divergence(fp_diff) > 0.3

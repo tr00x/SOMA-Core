@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import sys
 
-from soma.hooks.common import get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH
+from soma.hooks.common import (
+    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH,
+    get_fingerprint_engine, save_fingerprint_engine, read_action_log, _get_session_agent_id,
+)
 
 
 def main():
@@ -18,6 +21,16 @@ def main():
         return
 
     save_state(engine)
+
+    # Update fingerprint before cleaning up (fingerprint persists across sessions)
+    try:
+        log = read_action_log()
+        if len(log) >= 5:  # Only update if session had meaningful activity
+            fp_engine = get_fingerprint_engine()
+            fp_engine.update_from_session(_get_session_agent_id(), log)
+            save_fingerprint_engine(fp_engine)
+    except Exception:
+        pass
 
     # Clean up session artifacts — next session starts fresh
     try:
