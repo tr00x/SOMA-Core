@@ -64,6 +64,7 @@ class SOMAEngine:
         self._state_path = state_path
         self._custom_weights = custom_weights
         self._custom_thresholds = custom_thresholds
+        self._default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
 
     @property
     def events(self) -> EventBus:
@@ -76,10 +77,12 @@ class SOMAEngine:
     def register_agent(
         self,
         agent_id: str,
-        autonomy: AutonomyMode = AutonomyMode.HUMAN_ON_THE_LOOP,
+        autonomy: AutonomyMode | None = None,
         system_prompt: str = "",
         tools: list[str] | None = None,
     ) -> None:
+        if autonomy is None:
+            autonomy = self._default_autonomy
         config = AgentConfig(
             agent_id=agent_id, autonomy=autonomy,
             system_prompt=system_prompt, tools_allowed=tools or [],
@@ -172,12 +175,21 @@ class SOMAEngine:
         custom_weights = config.get("weights") or None
         custom_thresholds = config.get("thresholds") or None
 
+        # Read default autonomy mode
+        agents_cfg = config.get("agents", {}).get("default", {})
+        autonomy_str = agents_cfg.get("autonomy", "human_on_the_loop")
+        try:
+            default_autonomy = AutonomyMode(autonomy_str)
+        except ValueError:
+            default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
+
         engine = cls(
             budget=budget or {"tokens": 100_000},
             auto_export=True,
             custom_weights=custom_weights,
             custom_thresholds=custom_thresholds,
         )
+        engine._default_autonomy = default_autonomy
         return engine
 
     def record_action(self, agent_id: str, action: Action) -> ActionResult:

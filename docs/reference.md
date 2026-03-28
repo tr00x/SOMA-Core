@@ -62,6 +62,11 @@ wrap.py               depends on engine.py, recorder.py, types.py
 context_control.py    depends on types.py only
 persistence.py        depends on engine.py, baseline.py, budget.py, graph.py, learning.py
 testing.py            depends on engine.py, types.py
+daemon.py             depends on engine.py, inbox.py, commands.py
+inbox.py              depends on types.py
+commands.py           depends on types.py
+hooks/
+  claude_code.py      depends on engine.py, persistence.py, types.py
 cli/
   main.py             → status.py, replay_cli.py, wizard.py, setup_claude.py
   config_loader.py    → engine.py, types.py
@@ -79,7 +84,9 @@ cli/
 8. `Ladder.evaluate_with_adjustments()` maps effective pressure + budget health → `Level`.
 9. If the level changed, an event is emitted and an `InterventionRecord` is created.
 10. `LearningEngine.evaluate()` is called; if an older pending record has matured, it is resolved and adjustments may fire.
-11. `ActionResult(level, pressure, vitals)` is returned.
+11. A `context_action` string is derived from the new level (`"pass"`, `"truncate_20"`, `"truncate_50_block_tools"`, `"quarantine"`, `"restart"`, `"safe_mode"`).
+12. `ActionResult(level, pressure, vitals, context_action)` is returned.
+13. If `auto_export=True`, `export_state()` is called automatically.
 
 ---
 
@@ -951,7 +958,7 @@ Runs the interactive setup wizard (`soma.cli.wizard.run_wizard()`). Prompts for 
 
 ### `soma status`
 
-Reads `~/.soma/state.json` (path configurable via `soma.toml :: soma.store`) and prints a text summary.
+Reads `~/.soma/state.json` (path configurable via the `store` key under `[soma]` in `soma.toml`) and prints a text summary.
 
 Output format per agent row (plain text):
 
@@ -1088,12 +1095,13 @@ Defined in `soma/cli/wizard.py :: SENSITIVITY_PRESETS`. These replace the `[thre
 | `budget.tokens` | `MultiBudget(limits={"tokens": ...})` |
 | `budget.cost_usd` | `MultiBudget(limits={"cost_usd": ...})` |
 | `agents.default.autonomy` | `engine.register_agent("default", autonomy=...)` |
-| `thresholds.*` | `ladder.THRESHOLDS` (currently read from `soma.toml` but not yet wired into `Ladder` at engine construction — thresholds in `ladder.py` are module-level constants; the config values are used by the wizard to write `soma.toml` and inform the user but do not override `Ladder.THRESHOLDS` at runtime in v0.1.0) |
+| `thresholds.*` | `SOMAEngine(custom_thresholds={...})` → passed to `ladder.evaluate_with_adjustments()` |
+| `weights.*` | `SOMAEngine(custom_weights={...})` → used as base in per-action weight computation |
 | `graph.damping` | `PressureGraph(damping=...)` |
 | `graph.trust_decay_rate` | `PressureGraph(decay_rate=...)` |
 | `graph.trust_recovery_rate` | `PressureGraph(recovery_rate=...)` |
 
-`create_engine_from_config()` currently wires `budget` and `agents.default.autonomy`. The `weights` and `graph` sections are stored in `soma.toml` for reference but are not yet passed into the engine constructor in v0.1.0.
+`SOMAEngine.from_config()` reads `soma.toml` and wires `budget`, `thresholds`, and `weights` into the engine. `auto_export=True` is set automatically so the TUI hub receives live updates.
 
 ---
 
@@ -1113,11 +1121,12 @@ Fixed-capacity FIFO backed by `collections.deque(maxlen=capacity)`. Default capa
 
 **File:** `soma/events.py`
 
-Synchronous pub/sub. Handlers are called in subscription order. The engine emits one event:
+Synchronous pub/sub. Handlers are called in subscription order. The engine emits two events:
 
-| Event | Payload keys |
-|---|---|
-| `"level_changed"` | `agent_id`, `old_level` (Level), `new_level` (Level), `pressure` (float) |
+| Event | Payload keys | Description |
+|---|---|---|
+| `"level_changed"` | `agent_id`, `old_level` (Level), `new_level` (Level), `pressure` (float) | Emitted whenever an agent's level changes. |
+| `"approval_needed"` | `agent_id`, `current_level` (Level), `proposed_level` (Level), `pressure` (float), `autonomy` (str) | Emitted when `HUMAN_IN_THE_LOOP` mode blocks an escalation pending human approval. The agent stays at `current_level` until `engine.approve_escalation(agent_id)` is called. |
 
 ### `SessionRecorder`
 
@@ -1136,6 +1145,126 @@ Used by `soma replay` and available on `WrappedClient.recorder`.
 | `NoBudget` | Raised if budget is not configured (currently defined but not thrown by default paths). |
 | `SomaBlocked` | API call blocked by `wrap()` because `level >= block_at`. |
 | `SomaBudgetExhausted` | API call blocked by `wrap()` because budget is exhausted. |
+
+---
+
+## Claude Code Integration
+
+### `soma/hooks/claude_code.py`
+
+A standalone Python script installed as a Claude Code lifecycle hook via `soma setup-claude`. It hooks into four events:
+
+| Hook | When it runs | What it does |
+|---|---|---|
+| `PreToolUse` | Before every tool call | Blocks the call (exits with code 2) if the `claude-code` agent is at `QUARANTINE` or above |
+| `PostToolUse` | After every tool call | Reads JSON from stdin (`tool_name`, `output`, `error`, `duration_ms`), records an `Action`, saves state |
+| `PostMessage` | After every Claude response | Records a `message` action using `usage.output_tokens` from the response JSON |
+| `Stop` | Session end | Saves final state and prints a session summary to stderr |
+
+Dispatch is controlled by the `CLAUDE_HOOK` environment variable or `sys.argv[1]`.
+
+State is persisted in two files:
+- `~/.soma/state.json` — lightweight export for the TUI hub (via `engine.export_state()`)
+- `~/.soma/engine_state.json` — full engine state for restart recovery (via `save_engine_state()`)
+
+The `claude-code` agent is registered on first use with the standard Claude Code tool list as `tools_allowed`.
+
+---
+
+## Daemon
+
+### `soma/daemon.py`
+
+Runs SOMA as a background process that continuously polls for incoming actions and commands.
+
+```python
+def run_daemon(
+    budget: dict[str, float] | None = None,
+    poll_interval: float = 1.0,
+) -> None
+```
+
+On each poll cycle:
+
+1. `process_inbox(engine)` — reads and deletes JSON files from `~/.soma/inbox/`; records each as an `Action`
+2. `process_commands(engine)` — reads and executes command files from `~/.soma/commands/`; writes results to `~/.soma/results/`
+3. `engine.export_state()` — writes `~/.soma/state.json` for the TUI
+
+Handles `SIGINT` and `SIGTERM` gracefully; runs a final `export_state()` on shutdown.
+
+Default budget when none supplied: `{"tokens": 500_000, "cost_usd": 50.0}`.
+
+---
+
+## Inbox
+
+### `soma/inbox.py`
+
+File-based action queue. Claude Code hooks write JSON files to `~/.soma/inbox/`; the daemon (or any caller) reads and deletes them.
+
+```python
+def process_inbox(engine: SOMAEngine) -> int
+```
+
+Each inbox file must contain:
+
+| Key | Type | Description |
+|---|---|---|
+| `agent_id` | `str` | Agent that produced the action |
+| `tool_name` | `str` | Tool name |
+| `output` | `str` | Tool output (capped at 500 chars) |
+| `error` | `bool` | Whether the action errored |
+| `timestamp` | `float` | Unix timestamp |
+| `token_count` | `int` | Token count (falls back to 150 if absent) |
+
+Unknown agents are auto-registered with `[tool_name]` as their tool list. Files are always deleted after processing, even if processing fails.
+
+---
+
+## Command Queue
+
+### `soma/commands.py`
+
+File-based IPC for external control (e.g., from the Paperclip plugin UI or CLI tools). Commands are JSON files in `~/.soma/commands/`; results are written to `~/.soma/results/`.
+
+#### Writing commands
+
+```python
+def write_command(action: str, params: dict | None = None) -> str
+```
+
+Returns the command ID. Files are named `{timestamp_ms}-{action}.json`.
+
+#### Processing commands (daemon)
+
+```python
+def process_commands(engine: SOMAEngine) -> list[dict]
+```
+
+Supported `action` values:
+
+| Action | Required params | Effect |
+|---|---|---|
+| `force_level` | `agent`, `level` (Level name) | Force an agent to a specific level |
+| `replenish_budget` | `amount` (dict of dimension→float) | Reduce spent amounts |
+| `reset_baseline` | `agent` | Clear EMA baseline and behavior vector for an agent |
+| `set_trust` | `source`, `target`, `weight` | Add or update a trust edge |
+| `get_snapshot` | `agent` (optional) | Return snapshot for one or all agents |
+| `set_thresholds` | `thresholds` (dict) | Update ladder thresholds for all agents |
+| `set_budget_limits` | `limits` (dict) | Update budget dimension limits |
+| `export_state` | — | Trigger an immediate state export |
+
+Results are persisted in `~/.soma/results/` and cleaned up automatically after 300 seconds.
+
+---
+
+## Persistence
+
+### `soma/persistence.py`
+
+Serialises and restores full `SOMAEngine` state across process restarts.
+
+See [State Persistence](#state-persistence) above for the full schema and behavior.
 
 ---
 
