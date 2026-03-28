@@ -266,14 +266,7 @@ Main SOMA pipeline. Records actions, computes vitals, aggregates pressure, and e
 #### `__init__`
 
 ```python
-def __init__(
-    self,
-    budget: dict[str, float] | None = None,
-    auto_export: bool = False,
-    state_path: str | None = None,
-    custom_weights: dict | None = None,
-    custom_thresholds: dict | None = None,
-) -> None
+def __init__(self, budget: dict[str, float] | None = None) -> None
 ```
 
 **Parameters**
@@ -281,48 +274,11 @@ def __init__(
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `budget` | `dict[str, float] \| None` | `{"tokens": 100_000}` | Budget dimension names and their limits. |
-| `auto_export` | `bool` | `False` | If `True`, call `export_state()` automatically after every `record_action` call. |
-| `state_path` | `str \| None` | `None` | Override the path for `export_state()`. Defaults to `~/.soma/state.json`. |
-| `custom_weights` | `dict \| None` | `None` | Override default signal weights (keys: `uncertainty`, `drift`, `error_rate`, `cost`, `token_usage`). |
-| `custom_thresholds` | `dict \| None` | `None` | Override escalation thresholds (keys: `caution`, `degrade`, `quarantine`, `restart`). |
 
 **Example**
 
 ```python
-engine = SOMAEngine(
-    budget={"tokens": 50000, "cost_usd": 2.0},
-    auto_export=True,
-    custom_weights={"uncertainty": 3.0, "error_rate": 2.0},
-    custom_thresholds={"caution": 0.15, "degrade": 0.35, "quarantine": 0.55, "restart": 0.75},
-)
-```
-
----
-
-#### `from_config`
-
-```python
-@classmethod
-def from_config(cls, config: dict | None = None) -> SOMAEngine
-```
-
-Create an engine from a `soma.toml` configuration dictionary. If `config` is `None`, reads `soma.toml` from the current directory using `soma.cli.config_loader.load_config()`.
-
-Wires `budget`, `custom_weights`, and `custom_thresholds` from the config. Sets `auto_export=True` so the TUI hub receives live updates.
-
-**Parameters**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `config` | `dict \| None` | `None` | Parsed config dict. `None` reads from `soma.toml` on disk. |
-
-**Returns** `SOMAEngine`
-
-**Example**
-
-```python
-engine = SOMAEngine.from_config()
-# Equivalent to soma.quickstart() when soma.toml is present
+engine = SOMAEngine(budget={"tokens": 50000, "cost_usd": 2.0})
 ```
 
 ---
@@ -473,7 +429,7 @@ print(snap["budget_health"])  # 0.87
 def export_state(self, path: str | None = None) -> None
 ```
 
-Write current state to a JSON file for TUI polling. Also calls `save_engine_state` for restart recovery.
+Write current state to a JSON file for dashboard polling. Also calls `save_engine_state` for restart recovery.
 
 **Parameters**
 
@@ -487,34 +443,6 @@ Write current state to a JSON file for TUI polling. Also calls `save_engine_stat
 
 ```python
 engine.export_state("/tmp/soma_state.json")
-```
-
----
-
-#### `approve_escalation`
-
-```python
-def approve_escalation(self, agent_id: str) -> Level
-```
-
-Human approves a pending escalation for `agent_id`. Re-evaluates the ladder and applies the new level. Used when `autonomy=HUMAN_IN_THE_LOOP` has held an escalation waiting for approval.
-
-**Parameters**
-
-| Name | Type | Description |
-|---|---|---|
-| `agent_id` | `str` | The agent whose pending escalation to approve. |
-
-**Returns** `Level` — the newly applied level.
-
-**Example**
-
-```python
-# Subscribe to approval requests
-engine.events.on("approval_needed", lambda d: print(f"Approve escalation for {d['agent_id']}?"))
-
-# Later, when human approves:
-new_level = engine.approve_escalation("agent-1")
 ```
 
 ---
@@ -564,20 +492,11 @@ Returned by `SOMAEngine.record_action`. Immutable.
 
 **Fields**
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `level` | `Level` | _(required)_ | Current escalation level after processing this action. |
-| `pressure` | `float` | _(required)_ | Effective aggregate pressure `[0, 1]` after graph propagation. |
-| `vitals` | `VitalsSnapshot` | _(required)_ | Full vitals computed for this action. |
-| `context_action` | `str` | `"pass"` | Recommended context action for the caller. One of: `"pass"` (no change), `"truncate_20"` (trim messages 20% at CAUTION), `"truncate_50_block_tools"` (trim 50%, drop expensive tools at DEGRADE), `"quarantine"` (clear context at QUARANTINE), `"restart"` (clear context, restore tools at RESTART), `"safe_mode"` (locked down at SAFE_MODE). |
-
-**Example**
-
-```python
-result = engine.record_action("agent-1", action)
-if result.context_action == "truncate_20":
-    messages = messages[-int(len(messages) * 0.8):]
-```
+| Name | Type | Description |
+|---|---|---|
+| `level` | `Level` | Current escalation level after processing this action. |
+| `pressure` | `float` | Effective aggregate pressure `[0, 1]` after graph propagation. |
+| `vitals` | `VitalsSnapshot` | Full vitals computed for this action. |
 
 ---
 
@@ -1381,11 +1300,10 @@ def evaluate_with_adjustments(
     pressure: float,
     budget_health: float,
     threshold_adjustments: dict[str, float] | None = None,
-    custom_thresholds: dict | None = None,
 ) -> Level
 ```
 
-Like `evaluate()`, but applies learned threshold shifts and optional custom thresholds before checking. Keys in `threshold_adjustments` take the form `"OLD_LEVEL->NEW_LEVEL"` (e.g., `"HEALTHY->CAUTION"`); the value is added to both the escalation and de-escalation threshold for that transition. `custom_thresholds` (keys: `caution`, `degrade`, `quarantine`, `restart`) sets the base thresholds before shifts are applied.
+Like `evaluate()`, but applies learned threshold shifts before checking. Keys in `threshold_adjustments` take the form `"OLD_LEVEL->NEW_LEVEL"` (e.g., `"HEALTHY->CAUTION"`); the value is added to both the escalation and de-escalation threshold for that transition.
 
 **Parameters**
 
@@ -1394,7 +1312,6 @@ Like `evaluate()`, but applies learned threshold shifts and optional custom thre
 | `pressure` | `float` | _(required)_ | Current aggregate pressure. |
 | `budget_health` | `float` | _(required)_ | Current budget health. |
 | `threshold_adjustments` | `dict[str, float] \| None` | `None` | Learned threshold shifts keyed by transition string. |
-| `custom_thresholds` | `dict \| None` | `None` | Base threshold overrides from `soma.toml`. |
 
 **Returns** `Level`
 
@@ -1525,7 +1442,6 @@ Fire all handlers registered for `event` with `data`. Handlers are called in sub
 | Event | Payload keys | Description |
 |---|---|---|
 | `"level_changed"` | `agent_id`, `old_level`, `new_level`, `pressure` | Emitted whenever an agent's escalation level changes. |
-| `"approval_needed"` | `agent_id`, `current_level`, `proposed_level`, `pressure`, `autonomy` | Emitted when `HUMAN_IN_THE_LOOP` mode blocks a pending escalation. Call `engine.approve_escalation(agent_id)` to proceed. |
 
 ---
 
@@ -1679,191 +1595,6 @@ def history(self) -> list[ActionResult]
 ```
 
 All `ActionResult` objects in recording order since the last `checkpoint`.
-
----
-
-## soma.hooks.claude_code
-
-Claude Code lifecycle hook. Installed via `soma setup-claude` or manually in `~/.claude/settings.json`.
-
----
-
-### `main`
-
-```python
-def main() -> None
-```
-
-Entry point. Dispatches to the appropriate hook handler based on the `CLAUDE_HOOK` environment variable or `sys.argv[1]`.
-
-| Value | Handler |
-|---|---|
-| `"PreToolUse"` | `hook_pre_tool_use()` — blocks if agent is at QUARANTINE or above |
-| `"PostToolUse"` | `hook_post_tool_use()` — records the completed tool call |
-| `"PostMessage"` | `hook_post_message()` — records a Claude response |
-| `"Stop"` | `hook_stop()` — saves final state and prints summary |
-
-Hook JSON input is read from stdin. State is saved to `~/.soma/state.json` and `~/.soma/engine_state.json` after each hook.
-
----
-
-## soma.daemon
-
-Background process that polls for incoming actions and commands on a fixed interval.
-
----
-
-### `run_daemon`
-
-```python
-def run_daemon(
-    budget: dict[str, float] | None = None,
-    poll_interval: float = 1.0,
-) -> None
-```
-
-Run SOMA as a background daemon. Handles `SIGINT` and `SIGTERM` gracefully.
-
-**Parameters**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `budget` | `dict[str, float] \| None` | `{"tokens": 500_000, "cost_usd": 50.0}` | Budget for the daemon's engine. |
-| `poll_interval` | `float` | `1.0` | Seconds between poll cycles. |
-
-**Returns** `None` (runs until signalled)
-
-**Example**
-
-```python
-from soma.daemon import run_daemon
-run_daemon(budget={"tokens": 1_000_000}, poll_interval=2.0)
-```
-
----
-
-## soma.inbox
-
-File-based action queue consumed by the daemon.
-
----
-
-### `process_inbox`
-
-```python
-def process_inbox(engine: SOMAEngine) -> int
-```
-
-Read and process all JSON files in `~/.soma/inbox/`. Returns the count of actions processed. Each file is deleted after processing regardless of success.
-
-**Parameters**
-
-| Name | Type | Description |
-|---|---|---|
-| `engine` | `SOMAEngine` | Engine to record actions against. |
-
-**Returns** `int` — number of actions processed.
-
----
-
-### `ensure_inbox`
-
-```python
-def ensure_inbox() -> None
-```
-
-Create `~/.soma/inbox/` if it does not exist.
-
----
-
-## soma.commands
-
-File-based IPC for external engine control.
-
----
-
-### `write_command`
-
-```python
-def write_command(action: str, params: dict[str, Any] | None = None) -> str
-```
-
-Write a command file to `~/.soma/commands/`. Returns the command ID.
-
----
-
-### `read_result`
-
-```python
-def read_result(cmd_id: str) -> dict[str, Any] | None
-```
-
-Read the result file for a completed command. Returns `None` if the command has not completed yet.
-
----
-
-### `process_commands`
-
-```python
-def process_commands(engine: SOMAEngine) -> list[dict[str, Any]]
-```
-
-Process all pending command files in `~/.soma/commands/`. Writes results to `~/.soma/results/`. See the [Command Queue reference](reference.md#command-queue) for the full list of supported actions.
-
----
-
-## soma.persistence
-
-Full engine state serialisation and restoration.
-
----
-
-### `save_engine_state`
-
-```python
-def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None
-```
-
-Persist full engine state to a JSON file. Default path: `~/.soma/engine_state.json`.
-
-Saves: agents (baseline, action count, known tools, baseline vector, level), budget, pressure graph, and learning engine. Does not save the ring buffer, event subscriptions, or budget clock start time.
-
-**Parameters**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `engine` | `SOMAEngine` | _(required)_ | The engine to persist. |
-| `path` | `str \| None` | `~/.soma/engine_state.json` | Destination path. |
-
----
-
-### `load_engine_state`
-
-```python
-def load_engine_state(path: str | None = None) -> SOMAEngine | None
-```
-
-Restore an engine from a previously saved state file. Returns `None` if the file does not exist or is malformed JSON.
-
-Restores in order: budget → graph → learning engine → agents. Agent levels are restored via `force_level()`.
-
-**Parameters**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `path` | `str \| None` | `~/.soma/engine_state.json` | Source path. |
-
-**Returns** `SOMAEngine | None`
-
-**Example**
-
-```python
-from soma.persistence import load_engine_state, save_engine_state
-
-engine = load_engine_state() or SOMAEngine(budget={"tokens": 100_000})
-# ... run actions ...
-save_engine_state(engine)
-```
 
 ---
 
