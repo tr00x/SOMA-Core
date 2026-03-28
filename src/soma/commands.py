@@ -123,20 +123,6 @@ def process_commands(engine) -> list[dict[str, Any]]:
                         aid: engine.get_snapshot(aid) for aid in engine._agents
                     }}
 
-            elif action == "set_thresholds":
-                # Update ladder thresholds for all agents
-                thresholds = params.get("thresholds", {})
-                for agent_id, s in engine._agents.items():
-                    if hasattr(s.ladder, '_thresholds'):
-                        s.ladder._thresholds.update(thresholds)
-                result = {"ok": True, "thresholds": thresholds}
-
-            elif action == "set_budget_limits":
-                limits = params.get("limits", {})
-                for k, v in limits.items():
-                    engine._budget.limits[k] = float(v)
-                result = {"ok": True, "limits": engine._budget.limits, "health": engine._budget.health()}
-
             elif action == "export_state":
                 engine.export_state()
                 result = {"ok": True}

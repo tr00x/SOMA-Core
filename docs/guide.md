@@ -16,13 +16,19 @@ pip install soma-core
 
 Requires Python 3.11 or later.
 
+Install the dashboard too (optional but recommended):
+
+```
+pip install soma-core[dashboard]
+```
+
 Verify the install worked:
 
 ```python
 python -c "import soma; print(soma.__version__)"
 ```
 
-You should see `0.2.0`.
+You should see `0.1.0`.
 
 ---
 
@@ -175,7 +181,7 @@ except SomaBudgetExhausted as e:
 
 ---
 
-## The TUI Hub
+## The Dashboard
 
 ### How to open it
 
@@ -185,23 +191,29 @@ In your terminal, run:
 soma
 ```
 
-The first time you run it, SOMA will walk you through a short setup wizard and create a `soma.toml` file. No extra install step is required.
+The first time you run it, SOMA will walk you through a short setup wizard and create a `soma.toml` file.
+
+The dashboard requires the `dashboard` extra:
+
+```
+pip install soma-core[dashboard]
+```
 
 ### What you see
 
-The TUI hub has several tabs. The main view shows:
+The dashboard has four main areas:
 
-**Agent rows** — one row per agent you are monitoring. Each row shows the agent's name, current level, and key numbers: pressure, uncertainty, drift, and error rate.
+**Agent cards** — one card per agent you are monitoring. Each card shows the agent's name, current level, and four numbers: pressure, uncertainty, drift, and error rate.
 
-**Budget bars** — progress bars showing how much of your token budget and cost budget you have used.
+**Budget bars** — progress bars at the bottom showing how much of your token budget and cost budget you have used.
 
 **Event log** — a scrolling list of level-change events. Every time an agent moves from one level to another, a line appears here with the agent name, old level, new level, and pressure at the time.
 
 **Footer** — keyboard shortcuts. Press `q` to quit.
 
-### How to read the agent rows
+### How to read the cards
 
-Each row shows:
+Each card shows:
 
 - **Level** — the current health level (see the next section)
 - **Pressure** — a number from `0.000` to `1.000`. Below `0.25` is normal. Above `0.75` is serious.
@@ -211,7 +223,7 @@ Each row shows:
 
 ### What the colors mean
 
-The level indicator color tells you the status at a glance:
+The border color of each card tells you the level at a glance:
 
 | Color | Level |
 |---|---|
@@ -392,17 +404,13 @@ rm -rf ~/.soma/
 
 This removes all stored state, learned baselines, and session history. The next run starts fresh.
 
-**"My TUI is empty / shows 'No agents registered'"**
+**"My dashboard is empty / shows 'No agents registered'"**
 
-The TUI reads state from `~/.soma/state.json`. That file is written automatically when `auto_export=True` is set on the engine (this is the default when using `SOMAEngine.from_config()` or `soma.wrap()`). If you created the engine manually with `SOMAEngine(...)`, either pass `auto_export=True` to the constructor or call `engine.export_state()` after each `record_action` call.
+The dashboard reads state from `~/.soma/state.json`. That file is written automatically when you use `soma.wrap()` (because `auto_export=True` by default). If you are using the engine directly without `soma.wrap()`, call `engine.export_state()` after each `record_action` call so the dashboard has data to display.
 
 ```python
-# Option 1: enable auto-export at construction time
-engine = SOMAEngine(budget={"tokens": 50000}, auto_export=True)
-
-# Option 2: export manually after each action
 result = engine.record_action("my-agent", action)
-engine.export_state()   # write state so the TUI can read it
+engine.export_state()   # write state so the dashboard can read it
 ```
 
 **"SOMA is not blocking calls even though the level is QUARANTINE"**
