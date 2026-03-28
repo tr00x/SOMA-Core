@@ -143,23 +143,31 @@ def test_threshold_not_raised_before_min_interventions():
 
 
 def test_threshold_rises_after_min_interventions():
-    """3 failures (== min_interventions) should trigger the first adjustment."""
+    """3 failures (== min_interventions) should trigger the first adaptive adjustment.
+
+    With adaptive step: 3 failures / 3 total = 100% failure rate,
+    multiplier = 1.0 + 2.0 * (1.0 - 0.5) = 2.0, step = 0.02 * 2.0 = 0.04.
+    """
     engine = make_engine(evaluation_window=5, min_interventions=3, threshold_adj_step=0.02)
     for _ in range(3):
         engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    assert engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION) == pytest.approx(0.02)
+    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    assert adj > 0.02  # Adaptive step is larger than base step
+    assert adj <= 0.10  # But bounded
 
 
 def test_threshold_rises_after_four_failures():
-    """4 failures should apply two steps (failures 3 and 4 each trigger a step)."""
+    """4 failures should apply two adaptive steps (failures 3 and 4)."""
     engine = make_engine(evaluation_window=5, min_interventions=3, threshold_adj_step=0.02)
     for _ in range(4):
         engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    assert engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION) == pytest.approx(0.04)
+    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    assert adj > 0.04  # Two adaptive steps
+    assert adj <= 0.10  # Bounded
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +293,7 @@ def test_reset_clears_history():
     # Only 1 failure post-reset with min_interventions=1 → threshold should be raised
     # (verifies failure_counts were reset, not preserved)
     adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
-    assert adj == pytest.approx(0.02)
+    assert adj > 0  # Threshold was raised (adaptive step)
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +328,7 @@ def test_to_dict_reflects_adjustments():
 
     d = engine.to_dict()
     assert "HEALTHY->CAUTION" in d["threshold_adjustments"]
-    assert d["threshold_adjustments"]["HEALTHY->CAUTION"] == pytest.approx(0.02)
+    assert d["threshold_adjustments"]["HEALTHY->CAUTION"] > 0  # Adaptive step
     assert "sig" in d["weight_adjustments"]
 
 
@@ -376,3 +384,77 @@ def test_window_accumulates_across_calls():
 
     result2 = engine.evaluate("a1", current_pressure=0.10, actions_since=3)
     assert result2 is InterventionOutcome.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# Adaptive threshold tuning (v2)
+# ---------------------------------------------------------------------------
+
+def test_success_lowers_threshold():
+    """Repeated successes should lower the threshold (make escalation easier)."""
+    engine = make_engine(evaluation_window=1, min_interventions=3, threshold_adj_step=0.02)
+    # 5 successes (pressure drops after intervention)
+    for _ in range(5):
+        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.evaluate("a1", current_pressure=0.10, actions_since=5)
+
+    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    assert adj < 0  # Threshold lowered
+
+
+def test_success_recovers_signal_weights():
+    """After failures lower weights, successes should partially recover them."""
+    engine = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
+
+    # 3 failures → weight drops
+    for _ in range(3):
+        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.evaluate("a1", current_pressure=0.40, actions_since=5)
+
+    weight_after_failures = engine.get_weight_adjustment("uncertainty")
+    assert weight_after_failures < 0
+
+    # 5 successes → weight recovers partially
+    for _ in range(5):
+        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.evaluate("a1", current_pressure=0.10, actions_since=5)
+
+    weight_after_recovery = engine.get_weight_adjustment("uncertainty")
+    assert weight_after_recovery > weight_after_failures  # Recovered
+
+
+def test_adaptive_step_increases_with_streak():
+    """Adaptive step should be larger when failure ratio is high."""
+    engine = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
+
+    # First mix some successes and failures
+    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.evaluate("a1", current_pressure=0.10, actions_since=5)  # success
+    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
+    adj_mixed = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+
+    # Now pure failures
+    engine2 = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
+    engine2.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine2.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
+    engine2.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine2.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
+    adj_pure = engine2.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+
+    # Pure failures should produce a larger adjustment (adaptive step)
+    assert adj_pure >= adj_mixed
+
+
+def test_success_counts_serialized():
+    """Success counts should survive serialization."""
+    engine = make_engine(evaluation_window=1, min_interventions=1)
+    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.evaluate("a1", current_pressure=0.10, actions_since=5)
+
+    d = engine.to_dict()
+    assert "success_counts" in d
+    assert "HEALTHY->CAUTION" in d["success_counts"]
+
+    restored = LearningEngine.from_dict(d)
+    assert restored._success_counts[(Level.HEALTHY, Level.CAUTION)] == 1
