@@ -69,7 +69,10 @@ class AgentCard(Static):
         self.agent_id = agent_id
         self._text = f"[bold]{agent_id}[/bold]  No data yet"
 
-    def update_vitals(self, level, pressure, uncertainty, drift, error_rate, action_count=0):
+    def update_vitals(
+        self, level, pressure, uncertainty, drift, error_rate,
+        action_count=0, cost=0.0, token_usage=0.0,
+    ):
         color = LEVEL_COLORS.get(level, "white")
         label = LEVEL_LABEL.get(level, "?")
 
@@ -84,7 +87,7 @@ class AgentCard(Static):
         self._text = (
             f"[bold]{self.agent_id}[/bold] [dim]#{action_count}[/dim]  [{color} bold]{label}[/]\n"
             f"{bar}  {pressure:.0%}\n"
-            f"[dim]u={uncertainty:.2f}  d={drift:.2f}  e={error_rate:.2f}[/]"
+            f"[dim]u={uncertainty:.2f}  d={drift:.2f}  e={error_rate:.2f}  $={cost:.2f}  t={token_usage:.2f}[/]"
         )
         self.update(self._text)
 
@@ -156,15 +159,32 @@ class DashboardTab(TabPane):
             except KeyError:
                 level = Level.HEALTHY
 
+            pressure = state.get("pressure", 0.0)
+            action_count = state.get("action_count", 0)
             vitals = state.get("vitals", {})
             self._cards[agent_id].update_vitals(
                 level=level,
-                pressure=state.get("pressure", 0.0),
+                pressure=pressure,
                 uncertainty=vitals.get("uncertainty", 0.0),
                 drift=vitals.get("drift", 0.0),
                 error_rate=vitals.get("error_rate", 0.0),
-                action_count=state.get("action_count", 0),
+                cost=vitals.get("cost", 0.0),
+                token_usage=vitals.get("token_usage", 0.0),
+                action_count=action_count,
             )
+
+            # Sync to Agents tab if available
+            try:
+                from soma.cli.tabs.agents import AgentsTab
+                agents_tab = self.app.query_one(AgentsTab)
+                agents_tab.update_agent(
+                    agent_id=agent_id,
+                    level=level,
+                    pressure=pressure,
+                    action_count=action_count,
+                )
+            except Exception:
+                pass
 
         # Update status
         n = len(agents)

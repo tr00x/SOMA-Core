@@ -32,6 +32,8 @@ all = ["soma-core[dashboard,otel,dev]"]
 
 [project.scripts]
 soma = "soma.cli.main:main"
+soma-hook = "soma.hooks.claude_code:main"
+soma-statusline = "soma.hooks.statusline:main"
 
 [project.urls]
 Homepage = "https://github.com/tr00x/soma-core"

@@ -14,7 +14,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Static, Input, Button, Rule, TabPane
 
-from soma.cli.config_loader import load_config, save_config, DEFAULT_CONFIG
+from soma.cli.config_loader import load_config, save_config, DEFAULT_CONFIG, CLAUDE_CODE_CONFIG
 from soma.types import Level
 
 
@@ -93,7 +93,35 @@ class ConfigTab(TabPane):
 
     def __init__(self) -> None:
         super().__init__("Config", id="tab-config")
-        self._config: dict[str, Any] = load_config()
+        self._config: dict[str, Any] = self._load_effective_config()
+
+    @staticmethod
+    def _load_effective_config() -> dict[str, Any]:
+        """Load config from soma.toml, falling back to engine_state.json,
+        then CLAUDE_CODE_CONFIG defaults. This ensures the Config tab shows
+        the actual values the engine is using, not just DEFAULT_CONFIG."""
+        import os
+        if os.path.exists("soma.toml"):
+            return load_config()
+
+        # No soma.toml — try to read from engine state
+        try:
+            from soma.hooks.common import ENGINE_STATE_PATH
+            if ENGINE_STATE_PATH.exists():
+                import json
+                state = json.loads(ENGINE_STATE_PATH.read_text())
+                cfg = dict(CLAUDE_CODE_CONFIG)
+                if state.get("custom_thresholds"):
+                    cfg["thresholds"] = state["custom_thresholds"]
+                if state.get("custom_weights"):
+                    cfg["weights"] = state["custom_weights"]
+                if state.get("budget", {}).get("limits"):
+                    cfg["budget"] = state["budget"]["limits"]
+                return cfg
+        except Exception:
+            pass
+
+        return CLAUDE_CODE_CONFIG
 
     # ── Compose ──────────────────────────────────────────────────
 

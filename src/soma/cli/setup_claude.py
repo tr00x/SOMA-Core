@@ -1,69 +1,50 @@
-"""soma setup-claude — one command to integrate SOMA into Claude Code."""
+"""soma setup-claude — give your Claude Code a nervous system.
+
+One command to install SOMA monitoring into Claude Code:
+    1. Installs hooks (PreToolUse, PostToolUse, Stop) into ~/.claude/settings.json
+    2. Adds SOMA status line to Claude Code UI
+    3. Creates ~/.soma/ directory with clean engine state
+    4. Creates soma.toml config if missing
+    5. Optionally adds SOMA section to CLAUDE.md
+"""
 
 from __future__ import annotations
 
 import json
+import shutil
+import sys
 from pathlib import Path
 
 
-CLAUDE_MD_BLOCK = """
-## SOMA Monitoring
+def _find_soma_hook_command() -> str:
+    """Find the best way to invoke soma-hook.
 
-This project uses SOMA Core for AI agent monitoring.
-When running agents or subagents, wrap API clients with SOMA:
+    Priority:
+        1. soma-hook console script (if installed via pip)
+        2. python -m soma.hooks.claude_code (fallback)
+    """
+    # Check if soma-hook is on PATH (installed via pip/pipx)
+    soma_hook = shutil.which("soma-hook")
+    if soma_hook:
+        return "soma-hook"
 
-```python
-import soma
-client = soma.wrap(your_client, budget={"tokens": 50000})
-```
-
-Run `soma` in a separate terminal to see the live dashboard.
-Run `soma status` for a quick text summary.
-"""
-
-HOOK_COMMAND = 'python3 -c "import soma; print(\'SOMA active\')" 2>/dev/null || true'
+    # Check if current python has soma installed
+    python = sys.executable
+    return f"{python} -m soma.hooks.claude_code"
 
 
-def run_setup_claude() -> None:
-    """Set up SOMA for Claude Code projects."""
-    print()
-    print("  SOMA Setup for Claude Code")
-    print("  ─────────────────────────")
-    print()
+def _find_statusline_command() -> str:
+    """Find the best way to invoke soma-statusline."""
+    soma_sl = shutil.which("soma-statusline")
+    if soma_sl:
+        return "soma-statusline"
 
-    changes = []
+    python = sys.executable
+    return f"{python} -m soma.hooks.statusline"
 
-    # 1. Add to CLAUDE.md
-    claude_md = Path("CLAUDE.md")
-    if claude_md.exists():
-        content = claude_md.read_text()
-        if "SOMA" not in content:
-            claude_md.write_text(content + "\n" + CLAUDE_MD_BLOCK)
-            changes.append("Added SOMA section to CLAUDE.md")
-        else:
-            print("  CLAUDE.md already has SOMA section. Skipping.")
-    else:
-        claude_md.write_text("# Project Instructions\n" + CLAUDE_MD_BLOCK)
-        changes.append("Created CLAUDE.md with SOMA instructions")
 
-    # 2. Create soma.toml if missing
-    soma_toml = Path("soma.toml")
-    if not soma_toml.exists():
-        from soma.cli.config_loader import save_config, DEFAULT_CONFIG
-        save_config(DEFAULT_CONFIG, str(soma_toml))
-        changes.append("Created soma.toml with default config")
-    else:
-        print("  soma.toml already exists. Skipping.")
-
-    # 3. Create ~/.soma directory
-    soma_dir = Path.home() / ".soma"
-    soma_dir.mkdir(parents=True, exist_ok=True)
-    changes.append(f"Created {soma_dir}")
-
-    # 3b. Install Claude Code hooks in settings.json
-    settings_path = Path.home() / ".claude" / "settings.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-
+def _install_hooks(settings_path: Path, hook_cmd: str) -> bool:
+    """Install SOMA hooks into Claude Code settings.json. Returns True if changed."""
     settings = {}
     if settings_path.exists():
         try:
@@ -71,58 +52,189 @@ def run_setup_claude() -> None:
         except (json.JSONDecodeError, IOError):
             settings = {}
 
-    hook_cmd = "python3 -m soma.hooks.claude_code"
     hooks = settings.get("hooks", {})
-    hooks_changed = False
+    changed = False
 
-    for hook_type in ["PreToolUse", "PostToolUse", "PostMessage", "Stop"]:
+    hook_configs = {
+        "PreToolUse": {"timeout": 5},
+        "PostToolUse": {"timeout": 5},
+        "Stop": {"timeout": 10},
+        "UserPromptSubmit": {"timeout": 3},
+    }
+
+    for hook_type, opts in hook_configs.items():
         hook_list = hooks.get(hook_type, [])
+
         # Check if SOMA hook already installed
-        soma_installed = any("soma" in str(h.get("command", "")) for h in hook_list)
-        if not soma_installed:
-            hook_list.append({
-                "command": f"CLAUDE_HOOK={hook_type} {hook_cmd}",
-            })
-            hooks[hook_type] = hook_list
-            hooks_changed = True
-
-    if hooks_changed:
-        settings["hooks"] = hooks
-        settings_path.write_text(json.dumps(settings, indent=2))
-        changes.append("Installed SOMA hooks in ~/.claude/settings.json (PreToolUse, PostToolUse, PostMessage, Stop)")
-
-    # 4. Create a slash command for Claude Code
-    commands_dir = Path(".claude") / "commands"
-    commands_dir.mkdir(parents=True, exist_ok=True)
-
-    soma_cmd = commands_dir / "soma-status.md"
-    if not soma_cmd.exists():
-        soma_cmd.write_text(
-            "# SOMA Status\n\n"
-            "Check SOMA monitoring status for this project.\n\n"
-            "Run this command:\n"
-            "```bash\n"
-            "soma status\n"
-            "```\n\n"
-            "To open the full dashboard:\n"
-            "```bash\n"
-            "soma\n"
-            "```\n"
+        soma_installed = any(
+            "soma" in str(h.get("command", ""))
+            for entry in hook_list
+            for h in entry.get("hooks", [])
         )
-        changes.append("Created /soma-status Claude Code command")
+
+        if not soma_installed:
+            entry = {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"CLAUDE_HOOK={hook_type} {hook_cmd}",
+                        "timeout": opts["timeout"],
+                    }
+                ]
+            }
+            hook_list.append(entry)
+            hooks[hook_type] = hook_list
+            changed = True
+
+    if changed:
+        settings["hooks"] = hooks
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps(settings, indent=2))
+
+    return changed
+
+
+def _install_statusline(settings_path: Path, sl_cmd: str) -> bool:
+    """Add SOMA status line to Claude Code. Returns True if changed."""
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            settings = {}
+
+    if "statusLine" in settings:
+        existing = settings["statusLine"]
+        if isinstance(existing, dict):
+            cmd = existing.get("command", "")
+            if "soma" in cmd:
+                return False
+        # Overwrite non-SOMA statusLine (user will see the change in output)
+
+    settings["statusLine"] = {
+        "type": "command",
+        "command": sl_cmd,
+    }
+
+    settings_path.write_text(json.dumps(settings, indent=2))
+    return True
+
+
+def _init_engine() -> bool:
+    """Create clean SOMA engine state with Claude Code config. Returns True if created."""
+    soma_dir = Path.home() / ".soma"
+    soma_dir.mkdir(parents=True, exist_ok=True)
+    engine_path = soma_dir / "engine_state.json"
+
+    if engine_path.exists():
+        return False
+
+    try:
+        from soma.engine import SOMAEngine
+        from soma.persistence import save_engine_state
+        from soma.hooks.common import CLAUDE_TOOLS
+        from soma.cli.config_loader import CLAUDE_CODE_CONFIG
+
+        engine = SOMAEngine(
+            budget=CLAUDE_CODE_CONFIG["budget"],
+            custom_weights=CLAUDE_CODE_CONFIG["weights"],
+            custom_thresholds=CLAUDE_CODE_CONFIG["thresholds"],
+        )
+        engine.register_agent("claude-code", tools=CLAUDE_TOOLS)
+        save_engine_state(engine, str(engine_path))
+        engine.export_state(str(soma_dir / "state.json"))
+        return True
+    except Exception:
+        return False
+
+
+def run_setup_claude() -> None:
+    """Set up SOMA for Claude Code."""
+    print()
+    print("  SOMA Setup for Claude Code")
+    print("  ─────────────────────────")
+    print("  Giving your Claude Code a nervous system...")
+    print()
+
+    changes = []
+    warnings = []
+
+    # 1. Find hook commands
+    hook_cmd = _find_soma_hook_command()
+    sl_cmd = _find_statusline_command()
+
+    # 2. Install hooks
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if _install_hooks(settings_path, hook_cmd):
+        changes.append("Installed SOMA hooks (PreToolUse, PostToolUse, UserPromptSubmit, Stop)")
+    else:
+        print("  Hooks already installed. Skipping.")
+
+    # 3. Install status line
+    if _install_statusline(settings_path, sl_cmd):
+        changes.append("Added SOMA status line to Claude Code UI")
+    else:
+        print("  Status line already configured. Skipping.")
+
+    # 4. Init engine state
+    if _init_engine():
+        changes.append("Created ~/.soma/ with clean engine state")
+    else:
+        print("  Engine state exists. Skipping.")
+
+    # 5. Create soma.toml with Claude Code optimized config
+    soma_toml = Path("soma.toml")
+    if not soma_toml.exists():
+        try:
+            from soma.cli.config_loader import save_config, CLAUDE_CODE_CONFIG
+            save_config(CLAUDE_CODE_CONFIG, str(soma_toml))
+            changes.append("Created soma.toml with Claude Code optimized config")
+        except Exception:
+            warnings.append("Could not create soma.toml")
+    else:
+        print("  soma.toml exists. Skipping.")
+
+    # 6. Add to CLAUDE.md (optional, non-destructive)
+    claude_md = Path("CLAUDE.md")
+    soma_block = (
+        "\n## SOMA Monitoring\n\n"
+        "This project uses SOMA Core for AI agent behavioral monitoring.\n"
+        "Run `soma status` for a quick summary or `soma` for the live dashboard.\n"
+    )
+    if claude_md.exists():
+        content = claude_md.read_text()
+        if "SOMA" not in content:
+            claude_md.write_text(content + soma_block)
+            changes.append("Added SOMA section to CLAUDE.md")
+    else:
+        print("  No CLAUDE.md found. Skipping.")
 
     # Print results
     print()
     if changes:
-        print("  Done! Changes made:")
+        print("  Done! Your Claude Code now has a nervous system:")
         for c in changes:
             print(f"    + {c}")
     else:
-        print("  Everything already set up.")
+        print("  Everything already set up. SOMA is active.")
+
+    if warnings:
+        print()
+        for w in warnings:
+            print(f"    ! {w}")
 
     print()
-    print("  Next steps:")
-    print("    1. Open a new terminal and run: soma")
-    print("    2. In Claude Code, use: /soma-status")
-    print("    3. In your code, add: client = soma.wrap(your_client)")
+    print("  How it works:")
+    print("    PreToolUse        — checks pressure, blocks blind mutations")
+    print("    PostToolUse       — records action, validates code, computes vitals")
+    print("    UserPromptSubmit  — injects actionable tips into agent context")
+    print("    Stop              — saves final state, cleans up session")
+    print("    Status line       — shows live SOMA level in Claude Code UI")
+    print()
+    print("  Commands:")
+    print("    soma status    — quick text summary")
+    print("    soma           — live TUI dashboard")
+    print()
+    print("  To uninstall:")
+    print("    soma uninstall-claude")
     print()

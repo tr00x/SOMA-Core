@@ -17,9 +17,14 @@ def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
         "budget": engine.budget.to_dict(),
         "graph": engine._graph.to_dict(),
         "learning": engine._learning.to_dict(),
+        "custom_weights": engine._custom_weights,
+        "custom_thresholds": engine._custom_thresholds,
     }
 
     for agent_id, s in engine._agents.items():
+        # Skip the "default" placeholder agent
+        if agent_id == "default":
+            continue
         state["agents"][agent_id] = {
             "baseline": s.baseline.to_dict(),
             "action_count": s.action_count,
@@ -46,9 +51,13 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
     except (json.JSONDecodeError, OSError):
         return None
 
-    # Rebuild engine
+    # Rebuild engine with persisted config
     budget_data = state.get("budget", {})
-    engine = SOMAEngine(budget=budget_data.get("limits", {"tokens": 100000}))
+    engine = SOMAEngine(
+        budget=budget_data.get("limits", {"tokens": 100000}),
+        custom_weights=state.get("custom_weights"),
+        custom_thresholds=state.get("custom_thresholds"),
+    )
 
     # Restore budget spent
     budget = MultiBudget.from_dict(budget_data)
@@ -75,11 +84,12 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         s.known_tools = agent_state.get("known_tools", [])
         s.baseline_vector = agent_state.get("baseline_vector")
 
-        # Restore level
+        # Restore level (set _current directly, not force_level —
+        # force_level latches and prevents pressure-based re-evaluation)
         from soma.types import Level
         level_name = agent_state.get("level", "HEALTHY")
         try:
-            s.ladder.force_level(Level[level_name])
+            s.ladder._current = Level[level_name]
         except (KeyError, ValueError):
             pass
 
