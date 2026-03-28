@@ -1,0 +1,73 @@
+/* SOMA Dashboard — dark minimalist stylesheet */
+
+Screen {
+    background: #0a0a0a;
+    color: #e5e5e5;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+Header {
+    background: #0a0a0a;
+    color: #e5e5e5;
+    border-bottom: solid #222222;
+    text-style: bold;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+Footer {
+    background: #0f0f0f;
+    color: #555555;
+    border-top: solid #1a1a1a;
+}
+
+/* ── Agent grid ─────────────────────────────────────────── */
+#agent-grid {
+    layout: grid;
+    grid-size: 3;
+    grid-gutter: 1;
+    padding: 1;
+    height: auto;
+}
+
+/* ── Agent cards ────────────────────────────────────────── */
+AgentCard {
+    background: #141414;
+    border: solid #22c55e;
+    padding: 1 2;
+    margin: 0;
+    height: auto;
+    min-height: 8;
+}
+
+/* Level-specific border colors */
+AgentCard.level--healthy    { border: solid #22c55e; }
+AgentCard.level--caution    { border: solid #eab308; }
+AgentCard.level--degrade    { border: solid #f97316; }
+AgentCard.level--quarantine { border: solid #ef4444; }
+AgentCard.level--restart    { border: solid #a855f7; }
+AgentCard.level--safe-mode  { border: solid #ef4444;  background: #1a0000; }
+
+/* ── Event log ──────────────────────────────────────────── */
+EventLog {
+    background: #0f0f0f;
+    border-top: solid #222222;
+    height: 10;
+    padding: 0 1;
+    color: #888888;
+}
+
+/* ── Budget bars ────────────────────────────────────────── */
+#budget-section {
+    height: auto;
+    padding: 0 1;
+    background: #0a0a0a;
+}
+
+BudgetBar {
+    background: #141414;
+    border: solid #222222;
+    height: 3;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    color: #aaaaaa;
+}
