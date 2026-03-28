@@ -29,10 +29,31 @@ The core engine works. Monitor agents, compute pressure, propagate it across gra
 | State persistence | Done |
 | Cold start grace period | Done |
 | Self-learning feedback loop | Done — connected |
-| Claude Code hooks | Done |
+| Claude Code hooks (PreToolUse, PostToolUse, Stop) | Done |
 | Paperclip plugin | Done — installed |
 | Documentation (guide + reference + API) | Done — 3,449 lines |
 | Test suite | Done — 399 tests |
+
+---
+
+## Milestone 1.5: Agent Intelligence ✓
+
+*Shipped March 28, 2026*
+
+SOMA stops being a passive monitor and starts actively improving agent quality.
+
+| Deliverable | Status |
+|:------------|:-------|
+| **Action log** — track tool call patterns for analysis | Done |
+| **Actionable feedback** — "3 writes without Read" instead of raw metrics | Done |
+| **Post-write validation** — py_compile + ruff lint + node --check | Done |
+| **Read-before-Write enforcement** — CAUTION blocks blind mutations | Done |
+| **Cross-session memory** — inherit baseline between sessions | Done |
+| **Dead session cleanup** — auto-prune old agent states | Done |
+| **Session stats** — error count + top tools on Stop | Done |
+| **UserPromptSubmit hook** — inject tips into agent context | Done |
+| **Specific block messages** — "Read bar.py first" not just "blocked" | Done |
+| Test suite | Done — 476 tests |
 
 ---
 
@@ -42,16 +63,16 @@ The core engine works. Monitor agents, compute pressure, propagate it across gra
 
 Make SOMA work seamlessly in production. No rough edges. Install, configure, forget.
 
-| Deliverable | Issue | Priority |
-|:------------|:------|:---------|
-| **PyPI publish** — `pip install soma-core` works globally | [#1](https://github.com/tr00x/SOMA-Core/issues/1) | Critical |
-| **Async client support** — `soma.wrap(AsyncAnthropic())` | [#2](https://github.com/tr00x/SOMA-Core/issues/2) | High |
-| **Progress tracking** — detect stuck agents, not just confused | [#6](https://github.com/tr00x/SOMA-Core/issues/6) | High |
-| **GIF/demo recording** — for README and social | | High |
-| **Real API testing** — verified with live Anthropic + OpenAI | | High |
-| **Dashboard UX polish** — responsive layout, keybindings | | Medium |
-| **soma.toml validation** — helpful errors on bad config | | Medium |
-| **GitHub Actions CI** — green badge on every PR | | Medium |
+| Deliverable | Priority | Status |
+|:------------|:---------|:-------|
+| **PyPI publish** — `pip install soma-core` works globally | Critical | |
+| **GitHub Actions CI** — tests on every push/PR | Critical | |
+| **Async client support** — `soma.wrap(AsyncAnthropic())` | High | |
+| **Progress tracking** — detect stuck agents, not just confused | High | |
+| **GIF/demo recording** — for README and social | High | |
+| **Real API testing** — verified with live Anthropic + OpenAI | High | |
+| **Dashboard UX polish** — responsive layout, keybindings | Medium | |
+| **soma.toml validation** — helpful errors on bad config | Medium | |
 
 ---
 
@@ -61,15 +82,16 @@ Make SOMA work seamlessly in production. No rough edges. Install, configure, for
 
 Framework integrations. Community layers. SOMA works with everything.
 
-| Deliverable | Issue | Owner |
-|:------------|:------|:------|
-| **soma-langchain** — LangChain callback integration | [#4](https://github.com/tr00x/SOMA-Core/issues/4) | Community |
-| **soma-crewai** — CrewAI middleware | [#5](https://github.com/tr00x/SOMA-Core/issues/5) | Community |
-| **soma-autogen** — AutoGen observer | | Community |
-| **soma-openai-agents** — OpenAI Agents SDK | | Community |
-| **OpenTelemetry export** — Grafana/Datadog metrics | [#7](https://github.com/tr00x/SOMA-Core/issues/7) | Community |
-| **Layer SDK** — trivial layer creation | | Core |
-| **Layer registry** — discover and install from CLI | | Core |
+| Deliverable | Owner |
+|:------------|:------|
+| **soma-langchain** — LangChain callback integration | Community |
+| **soma-crewai** — CrewAI middleware | Community |
+| **soma-autogen** — AutoGen observer | Community |
+| **soma-openai-agents** — OpenAI Agents SDK | Community |
+| **OpenTelemetry export** — Grafana/Datadog metrics | Community |
+| **Layer SDK** — trivial layer creation | Core |
+| **Layer registry** — discover and install from CLI | Core |
+| **Cursor/Windsurf hooks** — not just Claude Code | Core |
 
 ---
 
@@ -85,7 +107,8 @@ SOMA stops being reactive and starts being predictive.
 | **Automatic threshold tuning** | ML-optimized thresholds per agent, per task type |
 | **Root cause analysis** | Explain WHY in plain English: "Agent stuck in search→edit→search loop since action #42" |
 | **Agent fingerprinting** | Learn each agent's "normal" profile, detect corruption |
-| **Cross-session learning** | Carry behavioral insights across sessions |
+| **Task-aware monitoring** | Know WHAT the agent is doing, not just HOW — drift from goal, not just from stats |
+| **Quality scoring** | Rate output quality, not just behavioral signals — did the code compile? tests pass? |
 
 ---
 
