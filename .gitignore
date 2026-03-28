@@ -6,3 +6,4 @@ __pycache__/
 .coverage
 examples/paperclip_session.json
 docs/superpowers/
+soma_session.json
