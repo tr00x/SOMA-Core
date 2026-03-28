@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 
-from soma.hooks.common import get_engine, save_state, read_stdin, append_action_log
+from soma.hooks.common import get_engine, save_state, read_stdin, append_action_log, get_predictor, save_predictor
 
 # Track previous state for delta detection (per-process)
 _prev_level: str | None = None
@@ -172,6 +172,30 @@ def main():
                 f"SOMA: error_rate={vitals.error_rate:.0%} after {tool_name} failure",
                 file=sys.stderr,
             )
+
+        # ── Prediction ──
+        try:
+            predictor = get_predictor()
+            predictor.update(pressure, {
+                "tool": tool_name, "error": error, "file": file_path,
+            })
+
+            # Find next threshold above current level
+            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
+            thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
+            if thresholds:
+                pred = predictor.predict(thresholds[0])
+                if pred.will_escalate:
+                    print(
+                        f"SOMA: ⚠ predicted escalation in ~{pred.actions_ahead} actions "
+                        f"(p={pred.predicted_pressure:.0%}, reason={pred.dominant_reason}, "
+                        f"conf={pred.confidence:.0%})",
+                        file=sys.stderr,
+                    )
+
+            save_predictor(predictor)
+        except Exception:
+            pass  # Prediction is optional
 
         _prev_level = level_name
         _prev_pressure = pressure
