@@ -1271,3 +1271,84 @@ class TestStopCleanup:
         main()
 
         assert not log_path.exists()
+
+
+# ──────────────────────────────────────────────────────────────────
+# Cross-session Memory
+# ──────────────────────────────────────────────────────────────────
+
+class TestCrossSessionMemory:
+    """Tests for baseline inheritance and dead agent cleanup."""
+
+    def test_inherit_baseline_from_previous_session(self):
+        """New session should inherit baseline from the most active prior session."""
+        from soma.hooks.common import _inherit_baseline
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        engine.register_agent("cc-old", tools=CLAUDE_TOOLS)
+
+        # Simulate 20 actions on old agent to build up baseline
+        old = engine._agents["cc-old"]
+        for i in range(20):
+            old.baseline.update("uncertainty", 0.3)
+            old.baseline.update("drift", 0.2)
+        old.action_count = 20
+        old.known_tools = ["Bash", "Read", "Edit", "Grep", "Write"]
+        old.baseline_vector = [1.0, 2.0, 3.0]
+
+        # Register new session
+        engine.register_agent("cc-new", tools=CLAUDE_TOOLS)
+
+        # Inherit
+        _inherit_baseline(engine, "cc-new")
+
+        new = engine._agents["cc-new"]
+        assert new.baseline.get_count("uncertainty") == 20
+        assert new.baseline_vector == [1.0, 2.0, 3.0]
+        assert "Bash" in new.known_tools
+
+    def test_no_inherit_from_short_session(self):
+        """Don't inherit from sessions with < 10 actions."""
+        from soma.hooks.common import _inherit_baseline
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        engine.register_agent("cc-short", tools=CLAUDE_TOOLS)
+        engine._agents["cc-short"].action_count = 5
+
+        engine.register_agent("cc-new", tools=CLAUDE_TOOLS)
+        _inherit_baseline(engine, "cc-new")
+
+        new = engine._agents["cc-new"]
+        assert new.baseline.get_count("uncertainty") == 0
+
+    def test_cleanup_old_agents(self):
+        """Should keep only N most active agents + current."""
+        from soma.hooks.common import _cleanup_old_agents
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        for i in range(5):
+            aid = f"cc-{i}"
+            engine.register_agent(aid, tools=CLAUDE_TOOLS)
+            engine._agents[aid].action_count = i * 10
+
+        engine.register_agent("cc-current", tools=CLAUDE_TOOLS)
+        _cleanup_old_agents(engine, "cc-current", keep=2)
+
+        remaining = set(engine._agents.keys())
+        # Should keep cc-current + 2 most active (cc-4=40, cc-3=30)
+        assert "cc-current" in remaining
+        assert "cc-4" in remaining
+        assert "cc-3" in remaining
+        assert "cc-0" not in remaining
+        assert "cc-1" not in remaining
+
+    def test_cleanup_noop_when_few_agents(self):
+        """Cleanup should not remove anything if <= keep agents exist."""
+        from soma.hooks.common import _cleanup_old_agents
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        engine.register_agent("cc-1", tools=CLAUDE_TOOLS)
+        engine.register_agent("cc-current", tools=CLAUDE_TOOLS)
+
+        _cleanup_old_agents(engine, "cc-current", keep=2)
+        assert "cc-1" in engine._agents

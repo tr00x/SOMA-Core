@@ -96,7 +96,67 @@ def get_engine():
     except Exception:
         engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
 
+        # Inherit baseline from most recent session (cross-session memory)
+        _inherit_baseline(engine, agent_id)
+
+        # Clean up dead sessions (keep only this one + last 2)
+        _cleanup_old_agents(engine, agent_id, keep=2)
+
     return engine, agent_id
+
+
+def _inherit_baseline(engine, new_agent_id: str) -> None:
+    """Copy baseline from the most active previous session.
+
+    This gives the new session a warm start — SOMA already knows what
+    'normal' looks like for this user instead of starting cold.
+    """
+    try:
+        best_id = None
+        best_count = 0
+        for aid, s in engine._agents.items():
+            if aid == new_agent_id or aid == "default":
+                continue
+            if s.action_count > best_count:
+                best_count = s.action_count
+                best_id = aid
+
+        if best_id and best_count >= 10:
+            donor = engine._agents[best_id]
+            new_agent = engine._agents[new_agent_id]
+
+            # Copy baseline (the learned signal averages)
+            from soma.baseline import Baseline
+            new_agent.baseline = Baseline.from_dict(donor.baseline.to_dict())
+
+            # Copy baseline behavior vector (for drift detection)
+            if donor.baseline_vector is not None:
+                new_agent.baseline_vector = list(donor.baseline_vector)
+
+            # Copy known tools
+            new_agent.known_tools = list(donor.known_tools)
+    except Exception:
+        pass  # Never crash
+
+
+def _cleanup_old_agents(engine, current_id: str, keep: int = 2) -> None:
+    """Remove old session agents, keeping only the N most active + current."""
+    try:
+        agents = {
+            aid: s for aid, s in engine._agents.items()
+            if aid != current_id and aid != "default"
+        }
+        if len(agents) <= keep:
+            return
+
+        # Sort by action_count descending, keep top N
+        sorted_agents = sorted(agents.items(), key=lambda x: x[1].action_count, reverse=True)
+        to_remove = [aid for aid, _ in sorted_agents[keep:]]
+        for aid in to_remove:
+            del engine._agents[aid]
+            engine._graph._nodes.pop(aid, None)
+    except Exception:
+        pass  # Never crash
 
 
 def save_state(engine):
