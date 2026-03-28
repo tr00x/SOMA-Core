@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "soma-core"
+version = "0.1.0"
+description = "Behavioral monitoring and directive control for AI agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Tim Hunt", email = "tr00x@users.noreply.github.com" }]
+keywords = ["ai", "agents", "monitoring", "observability", "behavioral"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.optional-dependencies]
+dashboard = ["textual>=3.0"]
+otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
+dev = ["pytest>=8.0", "pytest-cov"]
+all = ["soma-core[dashboard,otel,dev]"]
+
+[project.scripts]
+soma = "soma.dashboard:run"
+
+[project.urls]
+Homepage = "https://github.com/tr00x/soma-core"
+Repository = "https://github.com/tr00x/soma-core"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soma"]
