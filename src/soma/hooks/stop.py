@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from soma.hooks.common import get_engine, save_state, ACTION_LOG_PATH
+from soma.hooks.common import get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH
 
 
 def main():
@@ -19,9 +19,10 @@ def main():
 
     save_state(engine)
 
-    # Clean up action log — next session starts fresh
+    # Clean up session artifacts — next session starts fresh
     try:
         ACTION_LOG_PATH.unlink(missing_ok=True)
+        PREDICTOR_PATH.unlink(missing_ok=True)
     except OSError:
         pass
 

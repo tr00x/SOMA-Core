@@ -13,6 +13,7 @@ SOMA_DIR = Path.home() / ".soma"
 ENGINE_STATE_PATH = SOMA_DIR / "engine_state.json"
 STATE_PATH = SOMA_DIR / "state.json"
 ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
+PREDICTOR_PATH = SOMA_DIR / "predictor.json"
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -167,6 +168,28 @@ def save_state(engine):
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         engine.export_state(str(STATE_PATH))
         save_engine_state(engine, str(ENGINE_STATE_PATH))
+    except Exception:
+        pass
+
+
+def get_predictor():
+    """Load or create predictor for this session."""
+    try:
+        from soma.predictor import PressurePredictor
+        if PREDICTOR_PATH.exists():
+            data = json.loads(PREDICTOR_PATH.read_text())
+            return PressurePredictor.from_dict(data)
+        return PressurePredictor()
+    except Exception:
+        from soma.predictor import PressurePredictor
+        return PressurePredictor()
+
+
+def save_predictor(predictor) -> None:
+    """Persist predictor state."""
+    try:
+        SOMA_DIR.mkdir(parents=True, exist_ok=True)
+        PREDICTOR_PATH.write_text(json.dumps(predictor.to_dict()))
     except Exception:
         pass
 

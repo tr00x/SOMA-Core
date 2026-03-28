@@ -1352,3 +1352,83 @@ class TestCrossSessionMemory:
 
         _cleanup_old_agents(engine, "cc-current", keep=2)
         assert "cc-1" in engine._agents
+
+
+# ──────────────────────────────────────────────────────────────────
+# Predictor
+# ──────────────────────────────────────────────────────────────────
+
+class TestPredictor:
+    """Tests for anomaly prediction."""
+
+    def test_stable_pressure_no_escalation(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor(window=10, horizon=5)
+        for _ in range(10):
+            p.update(0.10)
+        pred = p.predict(next_threshold=0.25)
+        assert not pred.will_escalate
+        assert pred.dominant_reason == "stable"
+
+    def test_rising_pressure_predicts_escalation(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor(window=10, horizon=5)
+        # Simulate steadily rising pressure
+        for i in range(10):
+            p.update(0.05 + i * 0.03)  # 0.05 → 0.32
+        pred = p.predict(next_threshold=0.40)
+        assert pred.predicted_pressure > 0.30
+        assert pred.dominant_reason == "trend"
+
+    def test_error_streak_boosts_prediction(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor(window=10, horizon=5)
+        for i in range(5):
+            p.update(0.15, {"tool": "Read", "error": False, "file": ""})
+        # Now 3 errors in a row
+        for i in range(3):
+            p.update(0.18, {"tool": "Bash", "error": True, "file": ""})
+        pred = p.predict(next_threshold=0.25)
+        assert pred.predicted_pressure > 0.18  # Boosted by pattern
+
+    def test_blind_writes_boost(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor(window=10, horizon=5)
+        for i in range(5):
+            p.update(0.15, {"tool": "Read", "error": False, "file": ""})
+        p.update(0.16, {"tool": "Write", "error": False, "file": "a.py"})
+        p.update(0.17, {"tool": "Write", "error": False, "file": "b.py"})
+        pred = p.predict(next_threshold=0.25)
+        assert pred.predicted_pressure > 0.17
+
+    def test_serialization(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor(window=10, horizon=5)
+        for i in range(5):
+            p.update(0.1 * i, {"tool": "Read", "error": False, "file": ""})
+
+        data = p.to_dict()
+        p2 = PressurePredictor.from_dict(data)
+        assert p2._pressures == p._pressures
+        assert len(p2._action_log) == len(p._action_log)
+
+    def test_empty_predictor(self):
+        from soma.predictor import PressurePredictor
+        p = PressurePredictor()
+        pred = p.predict(next_threshold=0.25)
+        assert not pred.will_escalate
+        assert pred.predicted_pressure == 0.0
+
+    def test_confidence_increases_with_samples(self):
+        from soma.predictor import PressurePredictor
+        p1 = PressurePredictor(window=10, horizon=5)
+        p1.update(0.1)
+        p1.update(0.2)
+        pred1 = p1.predict(next_threshold=0.5)
+
+        p2 = PressurePredictor(window=10, horizon=5)
+        for i in range(10):
+            p2.update(0.1 + i * 0.01)
+        pred2 = p2.predict(next_threshold=0.5)
+
+        assert pred2.confidence > pred1.confidence

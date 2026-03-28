@@ -152,6 +152,23 @@ def main():
         e = vitals.get("error_rate", 0)
         lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
 
+        # Prediction — warn before escalation
+        try:
+            from soma.hooks.common import get_predictor
+            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
+            predictor = get_predictor()
+            if predictor._pressures:
+                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
+                if thresholds:
+                    pred = predictor.predict(thresholds[0])
+                    if pred.will_escalate:
+                        lines.append(
+                            f"[predict] escalation likely in ~{pred.actions_ahead} actions "
+                            f"({pred.dominant_reason}, conf={pred.confidence:.0%}) — slow down"
+                        )
+        except Exception:
+            pass  # Prediction is optional
+
         # Actionable tips — the main value add
         if tips:
             for tip in tips:
