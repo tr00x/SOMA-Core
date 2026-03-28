@@ -79,6 +79,9 @@ class LearningEngine:
         # (old_level, new_level) → count of resolved failures for that transition
         self._failure_counts: dict[tuple[Level, Level], int] = {}
 
+        # (old_level, new_level) → count of resolved successes for that transition
+        self._success_counts: dict[tuple[Level, Level], int] = {}
+
         # (old_level, new_level) → cumulative threshold shift applied so far
         self._threshold_adjustments: dict[tuple[Level, Level], float] = {}
 
@@ -141,11 +144,13 @@ class LearningEngine:
 
         # Window reached — resolve.
         delta = record.pressure - current_pressure
+        key = _transition_key(record.old_level, record.new_level)
         if delta > 0:
             outcome = InterventionOutcome.SUCCESS
+            self._success_counts[key] = self._success_counts.get(key, 0) + 1
+            self._on_success(key, record.trigger_signals)
         else:
             outcome = InterventionOutcome.FAILURE
-            key = _transition_key(record.old_level, record.new_level)
             # Increment failure count before calling _on_failure so it sees
             # the current failure included in the total.
             self._failure_counts[key] = self._failure_counts.get(key, 0) + 1
@@ -170,6 +175,7 @@ class LearningEngine:
         self._pending.clear()
         self._history.clear()
         self._failure_counts.clear()
+        self._success_counts.clear()
         self._threshold_adjustments.clear()
         self._weight_adjustments.clear()
 
@@ -190,6 +196,10 @@ class LearningEngine:
             "failure_counts": {
                 f"{k[0].name}->{k[1].name}": v
                 for k, v in self._failure_counts.items()
+            },
+            "success_counts": {
+                f"{k[0].name}->{k[1].name}": v
+                for k, v in self._success_counts.items()
             },
             "pending": {
                 agent_id: [_record_to_dict(r) for r in records]
@@ -222,11 +232,67 @@ class LearningEngine:
             obj._failure_counts[
                 (Level[old_name], Level[new_name])
             ] = v
+        for key_str, v in data.get("success_counts", {}).items():
+            old_name, new_name = key_str.split("->")
+            obj._success_counts[
+                (Level[old_name], Level[new_name])
+            ] = v
         return obj
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _adaptive_step(self, key: tuple[Level, Level], is_failure: bool) -> float:
+        """Compute adaptive step size based on consecutive same-type outcomes.
+
+        More consecutive same-type outcomes → larger step (up to 3x base).
+        This makes the system converge faster on clear patterns.
+        """
+        failures = self._failure_counts.get(key, 0)
+        successes = self._success_counts.get(key, 0)
+        total = failures + successes
+        if total == 0:
+            return self.threshold_adj_step
+
+        if is_failure:
+            ratio = failures / total
+        else:
+            ratio = successes / total
+
+        # Scale: 1x at 50/50, up to 3x at 100% same type
+        multiplier = 1.0 + 2.0 * max(0, ratio - 0.5)
+        return self.threshold_adj_step * multiplier
+
+    def _on_success(
+        self,
+        key: tuple[Level, Level],
+        signals: dict[str, float],
+    ) -> None:
+        """React to a confirmed success for transition *key*.
+
+        On success: slightly lower the threshold (the escalation was warranted,
+        so we can be a bit more sensitive) and recover signal weights.
+        """
+        success_count = self._success_counts.get(key, 0)
+        if success_count < self.min_interventions:
+            return
+
+        step = self._adaptive_step(key, is_failure=False)
+
+        # Lower threshold slightly (make escalation easier since it worked)
+        current_shift = self._threshold_adjustments.get(key, 0.0)
+        # Don't go below -max_threshold_shift (don't make system too sensitive)
+        new_shift = max(current_shift - step * 0.5, -self.max_threshold_shift)
+        self._threshold_adjustments[key] = new_shift
+
+        # Recover signal weights toward zero (restore original sensitivity)
+        for signal in signals:
+            current_adj = self._weight_adjustments.get(signal, 0.0)
+            if current_adj < 0:
+                # Recover at half speed of decay
+                recovery = min(self.weight_adj_step * 0.5, abs(current_adj))
+                self._weight_adjustments[signal] = current_adj + recovery
 
     def _on_failure(
         self,
@@ -237,26 +303,25 @@ class LearningEngine:
 
         The failure count for *key* has already been incremented by the caller.
         If the total count is below *min_interventions*, skip adjustments.
-        Otherwise raise the threshold for this transition (capped) and lower
-        all signal weights (floored at *min_weight*).
+        Otherwise raise the threshold (adaptive step) and lower signal weights.
         """
         failure_count = self._failure_counts.get(key, 0)
         if failure_count < self.min_interventions:
             return
 
+        step = self._adaptive_step(key, is_failure=True)
+
         # Raise threshold (capped at max_threshold_shift).
         current_shift = self._threshold_adjustments.get(key, 0.0)
-        new_shift = min(current_shift + self.threshold_adj_step, self.max_threshold_shift)
+        new_shift = min(current_shift + step, self.max_threshold_shift)
         self._threshold_adjustments[key] = new_shift
 
         # Lower each triggering signal weight, floored so the effective weight
-        # never drops below min_weight.  The original weight is the value stored
-        # in the trigger_signals dict for that signal.
+        # never drops below min_weight.
         for signal, original_weight in signals.items():
             current_adj = self._weight_adjustments.get(signal, 0.0)
             new_adj = current_adj - self.weight_adj_step
             # Floor: effective weight = original_weight + adj >= min_weight
-            # => adj >= min_weight - original_weight
             floor = self.min_weight - original_weight
             new_adj = max(new_adj, floor)
             self._weight_adjustments[signal] = new_adj
