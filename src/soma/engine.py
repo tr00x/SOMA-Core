@@ -6,13 +6,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from soma.types import Action, Level, AutonomyMode, VitalsSnapshot, AgentConfig, DriftMode
+from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
     compute_uncertainty, compute_drift, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
+    sigmoid_clamp,
 )
 from soma.baseline import Baseline
-from soma.pressure import compute_signal_pressure, compute_aggregate_pressure
+from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
 from soma.budget import MultiBudget
 from soma.ladder import Ladder
 from soma.graph import PressureGraph
@@ -77,9 +79,13 @@ class SOMAEngine:
         self._graph.add_edge(source, target, trust_weight)
 
     def get_level(self, agent_id: str) -> Level:
+        if agent_id not in self._agents:
+            raise AgentNotFound(agent_id)
         return self._agents[agent_id].ladder.current
 
     def get_snapshot(self, agent_id: str) -> dict[str, Any]:
+        if agent_id not in self._agents:
+            raise AgentNotFound(agent_id)
         s = self._agents[agent_id]
         return {
             "level": s.ladder.current,
@@ -93,7 +99,46 @@ class SOMAEngine:
             "budget_health": self._budget.health(),
         }
 
+    def export_state(self, path: str | None = None) -> None:
+        """Write current state to JSON file for dashboard polling."""
+        import json
+        from pathlib import Path
+
+        if path is None:
+            state_dir = Path.home() / ".soma"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            path = str(state_dir / "state.json")
+
+        state = {
+            "agents": {},
+            "budget": {
+                "health": self._budget.health(),
+                "limits": self._budget.limits,
+                "spent": self._budget.spent,
+            },
+        }
+
+        for agent_id, s in self._agents.items():
+            state["agents"][agent_id] = {
+                "level": s.ladder.current.name,
+                "pressure": self._graph.get_effective_pressure(agent_id),
+                "vitals": {
+                    "uncertainty": s.baseline.get("uncertainty"),
+                    "drift": s.baseline.get("drift"),
+                    "error_rate": s.baseline.get("error_rate"),
+                },
+                "action_count": s.action_count,
+            }
+
+        Path(path).write_text(json.dumps(state, indent=2))
+
+        # Also persist full engine state for restart recovery
+        from soma.persistence import save_engine_state
+        save_engine_state(self)
+
     def record_action(self, agent_id: str, action: Action) -> ActionResult:
+        if agent_id not in self._agents:
+            raise AgentNotFound(agent_id)
         s = self._agents[agent_id]
 
         # Track tool
@@ -120,6 +165,20 @@ class SOMAEngine:
             drift = compute_drift(actions, s.baseline_vector, s.known_tools)
         if s.action_count % 10 == 0 or s.baseline_vector is None:
             s.baseline_vector = current_vec
+
+        # Time anomaly: if this action took much longer than average
+        if action.duration_sec > 0 and s.action_count > 5:
+            avg_duration = s.baseline.get("duration")
+            std_duration = s.baseline.get_std("duration")
+            if avg_duration > 0:
+                time_deviation = (action.duration_sec - avg_duration) / max(std_duration, 0.1)
+                if time_deviation > 2.0:  # > 2 std devs slower
+                    # Boost uncertainty proportionally
+                    time_boost = min(sigmoid_clamp(time_deviation) * 0.3, 0.3)
+                    uncertainty = min(1.0, uncertainty + time_boost)
+
+        # Also update duration baseline
+        s.baseline.update("duration", action.duration_sec)
 
         # 2. Resource vitals
         error_count = sum(1 for a in actions if a.error)
@@ -171,8 +230,23 @@ class SOMAEngine:
             "token_usage": rv.token_usage,
         }
 
-        # 6. Aggregate
-        internal = compute_aggregate_pressure(signal_pressures, drift_mode)
+        # Add burn rate pressure
+        if self._budget.health() < 1.0:
+            # If burning faster than sustainable, add pressure
+            for dim in self._budget.limits:
+                overshoot = self._budget.projected_overshoot(dim, estimated_total_steps=100, current_step=s.action_count)
+                if overshoot > 0:
+                    signal_pressures["burn_rate"] = min(overshoot, 1.0)
+                    break
+
+        # Apply learning adjustments to weights
+        adjusted_weights = dict(DEFAULT_WEIGHTS)
+        for signal in adjusted_weights:
+            adj = self._learning.get_weight_adjustment(signal)
+            adjusted_weights[signal] = max(0.2, adjusted_weights[signal] + adj)
+
+        # 6. Aggregate with adjusted weights
+        internal = compute_aggregate_pressure(signal_pressures, drift_mode, weights=adjusted_weights)
 
         # 7. Budget
         spend_kwargs = {}
@@ -188,6 +262,10 @@ class SOMAEngine:
         self._graph.propagate()
         effective = self._graph.get_effective_pressure(agent_id)
 
+        # Grace period: don't penalize during cold start
+        if s.action_count <= s.baseline.min_samples:
+            effective = 0.0
+
         # 9. Trust
         if uncertainty > 0.5:
             self._graph.decay_trust(agent_id, uncertainty)
@@ -196,7 +274,14 @@ class SOMAEngine:
 
         # 10. Ladder
         old_level = s.ladder.current
-        new_level = s.ladder.evaluate(effective, self._budget.health())
+        # Build threshold_adjustments dict keyed by "OLD->NEW" for all escalation transitions
+        _non_safe_levels = [lv for lv in Level if lv is not Level.SAFE_MODE]
+        threshold_adjustments = {
+            f"{old_lv.name}->{new_lv.name}": self._learning.get_threshold_adjustment(old_lv, new_lv)
+            for old_lv in _non_safe_levels
+            for new_lv in _non_safe_levels
+        }
+        new_level = s.ladder.evaluate_with_adjustments(effective, self._budget.health(), threshold_adjustments)
 
         # 11. Events + Learning
         if new_level != old_level:

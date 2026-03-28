@@ -53,8 +53,8 @@ LEVEL_CSS_CLASS = {
 class AgentCard(Static):
     DEFAULT_CSS = """
     AgentCard {
-        width: 1fr; height: auto; min-height: 10;
-        background: #141414; border: round #333; padding: 1 2; margin: 1;
+        width: 1fr; height: auto; min-height: 5;
+        background: #141414; border: round #333; padding: 0 1; margin: 1;
     }
     AgentCard.healthy    { border: round #22c55e; }
     AgentCard.caution    { border: round #eab308; }
@@ -67,7 +67,7 @@ class AgentCard(Static):
     def __init__(self, agent_id: str) -> None:
         super().__init__()
         self.agent_id = agent_id
-        self._text = f"[bold]{agent_id}[/bold]\n\n  No data yet"
+        self._text = f"[bold]{agent_id}[/bold]  No data yet"
 
     def update_vitals(self, level, pressure, uncertainty, drift, error_rate, action_count=0):
         color = LEVEL_COLORS.get(level, "white")
@@ -77,22 +77,14 @@ class AgentCard(Static):
         filled = min(int(pressure * bar_len), bar_len)
         bar = f"[{color}]{'█' * filled}[/]{'░' * (bar_len - filled)}"
 
-        def mini(val, w=10):
-            f = min(int(val * w), w)
-            return f"{'█' * f}{'░' * (w - f)}"
-
         for cls in LEVEL_CSS_CLASS.values():
             self.remove_class(cls)
         self.add_class(LEVEL_CSS_CLASS.get(level, "healthy"))
 
         self._text = (
-            f"[bold]{self.agent_id}[/bold]  [dim]#{action_count}[/dim]\n"
-            f"\n"
-            f"  Status:      [{color} bold]{label} ({level.name})[/]\n"
-            f"  Pressure:    {bar}  {pressure:.1%}\n"
-            f"  Uncertainty: [#888]{mini(uncertainty)}[/]  {uncertainty:.3f}\n"
-            f"  Drift:       [#888]{mini(drift)}[/]  {drift:.3f}\n"
-            f"  Errors:      [#888]{mini(error_rate)}[/]  {error_rate:.3f}\n"
+            f"[bold]{self.agent_id}[/bold] [dim]#{action_count}[/dim]  [{color} bold]{label}[/]\n"
+            f"{bar}  {pressure:.0%}\n"
+            f"[dim]u={uncertainty:.2f}  d={drift:.2f}  e={error_rate:.2f}[/]"
         )
         self.update(self._text)
 
@@ -116,10 +108,6 @@ class DashboardTab(TabPane):
         self._timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(
-            "[bold]SOMA Dashboard[/bold]  [dim]Live agent monitoring[/dim]",
-            id="dash-title",
-        )
         yield Horizontal(id="dash-agents")
         yield Static("  EVENTS", id="dash-log-label")
         yield RichLog(id="dash-log", markup=True, wrap=True)

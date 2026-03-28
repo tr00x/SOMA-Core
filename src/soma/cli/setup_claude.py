@@ -60,37 +60,6 @@ def run_setup_claude() -> None:
     soma_dir.mkdir(parents=True, exist_ok=True)
     changes.append(f"Created {soma_dir}")
 
-    # 3b. Install Claude Code hooks in settings.json
-    settings_path = Path.home() / ".claude" / "settings.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, IOError):
-            settings = {}
-
-    hook_cmd = "python3 -m soma.hooks.claude_code"
-    hooks = settings.get("hooks", {})
-    hooks_changed = False
-
-    for hook_type in ["PreToolUse", "PostToolUse", "PostMessage", "Stop"]:
-        hook_list = hooks.get(hook_type, [])
-        # Check if SOMA hook already installed
-        soma_installed = any("soma" in str(h.get("command", "")) for h in hook_list)
-        if not soma_installed:
-            hook_list.append({
-                "command": f"CLAUDE_HOOK={hook_type} {hook_cmd}",
-            })
-            hooks[hook_type] = hook_list
-            hooks_changed = True
-
-    if hooks_changed:
-        settings["hooks"] = hooks
-        settings_path.write_text(json.dumps(settings, indent=2))
-        changes.append("Installed SOMA hooks in ~/.claude/settings.json (PreToolUse, PostToolUse, PostMessage, Stop)")
-
     # 4. Create a slash command for Claude Code
     commands_dir = Path(".claude") / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)

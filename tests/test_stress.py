@@ -161,11 +161,14 @@ def test_sudden_spike_then_recovery():
 def test_contagion_agent_b_pressure_increases():
     """Agent A (bad) connected to B; B's pressure should exceed what it
     would have without the edge."""
-    # --- Baseline: B alone (no edge) ---
+    # --- Baseline: B alone (no edge), warmed up past grace period ---
     engine_solo = SOMAEngine(budget={"tokens": 500_000})
     engine_solo.register_agent("B_solo")
+    # Warm B_solo past the grace period (min_samples=10)
+    for i in range(10):
+        engine_solo.record_action("B_solo", _normal_action(i))
     result_solo = engine_solo.record_action(
-        "B_solo", _normal_action(0)
+        "B_solo", _normal_action(10)
     )
     solo_pressure = result_solo.pressure
 
@@ -179,8 +182,12 @@ def test_contagion_agent_b_pressure_increases():
     for i in range(15):
         engine.record_action("A", _error_action(i))
 
-    # B performs a single normal action after A is bad
-    result_b = engine.record_action("B", _normal_action(0))
+    # Warm B past the grace period with normal actions
+    for i in range(10):
+        engine.record_action("B", _normal_action(i))
+
+    # B performs one more normal action after A is bad and grace period is over
+    result_b = engine.record_action("B", _normal_action(10))
     b_pressure_with_edge = result_b.pressure
 
     # B's pressure should be higher with the edge than without

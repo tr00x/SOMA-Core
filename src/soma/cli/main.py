@@ -22,13 +22,16 @@ def _cmd_replay(args: argparse.Namespace) -> None:
     from soma.replay import replay_session
 
     recording_path: str = args.file
-    with open(recording_path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
 
-    recording = SessionRecorder.load(data) if hasattr(SessionRecorder, "load") else SessionRecorder.from_dict(data)
-    results = replay_session(recording)
-    for i, result in enumerate(results, start=1):
-        print(f"  [{i:>4}] level={result.level.name}  pressure={result.pressure:.3f}")
+    try:
+        from soma.cli.replay_cli import run_replay_cli
+        run_replay_cli(recording_path)
+    except ImportError:
+        # Fallback: basic replay
+        recording = SessionRecorder.load(recording_path)
+        results = replay_session(recording)
+        for i, result in enumerate(results, start=1):
+            print(f"  [{i:>4}] level={result.level.name}  pressure={result.pressure:.3f}")
 
 
 def _cmd_version(_args: argparse.Namespace) -> None:
@@ -45,11 +48,24 @@ def _cmd_init(_args: argparse.Namespace) -> None:
 
 
 def _cmd_tui() -> None:
+    from pathlib import Path
+    # First run? Auto-wizard
+    if not Path("soma.toml").exists() and not (Path.home() / ".soma" / "state.json").exists():
+        print()
+        print("  Welcome to SOMA!")
+        print("  The nervous system for AI agents.")
+        print()
+        print("  Looks like this is your first time. Let's set things up.")
+        print()
+        from soma.cli.wizard import run_wizard
+        run_wizard()
+        return
+    # Otherwise open hub
     try:
         from soma.cli.hub import run_hub
         run_hub()
     except ImportError:
-        print("soma TUI not available. Install the dashboard extra: pip install soma-core[dashboard]")
+        print("Install dashboard: pip install soma-core[dashboard]")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -75,6 +91,9 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded session file")
     replay_parser.add_argument("file", help="Path to the session recording file (JSON)")
 
+    # setup-claude
+    subparsers.add_parser("setup-claude", help="Set up SOMA for Claude Code projects")
+
     # version
     subparsers.add_parser("version", help="Print the SOMA version and exit")
 
@@ -95,6 +114,7 @@ def main() -> None:
         "init": _cmd_init,
         "status": _cmd_status,
         "replay": _cmd_replay,
+        "setup-claude": lambda _: __import__("soma.cli.setup_claude", fromlist=["run_setup_claude"]).run_setup_claude(),
         "version": _cmd_version,
     }
 

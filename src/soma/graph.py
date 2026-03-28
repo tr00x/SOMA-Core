@@ -84,25 +84,32 @@ class PressureGraph:
     # Propagation
     # ------------------------------------------------------------------
 
-    def propagate(self) -> None:
-        for node_id, node in self._nodes.items():
-            incoming_edges = self._edges[node_id]
-            if not incoming_edges:
-                node.effective_pressure = node.internal_pressure
-                continue
+    def propagate(self, max_iterations: int = 3) -> None:
+        """Multi-pass propagation until stable or max iterations."""
+        for _ in range(max_iterations):
+            changed = False
+            for node_id, node in self._nodes.items():
+                old_effective = node.effective_pressure
+                incoming_edges = self._edges[node_id]
+                if not incoming_edges:
+                    node.effective_pressure = node.internal_pressure
+                else:
+                    total_weight = sum(e.trust_weight for e in incoming_edges)
+                    if total_weight == 0.0:
+                        weighted_avg = 0.0
+                    else:
+                        weighted_avg = sum(
+                            e.trust_weight * self._nodes[e.source].effective_pressure
+                            for e in incoming_edges
+                        ) / total_weight
 
-            total_weight = sum(e.trust_weight for e in incoming_edges)
-            if total_weight == 0.0:
-                weighted_avg = 0.0
-            else:
-                weighted_avg = sum(
-                    e.trust_weight * self._nodes[e.source].internal_pressure
-                    for e in incoming_edges
-                ) / total_weight
-
-            node.effective_pressure = max(
-                node.internal_pressure, self.damping * weighted_avg
-            )
+                    node.effective_pressure = max(
+                        node.internal_pressure, self.damping * weighted_avg
+                    )
+                if abs(node.effective_pressure - old_effective) > 1e-6:
+                    changed = True
+            if not changed:
+                break
 
     # ------------------------------------------------------------------
     # Trust mutation
@@ -149,3 +156,19 @@ class PressureGraph:
             ],
             "edges": edges,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PressureGraph":
+        obj = cls(
+            damping=data.get("damping", 0.6),
+            decay_rate=data.get("decay_rate", 0.05),
+            recovery_rate=data.get("recovery_rate", 0.02),
+        )
+        for node_data in data.get("nodes", []):
+            agent_id = node_data["agent_id"]
+            obj.add_agent(agent_id)
+            obj._nodes[agent_id].internal_pressure = node_data.get("internal_pressure", 0.0)
+            obj._nodes[agent_id].effective_pressure = node_data.get("effective_pressure", 0.0)
+        for edge_data in data.get("edges", []):
+            obj.add_edge(edge_data["source"], edge_data["target"], edge_data.get("trust_weight", 1.0))
+        return obj

@@ -106,6 +106,74 @@ class Ladder:
             return False
         return level in (Level.QUARANTINE, Level.RESTART, Level.SAFE_MODE)
 
+    def evaluate_with_adjustments(
+        self,
+        pressure: float,
+        budget_health: float,
+        threshold_adjustments: dict[str, float] | None = None,
+    ) -> Level:
+        """Like evaluate(), but applies learned threshold adjustments before checking.
+
+        *threshold_adjustments* maps a transition key string such as
+        ``"HEALTHY->CAUTION"`` to a float shift that is **added** to the
+        escalation threshold for that step.  This lets the learning engine raise
+        thresholds for transitions that have historically been false alarms.
+        """
+        if not threshold_adjustments:
+            return self.evaluate(pressure, budget_health)
+
+        # Build an adjusted copy of THRESHOLDS keyed by level index.
+        # Threshold adjustment keys are "<OLD_LEVEL_NAME>-><NEW_LEVEL_NAME>".
+        adjusted_thresholds = list(THRESHOLDS)
+        for i, level in enumerate(_ESCALATION_LEVELS):
+            if i == 0:
+                continue  # HEALTHY has no escalation transition into it
+            prev_level = _ESCALATION_LEVELS[i - 1]
+            key = f"{prev_level.name}->{level.name}"
+            shift = threshold_adjustments.get(key, 0.0)
+            if shift:
+                esc, de = adjusted_thresholds[i]
+                adjusted_thresholds[i] = (esc + shift, de + shift)
+
+        # Temporarily swap THRESHOLDS, evaluate, then restore.
+        # We do this by reimplementing the core logic inline to avoid mutation.
+        # --- safe-mode (delegate to normal evaluate so state is managed) ---
+        if budget_health <= 0.0:
+            self._in_safe_mode = True
+
+        if self._in_safe_mode:
+            if budget_health > SAFE_MODE_EXIT:
+                self._in_safe_mode = False
+                self._current = Level.HEALTHY
+            else:
+                self._current = Level.SAFE_MODE
+                return self._current
+
+        if self._forced is not None:
+            self._current = self._forced
+            return self._current
+
+        target_index = 0
+        for i, (esc_thresh, _) in enumerate(adjusted_thresholds):
+            if pressure >= esc_thresh:
+                target_index = i
+
+        target = _ESCALATION_LEVELS[target_index]
+        current_index = (
+            _ESCALATION_LEVELS.index(self._current)
+            if self._current in _ESCALATION_LEVELS
+            else 0
+        )
+
+        if target > self._current:
+            self._current = target
+        elif target < self._current:
+            _, de_thresh = adjusted_thresholds[current_index]
+            if pressure < de_thresh:
+                self._current = _ESCALATION_LEVELS[current_index - 1]
+
+        return self._current
+
     def force_level(self, level: Level | None) -> None:
         """Manually override the current level. Pass None to clear."""
         self._forced = level
