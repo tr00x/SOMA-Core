@@ -1,12 +1,10 @@
 [run]
 source = soma
 omit =
+    src/soma/dashboard/*
     src/soma/cli/tabs/*
     src/soma/cli/hub.py
     src/soma/hooks/*
-    src/soma/daemon.py
-    src/soma/inbox.py
-    src/soma/commands.py
 
 [report]
 exclude_lines =

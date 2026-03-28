@@ -1,3 +1,4 @@
+# Legacy store protocol. Use soma.persistence for engine state.
 """Store abstractions: Protocol, InMemoryStore, JSONFileStore."""
 
 from __future__ import annotations

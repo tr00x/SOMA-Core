@@ -1,6 +1,6 @@
 """SOMA Core — Behavioral monitoring and directive control for AI agents."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from soma.types import (
     Action, Level, AutonomyMode, DriftMode,
@@ -20,7 +20,15 @@ def quickstart(budget=None, agents=None):
     Usage:
         engine = soma.quickstart(budget={"tokens": 50000}, agents=["agent-1", "agent-2"])
     """
-    engine = SOMAEngine(budget=budget or {"tokens": 100_000})
+    if budget is None:
+        try:
+            from soma.cli.config_loader import load_config
+            config = load_config()
+            budget_cfg = config.get("budget", {})
+            budget = {k: v for k, v in budget_cfg.items() if v}
+        except Exception:
+            pass
+    engine = SOMAEngine(budget=budget or {"tokens": 100_000}, auto_export=True)
     for agent_id in (agents or ["default"]):
         engine.register_agent(agent_id)
     return engine

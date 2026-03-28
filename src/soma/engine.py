@@ -27,6 +27,7 @@ class ActionResult:
     level: Level
     pressure: float
     vitals: VitalsSnapshot
+    context_action: str = "pass"
 
 
 class _AgentState:
@@ -46,12 +47,23 @@ class _AgentState:
 class SOMAEngine:
     """Main SOMA pipeline. Records actions, computes vitals -> pressure -> level."""
 
-    def __init__(self, budget: dict[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        budget: dict[str, float] | None = None,
+        auto_export: bool = False,
+        state_path: str | None = None,
+        custom_weights: dict | None = None,
+        custom_thresholds: dict | None = None,
+    ) -> None:
         self._agents: dict[str, _AgentState] = {}
         self._budget = MultiBudget(budget or {"tokens": 100_000})
         self._graph = PressureGraph()
         self._learning = LearningEngine()
         self._events = EventBus()
+        self._auto_export = auto_export
+        self._state_path = state_path
+        self._custom_weights = custom_weights
+        self._custom_thresholds = custom_thresholds
 
     @property
     def events(self) -> EventBus:
@@ -135,6 +147,38 @@ class SOMAEngine:
         # Also persist full engine state for restart recovery
         from soma.persistence import save_engine_state
         save_engine_state(self)
+
+    def approve_escalation(self, agent_id: str) -> Level:
+        """Human approves pending escalation. Re-evaluates and applies."""
+        s = self._agents[agent_id]
+        snap = self.get_snapshot(agent_id)
+        new_level = s.ladder.evaluate(snap["pressure"], self._budget.health())
+        return new_level
+
+    @classmethod
+    def from_config(cls, config: dict | None = None) -> "SOMAEngine":
+        """Create engine from soma.toml config."""
+        if config is None:
+            from soma.cli.config_loader import load_config
+            config = load_config()
+
+        budget = {}
+        budget_cfg = config.get("budget", {})
+        if "tokens" in budget_cfg:
+            budget["tokens"] = budget_cfg["tokens"]
+        if "cost_usd" in budget_cfg:
+            budget["cost_usd"] = budget_cfg["cost_usd"]
+
+        custom_weights = config.get("weights") or None
+        custom_thresholds = config.get("thresholds") or None
+
+        engine = cls(
+            budget=budget or {"tokens": 100_000},
+            auto_export=True,
+            custom_weights=custom_weights,
+            custom_thresholds=custom_thresholds,
+        )
+        return engine
 
     def record_action(self, agent_id: str, action: Action) -> ActionResult:
         if agent_id not in self._agents:
@@ -239,9 +283,12 @@ class SOMAEngine:
                     signal_pressures["burn_rate"] = min(overshoot, 1.0)
                     break
 
-        # Apply learning adjustments to weights
+        # Apply learning adjustments to weights, using custom_weights as base if set
+        base_weights = dict(self._custom_weights) if self._custom_weights else dict(DEFAULT_WEIGHTS)
+        # Merge: custom overrides defaults, learning adjustments applied on top
         adjusted_weights = dict(DEFAULT_WEIGHTS)
-        for signal in adjusted_weights:
+        adjusted_weights.update(base_weights)
+        for signal in list(adjusted_weights):
             adj = self._learning.get_weight_adjustment(signal)
             adjusted_weights[signal] = max(0.2, adjusted_weights[signal] + adj)
 
@@ -281,7 +328,26 @@ class SOMAEngine:
             for old_lv in _non_safe_levels
             for new_lv in _non_safe_levels
         }
-        new_level = s.ladder.evaluate_with_adjustments(effective, self._budget.health(), threshold_adjustments)
+        new_level = s.ladder.evaluate_with_adjustments(
+            effective, self._budget.health(), threshold_adjustments,
+            custom_thresholds=self._custom_thresholds,
+        )
+
+        # Check autonomy mode
+        if new_level != old_level and new_level.value > old_level.value:
+            config = s.config
+            if s.ladder.requires_approval(new_level, config.autonomy):
+                # HUMAN_IN_THE_LOOP: emit approval event, don't escalate yet
+                self._events.emit("approval_needed", {
+                    "agent_id": agent_id,
+                    "current_level": old_level,
+                    "proposed_level": new_level,
+                    "pressure": effective,
+                    "autonomy": config.autonomy.value,
+                })
+                # Stay at current level until approved
+                new_level = old_level
+                s.ladder.force_level(old_level)
 
         # 11. Events + Learning
         if new_level != old_level:
@@ -297,11 +363,30 @@ class SOMAEngine:
 
         self._learning.evaluate(agent_id, effective, actions_since=1)
 
-        return ActionResult(
+        # Determine context action based on current level
+        context_action = "pass"
+        if new_level == Level.CAUTION:
+            context_action = "truncate_20"
+        elif new_level == Level.DEGRADE:
+            context_action = "truncate_50_block_tools"
+        elif new_level == Level.QUARANTINE:
+            context_action = "quarantine"
+        elif new_level == Level.RESTART:
+            context_action = "restart"
+        elif new_level == Level.SAFE_MODE:
+            context_action = "safe_mode"
+
+        result = ActionResult(
             level=new_level,
             pressure=effective,
             vitals=VitalsSnapshot(
                 uncertainty=uncertainty, drift=drift, drift_mode=drift_mode,
                 token_usage=rv.token_usage, cost=rv.cost, error_rate=rv.error_rate,
             ),
+            context_action=context_action,
         )
+
+        if self._auto_export:
+            self.export_state(self._state_path)
+
+        return result
