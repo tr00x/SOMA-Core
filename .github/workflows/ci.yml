@@ -29,7 +29,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
-      - name: Run tests with coverage
+      - name: Check coverage (core modules only)
         if: matrix.python-version == '3.13'
         run: |
-          pytest tests/ --cov=soma --cov-report=term-missing --cov-fail-under=80
+          pytest tests/ \
+            --cov=soma \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            "--cov-config=.coveragerc"

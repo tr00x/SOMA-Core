@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -18,6 +18,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "tomli-w>=1.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]

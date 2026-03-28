@@ -1,3 +1,4 @@
+# Legacy standalone dashboard. Use `soma` CLI (cli/hub.py) instead.
 """SOMA TUI Dashboard — main Textual application."""
 
 from __future__ import annotations

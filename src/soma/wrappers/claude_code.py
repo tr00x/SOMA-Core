@@ -61,6 +61,7 @@ class ClaudeCodeWrapper:
 
         # Process through engine
         result: ActionResult = self._engine.record_action(agent_id, action)
+        self._engine.export_state()
 
         level = result.level
         context_action = _CONTEXT_ACTIONS[level]

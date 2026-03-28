@@ -73,6 +73,8 @@ def main():
 
     rec.export("examples/paperclip_session.json")
     print("\033[90mSession saved to examples/paperclip_session.json\033[0m")
+    engine.export_state()
+    print("\033[90mEngine state exported.\033[0m")
 
 if __name__ == "__main__":
     main()

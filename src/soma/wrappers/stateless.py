@@ -1,3 +1,4 @@
+# Stateless wrapper for serverless/lambda environments.
 """Stateless wrapper — state passed explicitly each call."""
 
 from __future__ import annotations
