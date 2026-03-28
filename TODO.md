@@ -14,15 +14,11 @@ Honest audit. No bullshit. What exists but doesn't work.
 **Fix:** Run `soma setup-claude`, restart Claude Code, do a few tool calls, check `~/.soma/state.json`. Fix whatever breaks.
 **Effort:** 30 min
 
-### 3. soma.toml weights/thresholds ignored by engine
-**Problem:** `from_config()` reads budget from config but `record_action()` still uses hardcoded weights (2.0, 1.8, 1.5...) and thresholds (0.25, 0.50...) from DEFAULT_WEIGHTS and THRESHOLDS constants. Config is read but not applied.
-**Fix:** `from_config()` should pass custom weights and thresholds into engine. Engine needs to store them and use them instead of defaults.
-**Effort:** 1 hour
+### 3. ~~soma.toml weights/thresholds ignored by engine~~ ✓ FIXED
+`SOMAEngine.__init__()` now accepts `custom_weights` and `custom_thresholds`. `from_config()` reads them from `soma.toml` and passes them in. `record_action()` uses `custom_weights` as the base weight dict; `evaluate_with_adjustments()` accepts `custom_thresholds`.
 
-### 4. No auto-export in engine
-**Problem:** Dashboard polls `~/.soma/state.json` but engine only writes it when you explicitly call `export_state()`. Normal usage via `record_action()` doesn't auto-export.
-**Fix:** Add `auto_export: bool = False` parameter to `SOMAEngine.__init__()`. When True, `record_action()` calls `export_state()` after every action. `soma.wrap()` already has auto_export — but the base engine doesn't.
-**Effort:** 30 min
+### 4. ~~No auto-export in engine~~ ✓ FIXED
+`SOMAEngine.__init__()` now accepts `auto_export: bool = False`. When `True`, `record_action()` calls `export_state()` after every action. `from_config()` sets `auto_export=True` automatically.
 
 ## MEDIUM — Works partially, needs finishing
 
@@ -46,32 +42,30 @@ Honest audit. No bullshit. What exists but doesn't work.
 **Fix:** Add to soma.toml `[budget] max_steps = 100`. Read in engine.
 **Effort:** 15 min
 
-### 11. store.py is dead
-**Problem:** InMemoryStore and JSONFileStore exist but nothing uses them. persistence.py does the same job better.
-**Fix:** Either delete store.py or make persistence.py use Store protocol.
-**Effort:** 15 min
+### ~~11. store.py is dead~~ ✓ FIXED
+`store.py` deleted. `persistence.py` handles all state persistence.
 
 ## LOW — Cleanup, can wait
 
 ### 12-16. Dead code and orphans
-- Delete or document stateless.py
-- Remove old dashboard/app.py (hub.py replaced it)
+- ~~Delete or document stateless.py~~ ✓ FIXED — `wrappers/` deleted entirely
+- ~~Remove old dashboard/app.py (hub.py replaced it)~~ ✓ FIXED — `dashboard/` deleted entirely
 - Fix learning from_dict
-- Update examples to use real data
-- Auto-export in ClaudeCodeWrapper
+- ~~Update examples to use real data~~ ✓ FIXED — no fake/demo data anywhere
+- ~~Auto-export in the old Claude Code wrapper~~ ✓ FIXED — hooks/claude_code.py handles this directly
 
-**Effort:** 1 hour total
+**Remaining effort:** 15 min (learning from_dict)
 
 ---
 
 ## Priority Order
 
-1. Fix #4 (auto-export) — 30 min. Unblocks dashboard.
-2. Fix #3 (config weights) — 1 hour. Config actually works.
+1. ~~Fix #4 (auto-export)~~ ✓ Done
+2. ~~Fix #3 (config weights)~~ ✓ Done
 3. Fix #2 (test hooks) — 30 min. Needs manual testing.
 4. Fix #1 (real SDK test) — 1 hour. Needs API key.
 5. Fix #5-6 (autonomy + context in wrap) — 2-3 hours.
 6. Fix #7-9 (TUI tabs) — 1-2 hours.
-7. Fix #10-16 (cleanup) — 1 hour.
+7. Fix #10 (projected_overshoot) + Fix learning from_dict — 30 min.
 
-**Total: ~8-10 hours of real work.**
+**Remaining: ~4-5 hours of real work.**
