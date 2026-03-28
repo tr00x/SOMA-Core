@@ -109,6 +109,8 @@ class SOMAEngine:
                 "uncertainty": s.baseline.get("uncertainty"),
                 "drift": s.baseline.get("drift"),
                 "error_rate": s.baseline.get("error_rate"),
+                "cost": s.baseline.get("cost"),
+                "token_usage": s.baseline.get("token_usage"),
             },
             "action_count": s.action_count,
             "budget_health": self._budget.health(),
@@ -134,6 +136,10 @@ class SOMAEngine:
         }
 
         for agent_id, s in self._agents.items():
+            # Skip the "default" placeholder agent — it's created by
+            # create_engine_from_config() but has no real purpose in Claude Code
+            if agent_id == "default":
+                continue
             state["agents"][agent_id] = {
                 "level": s.ladder.current.name,
                 "pressure": self._graph.get_effective_pressure(agent_id),
@@ -141,6 +147,8 @@ class SOMAEngine:
                     "uncertainty": s.baseline.get("uncertainty"),
                     "drift": s.baseline.get("drift"),
                     "error_rate": s.baseline.get("error_rate"),
+                    "cost": s.baseline.get("cost"),
+                    "token_usage": s.baseline.get("token_usage"),
                 },
                 "action_count": s.action_count,
             }
