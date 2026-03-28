@@ -27,7 +27,7 @@ dev = ["pytest>=8.0", "pytest-cov"]
 all = ["soma-core[dashboard,otel,dev]"]
 
 [project.scripts]
-soma = "soma.dashboard:run"
+soma = "soma.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/tr00x/soma-core"

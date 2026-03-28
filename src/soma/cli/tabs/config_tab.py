@@ -1,7 +1,7 @@
 """SOMA Hub — Config Tab (Tab 4).
 
 Displays current soma.toml values in editable fields grouped by category.
-Save button writes changes back.  Preview shows effect of threshold changes
+Save button writes changes back.  Preview shows what would happen to Agent 2
 if thresholds changed.
 """
 
@@ -42,8 +42,8 @@ LEVEL_COLORS = {
     Level.SAFE_MODE:  "#ffffff",
 }
 
-# Example pressure for threshold preview
-_PREVIEW_PRESSURE: float = 0.42
+# Simulated current pressure for Agent 2 (used in preview)
+_AGENT2_DEMO_PRESSURE: float = 0.42
 
 
 # ── ConfigTab ────────────────────────────────────────────────────
@@ -193,12 +193,13 @@ class ConfigTab(TabPane):
     # ── Preview ──────────────────────────────────────────────────
 
     def _build_preview(self, thresholds: dict[str, Any]) -> str:
-        """Show what level an agent at example pressure would get."""
+        """Show what level Agent 2 would be at under current thresholds."""
         th_floats = {k: float(v) for k, v in thresholds.items()}
-        current_level = _pressure_to_level(_PREVIEW_PRESSURE, th_floats)
+        current_level = _pressure_to_level(_AGENT2_DEMO_PRESSURE, th_floats)
 
+        # Original (default) thresholds for comparison
         orig_th = DEFAULT_CONFIG["thresholds"]
-        orig_level = _pressure_to_level(_PREVIEW_PRESSURE, orig_th)
+        orig_level = _pressure_to_level(_AGENT2_DEMO_PRESSURE, orig_th)
 
         color = LEVEL_COLORS.get(current_level, "white")
         orig_color = LEVEL_COLORS.get(orig_level, "white")
@@ -214,7 +215,7 @@ class ConfigTab(TabPane):
             )
 
         return (
-            f"  [bold]Preview:[/bold]  pressure={_PREVIEW_PRESSURE:.2f}  →  "
+            f"  [bold]Preview:[/bold]  Agent 2 at p={_AGENT2_DEMO_PRESSURE:.2f}  →  "
             f"[{color}]{current_level.name}[/]  {change}"
         )
 
