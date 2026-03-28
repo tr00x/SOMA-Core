@@ -182,15 +182,22 @@ def main():
         elif level_name in ("QUARANTINE", "RESTART", "SAFE_MODE"):
             lines.append(f"[status] {level_name} — only Read/Glob/Grep available")
 
-        # At elevated levels, show dominant signal for transparency
-        if level_name != "HEALTHY" and vitals:
-            worst_key = max(
-                ((k, v) for k, v in vitals.items() if isinstance(v, (int, float))),
-                key=lambda kv: kv[1],
-                default=None,
-            )
-            if worst_key:
-                lines.append(f"[dominant] {worst_key[0]}={worst_key[1]:.2f}")
+        # Root cause analysis — plain English explanation
+        try:
+            from soma.rca import diagnose
+            rca = diagnose(action_log, vitals, pressure, level_name, actions)
+            if rca:
+                lines.append(f"[why] {rca}")
+        except Exception:
+            # Fallback to dominant signal
+            if level_name != "HEALTHY" and vitals:
+                worst_key = max(
+                    ((k, v) for k, v in vitals.items() if isinstance(v, (int, float))),
+                    key=lambda kv: kv[1],
+                    default=None,
+                )
+                if worst_key:
+                    lines.append(f"[dominant] {worst_key[0]}={worst_key[1]:.2f}")
 
         if lines:
             print("\n".join(lines))

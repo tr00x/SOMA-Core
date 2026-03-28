@@ -145,10 +145,24 @@ def main():
 
         # ── Proprioceptive feedback ──
 
-        # Level transition — always report
+        # Level transition — always report with root cause
         if _prev_level is not None and level_name != _prev_level:
+            rca_msg = ""
+            try:
+                from soma.rca import diagnose
+                from soma.hooks.common import read_action_log
+                rca = diagnose(
+                    read_action_log(),
+                    {"uncertainty": vitals.uncertainty, "drift": vitals.drift,
+                     "error_rate": vitals.error_rate},
+                    pressure, level_name, 0,
+                )
+                if rca:
+                    rca_msg = f" — {rca}"
+            except Exception:
+                pass
             print(
-                f"SOMA: {_prev_level} → {level_name} (p={pressure:.0%})",
+                f"SOMA: {_prev_level} → {level_name} (p={pressure:.0%}){rca_msg}",
                 file=sys.stderr,
             )
 

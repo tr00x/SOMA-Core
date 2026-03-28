@@ -1432,3 +1432,81 @@ class TestPredictor:
         pred2 = p2.predict(next_threshold=0.5)
 
         assert pred2.confidence > pred1.confidence
+
+
+# ──────────────────────────────────────────────────────────────────
+# Root Cause Analysis
+# ──────────────────────────────────────────────────────────────────
+
+class TestRCA:
+    """Tests for plain-English root cause analysis."""
+
+    def test_healthy_returns_none(self):
+        from soma.rca import diagnose
+        result = diagnose([], {}, 0.05, "HEALTHY", 10)
+        assert result is None
+
+    def test_loop_detection(self):
+        from soma.rca import diagnose
+        log = []
+        for _ in range(4):
+            log.append({"tool": "Edit", "error": False, "file": "/x/config.py"})
+            log.append({"tool": "Bash", "error": False, "file": ""})
+        result = diagnose(log, {"drift": 0.3}, 0.30, "CAUTION", 20)
+        assert result is not None
+        assert "loop" in result
+        assert "Edit→Bash" in result
+
+    def test_error_cascade(self):
+        from soma.rca import diagnose
+        log = [
+            {"tool": "Read", "error": False, "file": ""},
+            {"tool": "Bash", "error": True, "file": ""},
+            {"tool": "Bash", "error": True, "file": ""},
+            {"tool": "Bash", "error": True, "file": ""},
+        ]
+        result = diagnose(log, {"error_rate": 0.40}, 0.35, "CAUTION", 15)
+        assert result is not None
+        assert "error cascade" in result
+        assert "3 consecutive" in result
+
+    def test_blind_mutation(self):
+        from soma.rca import diagnose
+        log = [
+            {"tool": "Write", "error": False, "file": "/a/foo.py"},
+            {"tool": "Edit", "error": False, "file": "/a/bar.py"},
+            {"tool": "Write", "error": False, "file": "/a/baz.py"},
+        ]
+        result = diagnose(log, {"drift": 0.2}, 0.25, "CAUTION", 10)
+        assert result is not None
+        assert "blind mutation" in result
+
+    def test_stall_detection(self):
+        from soma.rca import diagnose
+        # Mix of read-like tools (not a pure loop, but no writes)
+        tools = ["Read", "Grep", "Glob", "Read", "Grep", "Read", "Glob", "Read"]
+        log = [{"tool": t, "error": False, "file": f"{i}.py"} for i, t in enumerate(tools)]
+        result = diagnose(log, {"drift": 0.15}, 0.20, "HEALTHY", 30)
+        assert result is not None
+        assert "stall" in result
+
+    def test_drift_explanation(self):
+        from soma.rca import diagnose
+        log = [{"tool": "Read", "error": False, "file": ""}]
+        result = diagnose(log, {"drift": 0.4, "uncertainty": 0.3, "error_rate": 0.0}, 0.30, "CAUTION", 20)
+        assert result is not None
+        assert "drift" in result
+
+    def test_most_severe_wins(self):
+        """When multiple findings exist, the most severe should be returned."""
+        from soma.rca import diagnose
+        # Both error cascade AND blind writes
+        log = [
+            {"tool": "Write", "error": True, "file": "/a/x.py"},
+            {"tool": "Write", "error": True, "file": "/a/y.py"},
+            {"tool": "Write", "error": True, "file": "/a/z.py"},
+        ]
+        result = diagnose(log, {"error_rate": 0.5, "drift": 0.3}, 0.40, "CAUTION", 20)
+        assert result is not None
+        # Error cascade should win (higher severity)
+        assert "error" in result
