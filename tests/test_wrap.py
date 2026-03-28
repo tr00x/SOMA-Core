@@ -243,13 +243,11 @@ class TestWrap:
         wrapped = soma.wrap(client, auto_export=False)
 
         fake_vitals = VitalsSnapshot(
-            pressure=0.5,
+            uncertainty=0.0,
+            drift=0.0,
             error_rate=0.0,
-            tool_diversity=0.0,
-            loop_score=0.0,
-            latency_p95=0.0,
-            token_velocity=0.0,
-            drift_score=0.0,
+            token_usage=0.0,
+            cost=0.0,
         )
         fake_result = ActionResult(
             level=Level.CAUTION,

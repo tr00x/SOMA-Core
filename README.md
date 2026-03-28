@@ -6,7 +6,9 @@
 [![GitHub issues](https://img.shields.io/github/issues/tr00x/SOMA-Core)](https://github.com/tr00x/SOMA-Core/issues)
 [![Beta](https://img.shields.io/badge/status-beta-orange.svg)]()
 
-> **soma** (Greek: *body*) — the cell body of a neuron. It receives signals from dendrites, integrates them, and decides whether to fire.
+> **SOMA** — **S**ystem of **O**versight and **M**onitoring for **A**gents
+>
+> Also: *soma* (Greek: *body*) — the cell body of a neuron. It receives signals from dendrites, integrates them, and decides whether to fire.
 
 AI agents have no proprioception. They cannot feel themselves failing. They loop, drift, burn money, corrupt their own context — and have zero awareness that anything is wrong. They are brains without a nervous system.
 

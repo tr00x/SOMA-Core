@@ -13,7 +13,6 @@ from soma.recorder import SessionRecorder
 from soma.replay import replay_session
 from soma.learning import LearningEngine
 from soma.testing import Monitor
-from soma.wrappers.claude_code import ClaudeCodeWrapper
 
 
 # ---------------------------------------------------------------------------
@@ -338,38 +337,8 @@ def test_monitor_assert_below_all_levels(threshold):
 
 
 # ---------------------------------------------------------------------------
-# 13. ClaudeCodeWrapper — expensive tools blocked at DEGRADE
+# 13. (removed — ClaudeCodeWrapper moved to hooks)
 # ---------------------------------------------------------------------------
-
-def test_claude_code_wrapper_blocks_expensive_tools_at_degrade():
-    """Push agent to >= DEGRADE; expensive tool (bash) must be in blocked_tools."""
-    w = ClaudeCodeWrapper(budget={"tokens": 1_000_000})
-    w.register_agent(
-        "main",
-        tools=["bash", "search", "read"],
-        expensive_tools=["bash"],
-    )
-
-    # Flood with error actions until DEGRADE or above.
-    last_result = None
-    for _ in range(30):
-        last_result = w.on_action("main", _error_action())
-        if last_result.level >= Level.DEGRADE:
-            break
-
-    assert last_result is not None
-
-    if last_result.level >= Level.DEGRADE:
-        # bash should be in blocked_tools.
-        assert "bash" in last_result.blocked_tools, (
-            f"Expected 'bash' blocked at {last_result.level}, "
-            f"blocked_tools={last_result.blocked_tools}"
-        )
-        assert w.should_block_tool("main", "bash")
-    else:
-        # Engine didn't escalate to DEGRADE in 30 actions — skip blocking assertion
-        # but verify that should_block_tool still returns False (below DEGRADE).
-        assert not w.should_block_tool("main", "bash")
 
 
 # ---------------------------------------------------------------------------
