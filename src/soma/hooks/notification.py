@@ -117,7 +117,7 @@ def _collect_findings(
             from soma.hooks.common import get_quality_tracker
             qt = get_quality_tracker()
             report = qt.get_report()
-            if report.total_writes + report.total_bashes >= 5:
+            if report.total_writes + report.total_bashes >= 3:
                 if report.grade in ("D", "F"):
                     issues_str = ", ".join(report.issues) if report.issues else "quality declining"
                     findings.append((0, f"[quality] grade={report.grade} ({issues_str})"))
@@ -219,8 +219,9 @@ def main():
         vitals = agent.get("vitals", {})
 
         # During cold start (< 10 actions), pressure is unreliable (baseline defaults)
-        # Only show if we have enough data
-        if actions < 10:
+        # Show 0% but still allow findings (quality, patterns) to surface
+        cold_start = actions < 10
+        if cold_start:
             pressure = 0.0
 
         hook_config = get_hook_config()
