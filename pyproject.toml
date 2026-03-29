@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-ai"
-version = "0.3.2"
+version = "0.3.5"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -22,13 +22,13 @@ classifiers = [
 dependencies = [
     "tomli-w>=1.0",
     "rich>=13.0",
+    "textual>=3.0",
 ]
 
 [project.optional-dependencies]
-dashboard = ["textual>=3.0"]
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 dev = ["pytest>=8.0", "pytest-cov"]
-all = ["soma-ai[dashboard,otel,dev]"]
+all = ["soma-ai[otel,dev]"]
 
 [project.scripts]
 soma = "soma.cli.main:main"

@@ -237,11 +237,8 @@ def _cmd_tui() -> None:
         run_wizard()
         return
     # Otherwise open hub
-    try:
-        from soma.cli.hub import run_hub
-        run_hub()
-    except ImportError:
-        print("Install dashboard: pip install soma-ai[dashboard]")
+    from soma.cli.hub import run_hub
+    run_hub()
 
 
 # ---------------------------------------------------------------------------

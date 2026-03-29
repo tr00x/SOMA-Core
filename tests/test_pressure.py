@@ -39,10 +39,10 @@ class TestComputeSignalPressure:
         assert result == pytest.approx(0.0)
 
     def test_std_zero_uses_min_std(self):
-        """std=0 → min_std=0.1 prevents extreme z-scores."""
-        result = compute_signal_pressure(current=1.0, baseline=0.5, std=0.0)
-        # z = (1.0-0.5)/0.1 = 5.0, sigmoid_clamp(5) ≈ 0.88
-        assert 0.5 < result < 1.0
+        """std=0 → min_std=0.05 prevents extreme z-scores."""
+        result = compute_signal_pressure(current=0.2, baseline=0.05, std=0.0)
+        # z = (0.2-0.05)/0.05 = 3.0, sigmoid_clamp(3) ≈ 0.5
+        assert 0.3 < result < 0.8
 
     def test_well_above_baseline_saturates(self):
         """z > 6 → sigmoid_clamp returns 1.0."""

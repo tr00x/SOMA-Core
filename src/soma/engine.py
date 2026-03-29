@@ -317,6 +317,8 @@ class SOMAEngine:
         # 6. Aggregate with adjusted weights
         internal = compute_aggregate_pressure(signal_pressures, drift_mode, weights=adjusted_weights)
 
+
+
         # 7. Budget
         spend_kwargs = {}
         if "tokens" in self._budget.limits:
