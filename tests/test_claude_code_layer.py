@@ -1742,8 +1742,8 @@ class TestQualityScoring:
 
         data = qt.to_dict()
         qt2 = QualityTracker.from_dict(data)
-        assert qt2._syntax_errors == 1
         report = qt2.get_report()
+        assert report.syntax_errors == 1
         assert report.bash_failures == 1
 
     def test_issues_list(self):
