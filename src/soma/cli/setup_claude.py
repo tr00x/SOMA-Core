@@ -120,6 +120,47 @@ def _install_statusline(settings_path: Path, sl_cmd: str) -> bool:
     return True
 
 
+def _install_skills() -> bool:
+    """Copy SOMA skill files to ~/.claude/skills/. Returns True if any were installed."""
+    skills_target = Path.home() / ".claude" / "skills"
+    skills_target.mkdir(parents=True, exist_ok=True)
+
+    # Find skills — check bundled package location, then dev repo
+    import soma
+    soma_pkg = Path(soma.__file__).parent
+
+    skills_source = None
+    for candidate in [
+        soma_pkg / "_skills",                                    # pip install (bundled)
+        Path(__file__).parent.parent.parent.parent / "skills",   # dev repo
+    ]:
+        if candidate.is_dir() and any(candidate.glob("soma-*/SKILL.md")):
+            skills_source = candidate
+            break
+
+    if skills_source is None:
+        return False
+
+    changed = False
+    for skill_dir in skills_source.iterdir():
+        if not skill_dir.is_dir() or not skill_dir.name.startswith("soma-"):
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+
+        target_dir = skills_target / skill_dir.name
+        target_file = target_dir / "SKILL.md"
+
+        # Install or update
+        if not target_file.exists() or target_file.read_text() != skill_file.read_text():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file.write_text(skill_file.read_text())
+            changed = True
+
+    return changed
+
+
 def _init_engine() -> bool:
     """Create clean SOMA engine state with Claude Code config. Returns True if created."""
     soma_dir = Path.home() / ".soma"
@@ -194,7 +235,13 @@ def run_setup_claude() -> None:
     else:
         print("  soma.toml exists. Skipping.")
 
-    # 6. Add to CLAUDE.md (optional, non-destructive)
+    # 6. Install slash command skills to ~/.claude/skills/
+    if _install_skills():
+        changes.append("Installed slash commands (/soma:status, /soma:config, /soma:control, /soma:help)")
+    else:
+        print("  Slash commands already installed. Skipping.")
+
+    # 7. Add to CLAUDE.md (optional, non-destructive)
     claude_md = Path("CLAUDE.md")
     soma_block = (
         "\n## SOMA Monitoring\n\n"

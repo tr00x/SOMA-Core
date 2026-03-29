@@ -44,3 +44,6 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soma"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "soma/_skills"
