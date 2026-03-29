@@ -100,8 +100,22 @@ def main():
 
         data = read_stdin()
         tool_name = data.get("tool_name", os.environ.get("CLAUDE_TOOL_NAME", "unknown"))
-        output = str(data.get("output", ""))[:500]
+
+        # Claude Code sends tool_response (not output), handle both formats
+        raw_response = data.get("tool_response") or data.get("output") or ""
+        output = str(raw_response)[:500]
+
+        # Error detection: Claude Code doesn't send an "error" boolean.
+        # Detect from response content.
         error = data.get("error", False) or data.get("is_error", False)
+        if not error and isinstance(raw_response, str) and raw_response:
+            resp_lower = raw_response[:300].lower()
+            if any(marker in resp_lower for marker in (
+                "error:", "traceback", "command not found", "no such file",
+                "permission denied", "exitcode", "exit code",
+            )):
+                error = True
+
         duration = float(data.get("duration_ms", 0)) / 1000.0
         file_path = _extract_file_path(data)
 

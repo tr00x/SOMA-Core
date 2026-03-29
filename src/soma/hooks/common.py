@@ -63,22 +63,45 @@ def read_action_log() -> list[dict]:
 
 
 def append_action_log(tool_name: str, error: bool = False, file_path: str = "") -> list[dict]:
-    """Append an action to the log and return updated log."""
-    log = read_action_log()
-    log.append({
+    """Append an action to the log and return updated log.
+
+    Uses file locking to prevent race conditions when multiple
+    PostToolUse hooks run concurrently.
+    """
+    import fcntl
+
+    entry = {
         "tool": tool_name,
         "error": error,
         "file": file_path,
         "ts": time.time(),
-    })
-    # Keep only last N entries
-    log = log[-ACTION_LOG_MAX:]
+    }
+
     try:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        ACTION_LOG_PATH.write_text(json.dumps(log))
-    except IOError:
-        pass
-    return log
+        lock_path = SOMA_DIR / "action_log.lock"
+
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                log = read_action_log()
+                log.append(entry)
+                log = log[-ACTION_LOG_MAX:]
+                ACTION_LOG_PATH.write_text(json.dumps(log))
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+        return log
+    except Exception:
+        # Fallback: try without lock
+        log = read_action_log()
+        log.append(entry)
+        log = log[-ACTION_LOG_MAX:]
+        try:
+            ACTION_LOG_PATH.write_text(json.dumps(log))
+        except IOError:
+            pass
+        return log
 
 
 SESSION_ID_PATH = SOMA_DIR / "session_id"
