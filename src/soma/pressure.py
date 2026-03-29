@@ -17,10 +17,11 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 def compute_signal_pressure(current: float, baseline: float, std: float) -> float:
     """Compute pressure for a single signal via sigmoid-clamped z-score.
 
-    Returns sigmoid_clamp((current - baseline) / max(std, 1e-9)).
-    Values at or below baseline return 0.0 due to sigmoid_clamp clamping x<=0.
+    Uses min_std=0.1 to prevent huge z-scores when baseline has low variance
+    (e.g. first few actions where std≈0). This keeps pressure sane during
+    early session when there's not enough data for reliable statistics.
     """
-    z = (current - baseline) / max(std, 1e-9)
+    z = (current - baseline) / max(std, 0.1)
     return sigmoid_clamp(z)
 
 
