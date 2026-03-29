@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "soma-core"
+name = "soma-ai"
 version = "0.3.0"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
