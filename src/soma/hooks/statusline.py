@@ -81,6 +81,10 @@ def main():
         level = agent.get("level", "HEALTHY")
         pressure = agent.get("pressure", 0.0)
         actions = agent.get("action_count", 0)
+
+        # Cold start: pressure is from baseline defaults, not real
+        if actions < 10:
+            pressure = 0.0
         vitals = agent.get("vitals", {})
         sym = SYMBOLS.get(level, "?")
 

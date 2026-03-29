@@ -218,6 +218,11 @@ def main():
         actions = agent.get("action_count", 0)
         vitals = agent.get("vitals", {})
 
+        # During cold start (< 10 actions), pressure is unreliable (baseline defaults)
+        # Only show if we have enough data
+        if actions < 10:
+            pressure = 0.0
+
         hook_config = get_hook_config()
         verbosity = hook_config.get("verbosity", "normal")
 
