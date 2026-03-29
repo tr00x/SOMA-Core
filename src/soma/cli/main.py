@@ -11,7 +11,11 @@ from typing import Any
 
 from soma.cli.config_loader import load_config
 
-_VERSION = "0.3.0"
+try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("soma-ai")
+except Exception:
+    _VERSION = "0.3.1"
 
 
 # ---------------------------------------------------------------------------
