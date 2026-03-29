@@ -132,7 +132,9 @@ def main():
         pressure = result.pressure
         vitals = result.vitals
 
-        # ── Post-write validation ──
+        # ── Post-write validation + quality tracking ──
+        syntax_err = None
+        lint_err = None
         if tool_name in ("Write", "Edit", "NotebookEdit") and file_path and not error:
             short_name = file_path.rsplit("/", 1)[-1]
 
@@ -151,6 +153,22 @@ def main():
             js_err = _validate_js_file(file_path)
             if js_err:
                 print(f"SOMA: syntax error in {short_name}: {js_err}", file=sys.stderr)
+                syntax_err = syntax_err or js_err
+
+        # Quality tracking
+        try:
+            from soma.hooks.common import get_quality_tracker, save_quality_tracker
+            qt = get_quality_tracker()
+            if tool_name in ("Write", "Edit", "NotebookEdit"):
+                qt.record_write(
+                    had_syntax_error=bool(syntax_err),
+                    had_lint_issue=bool(lint_err),
+                )
+            elif tool_name == "Bash":
+                qt.record_bash(error=error)
+            save_quality_tracker(qt)
+        except Exception:
+            pass
 
         # ── Proprioceptive feedback ──
 

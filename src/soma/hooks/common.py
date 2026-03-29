@@ -16,6 +16,7 @@ ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
 PREDICTOR_PATH = SOMA_DIR / "predictor.json"
 FINGERPRINT_PATH = SOMA_DIR / "fingerprint.json"
 TASK_TRACKER_PATH = SOMA_DIR / "task_tracker.json"
+QUALITY_PATH = SOMA_DIR / "quality.json"
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -236,6 +237,28 @@ def save_task_tracker(tracker) -> None:
     try:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         TASK_TRACKER_PATH.write_text(json.dumps(tracker.to_dict()))
+    except Exception:
+        pass
+
+
+def get_quality_tracker():
+    """Load or create quality tracker for this session."""
+    try:
+        from soma.quality import QualityTracker
+        if QUALITY_PATH.exists():
+            data = json.loads(QUALITY_PATH.read_text())
+            return QualityTracker.from_dict(data)
+        return QualityTracker()
+    except Exception:
+        from soma.quality import QualityTracker
+        return QualityTracker()
+
+
+def save_quality_tracker(tracker) -> None:
+    """Persist quality tracker state."""
+    try:
+        SOMA_DIR.mkdir(parents=True, exist_ok=True)
+        QUALITY_PATH.write_text(json.dumps(tracker.to_dict()))
     except Exception:
         pass
 
