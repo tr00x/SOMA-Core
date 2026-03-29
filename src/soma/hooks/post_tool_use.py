@@ -105,17 +105,22 @@ def main():
         duration = float(data.get("duration_ms", 0)) / 1000.0
         file_path = _extract_file_path(data)
 
+        # ── Load hook config ──
+        from soma.hooks.common import get_hook_config
+        hook_config = get_hook_config()
+
         # ── Log action for pattern analysis ──
         append_action_log(tool_name, error=error, file_path=file_path)
 
         # ── Task tracking ──
-        try:
-            from soma.hooks.common import get_task_tracker, save_task_tracker
-            tracker = get_task_tracker()
-            tracker.record(tool_name, file_path, error)
-            save_task_tracker(tracker)
-        except Exception:
-            pass
+        if hook_config.get("task_tracking", True):
+            try:
+                from soma.hooks.common import get_task_tracker, save_task_tracker
+                tracker = get_task_tracker()
+                tracker.record(tool_name, file_path, error)
+                save_task_tracker(tracker)
+            except Exception:
+                pass
 
         action = Action(
             tool_name=tool_name,
@@ -139,36 +144,39 @@ def main():
             short_name = file_path.rsplit("/", 1)[-1]
 
             # Syntax check (Python)
-            syntax_err = _validate_python_file(file_path)
-            if syntax_err:
-                print(f"SOMA: syntax error in {short_name}: {syntax_err}", file=sys.stderr)
+            if hook_config.get("validate_python", True):
+                syntax_err = _validate_python_file(file_path)
+                if syntax_err:
+                    print(f"SOMA: syntax error in {short_name}: {syntax_err}", file=sys.stderr)
 
-            # Lint check (Python, ruff --select F = Pyflakes errors only)
-            if not syntax_err:
+            # Lint check (Python)
+            if hook_config.get("lint_python", True) and not syntax_err:
                 lint_err = _lint_python_file(file_path)
                 if lint_err:
                     print(f"SOMA: lint issue in {short_name}: {lint_err}", file=sys.stderr)
 
             # Syntax check (JS)
-            js_err = _validate_js_file(file_path)
-            if js_err:
-                print(f"SOMA: syntax error in {short_name}: {js_err}", file=sys.stderr)
-                syntax_err = syntax_err or js_err
+            if hook_config.get("validate_js", True):
+                js_err = _validate_js_file(file_path)
+                if js_err:
+                    print(f"SOMA: syntax error in {short_name}: {js_err}", file=sys.stderr)
+                    syntax_err = syntax_err or js_err
 
         # Quality tracking
-        try:
-            from soma.hooks.common import get_quality_tracker, save_quality_tracker
-            qt = get_quality_tracker()
-            if tool_name in ("Write", "Edit", "NotebookEdit"):
-                qt.record_write(
-                    had_syntax_error=bool(syntax_err),
-                    had_lint_issue=bool(lint_err),
-                )
-            elif tool_name == "Bash":
-                qt.record_bash(error=error)
-            save_quality_tracker(qt)
-        except Exception:
-            pass
+        if hook_config.get("quality", True):
+            try:
+                from soma.hooks.common import get_quality_tracker, save_quality_tracker
+                qt = get_quality_tracker()
+                if tool_name in ("Write", "Edit", "NotebookEdit"):
+                    qt.record_write(
+                        had_syntax_error=bool(syntax_err),
+                        had_lint_issue=bool(lint_err),
+                    )
+                elif tool_name == "Bash":
+                    qt.record_bash(error=error)
+                save_quality_tracker(qt)
+            except Exception:
+                pass
 
         # ── Proprioceptive feedback ──
 
@@ -215,28 +223,27 @@ def main():
             )
 
         # ── Prediction ──
-        try:
-            predictor = get_predictor()
-            predictor.update(pressure, {
-                "tool": tool_name, "error": error, "file": file_path,
-            })
+        if hook_config.get("predict", True):
+            try:
+                predictor = get_predictor()
+                predictor.update(pressure, {
+                    "tool": tool_name, "error": error, "file": file_path,
+                })
 
-            # Find next threshold above current level
-            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
-            thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
-            if thresholds:
-                pred = predictor.predict(thresholds[0])
-                if pred.will_escalate:
-                    print(
-                        f"SOMA: ⚠ predicted escalation in ~{pred.actions_ahead} actions "
-                        f"(p={pred.predicted_pressure:.0%}, reason={pred.dominant_reason}, "
-                        f"conf={pred.confidence:.0%})",
-                        file=sys.stderr,
-                    )
+                from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
+                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
+                if thresholds:
+                    pred = predictor.predict(thresholds[0])
+                    if pred.will_escalate:
+                        print(
+                            f"SOMA: predicted escalation in ~{pred.actions_ahead} actions "
+                            f"(p={pred.predicted_pressure:.0%}, {pred.dominant_reason})",
+                            file=sys.stderr,
+                        )
 
-            save_predictor(predictor)
-        except Exception:
-            pass  # Prediction is optional
+                save_predictor(predictor)
+            except Exception:
+                pass
 
         _prev_level = level_name
         _prev_pressure = pressure

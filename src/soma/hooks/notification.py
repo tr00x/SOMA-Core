@@ -2,12 +2,12 @@
 
 Runs on UserPromptSubmit — before the agent starts reasoning.
 
-v2: Actionable feedback. Instead of raw numbers, SOMA now tells the agent
-WHAT to do differently based on detected patterns. Raw metrics are still
-available but secondary to the behavioral nudge.
+v3: Structured output with configurable verbosity.
+- minimal: status line only (1 line)
+- normal: status + top 2 findings (2-4 lines)
+- verbose: everything (up to 8 lines)
 
-The output goes to stdout as "additional context" that Claude Code
-injects into the conversation.
+Output goes to stdout as "additional context" in Claude Code.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
         return []
 
     tips: list[str] = []
-    recent = action_log[-10:]  # Last 10 actions
+    recent = action_log[-10:]
 
-    # Pattern 1: Writes without Reads — blind mutation
+    # Pattern 1: Writes without Reads
     writes_since_read = 0
     for entry in reversed(recent):
         if entry["tool"] in ("Write", "Edit", "NotebookEdit"):
@@ -58,7 +58,7 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
             f"stop retrying, check assumptions and environment first"
         )
 
-    # Pattern 3: High error rate overall
+    # Pattern 3: High error rate
     if len(recent) >= 5:
         error_count = sum(1 for e in recent if e.get("error"))
         error_rate = error_count / len(recent)
@@ -68,7 +68,7 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
                 f"slow down, read relevant files and verify approach before acting"
             )
 
-    # Pattern 4: Same file edited multiple times (thrashing)
+    # Pattern 4: Thrashing same file
     if len(recent) >= 4:
         edit_files = [
             e["file"] for e in recent
@@ -86,22 +86,110 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
                     f"plan the full change before editing, avoid incremental fixes"
                 )
 
-    # Pattern 5: No Grep/Glob before Write to new file (no research)
-    if len(recent) >= 3:
-        last_3_tools = [e["tool"] for e in recent[-3:]]
-        if "Write" in last_3_tools:
-            research_tools = {"Grep", "Glob", "Read", "WebSearch", "Agent"}
-            has_research = any(t in research_tools for t in last_3_tools[:-1])
-            if not has_research and tips.count == 0:  # Only if no other tips
-                pass  # Too noisy, skip for now
+    return tips[:2]
 
-    return tips[:2]  # Max 2 tips to stay focused
+
+def _collect_findings(
+    action_log: list[dict],
+    vitals: dict,
+    pressure: float,
+    level_name: str,
+    actions: int,
+    hook_config: dict,
+) -> list[tuple[int, str]]:
+    """Collect all findings as (priority, message) tuples.
+
+    Priority: 0 = critical (always show), 1 = important, 2 = informational.
+    """
+    findings: list[tuple[int, str]] = []
+
+    # Level status (priority 0 at elevated levels)
+    if level_name == "CAUTION":
+        findings.append((0, "[status] CAUTION — verify before mutating"))
+    elif level_name == "DEGRADE":
+        findings.append((0, "[status] DEGRADED — Bash/Agent blocked"))
+    elif level_name in ("QUARANTINE", "RESTART", "SAFE_MODE"):
+        findings.append((0, f"[status] {level_name} — only Read/Glob/Grep available"))
+
+    # Quality (priority 0 if bad)
+    if hook_config.get("quality", True):
+        try:
+            from soma.hooks.common import get_quality_tracker
+            qt = get_quality_tracker()
+            report = qt.get_report()
+            if report.total_writes + report.total_bashes >= 5:
+                if report.grade in ("D", "F"):
+                    issues_str = ", ".join(report.issues) if report.issues else "quality declining"
+                    findings.append((0, f"[quality] grade={report.grade} ({issues_str})"))
+                elif report.grade == "C":
+                    findings.append((2, f"[quality] grade={report.grade}"))
+        except Exception:
+            pass
+
+    # Prediction (priority 1)
+    if hook_config.get("predict", True):
+        try:
+            from soma.hooks.common import get_predictor
+            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
+            predictor = get_predictor()
+            if predictor._pressures:
+                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
+                if thresholds:
+                    pred = predictor.predict(thresholds[0])
+                    if pred.will_escalate:
+                        findings.append((
+                            1,
+                            f"[predict] escalation in ~{pred.actions_ahead} actions "
+                            f"({pred.dominant_reason}) — slow down"
+                        ))
+        except Exception:
+            pass
+
+    # Patterns (priority 1)
+    tips = _analyze_patterns(action_log)
+    for tip in tips:
+        findings.append((1, tip))
+
+    # Scope drift (priority 1)
+    if hook_config.get("task_tracking", True):
+        try:
+            from soma.hooks.common import get_task_tracker
+            tracker = get_task_tracker()
+            ctx = tracker.get_context()
+            if ctx.scope_drift >= 0.4 and ctx.drift_explanation:
+                findings.append((1, f"[scope] {ctx.drift_explanation}"))
+        except Exception:
+            pass
+
+    # Fingerprint divergence (priority 2)
+    if hook_config.get("fingerprint", True):
+        try:
+            from soma.hooks.common import get_fingerprint_engine, _get_session_agent_id
+            fp_engine = get_fingerprint_engine()
+            div, explanation = fp_engine.check_divergence(_get_session_agent_id(), action_log)
+            if div >= 0.3 and explanation:
+                findings.append((2, f"[fingerprint] {explanation}"))
+        except Exception:
+            pass
+
+    # RCA (priority 1 at elevated, 2 at healthy)
+    try:
+        from soma.rca import diagnose
+        rca = diagnose(action_log, vitals, pressure, level_name, actions)
+        if rca:
+            priority = 1 if level_name != "HEALTHY" else 2
+            findings.append((priority, f"[why] {rca}"))
+    except Exception:
+        pass
+
+    return findings
 
 
 def main():
     try:
-        from soma.hooks.common import STATE_PATH, _get_session_agent_id, read_action_log
-        from soma.types import Level
+        from soma.hooks.common import (
+            STATE_PATH, _get_session_agent_id, read_action_log, get_hook_config,
+        )
 
         if not STATE_PATH.exists():
             return
@@ -124,10 +212,11 @@ def main():
         actions = agent.get("action_count", 0)
         vitals = agent.get("vitals", {})
 
-        # ── Analyze patterns from action log ──
-        action_log = read_action_log()
+        hook_config = get_hook_config()
+        verbosity = hook_config.get("verbosity", "normal")
 
-        # Stale log detection: if last action >30min ago, this is a new session
+        # ── Load and clean action log ──
+        action_log = read_action_log()
         if action_log:
             last_ts = action_log[-1].get("ts", 0)
             if time.time() - last_ts > 1800:
@@ -138,97 +227,47 @@ def main():
                 except OSError:
                     pass
 
-        tips = _analyze_patterns(action_log)
+        # ── Collect all findings ──
+        findings = _collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
 
-        # HEALTHY with low pressure and no tips — stay silent
-        if level_name == "HEALTHY" and pressure < 0.15 and not tips:
+        # ── Determine if we should output anything ──
+        has_critical = any(p == 0 for p, _ in findings)
+        has_important = any(p <= 1 for p, _ in findings)
+
+        if level_name == "HEALTHY" and pressure < 0.15 and not has_critical and not has_important:
             return
 
+        # ── Build output based on verbosity ──
         lines = []
 
-        # Status line — always compact
+        # Status line — always present
         u = vitals.get("uncertainty", 0)
         d = vitals.get("drift", 0)
         e = vitals.get("error_rate", 0)
         lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
 
-        # Quality score — warn when code quality drops
-        try:
-            from soma.hooks.common import get_quality_tracker
-            qt = get_quality_tracker()
-            report = qt.get_report()
-            if report.total_writes + report.total_bashes >= 5 and report.grade in ("D", "F"):
-                issues_str = ", ".join(report.issues) if report.issues else "quality declining"
-                lines.append(f"[quality] grade={report.grade} ({issues_str})")
-        except Exception:
-            pass
+        # Sort findings by priority
+        findings.sort(key=lambda x: x[0])
 
-        # Prediction — warn before escalation
-        try:
-            from soma.hooks.common import get_predictor
-            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
-            predictor = get_predictor()
-            if predictor._pressures:
-                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
-                if thresholds:
-                    pred = predictor.predict(thresholds[0])
-                    if pred.will_escalate:
-                        lines.append(
-                            f"[predict] escalation likely in ~{pred.actions_ahead} actions "
-                            f"({pred.dominant_reason}, conf={pred.confidence:.0%}) — slow down"
-                        )
-        except Exception:
-            pass  # Prediction is optional
+        if verbosity == "minimal":
+            # Only critical findings (1 extra line max)
+            for p, msg in findings:
+                if p == 0:
+                    lines.append(msg)
+                    break  # Only 1
 
-        # Fingerprint divergence — detect behavior shifts
-        try:
-            from soma.hooks.common import get_fingerprint_engine, _get_session_agent_id
-            fp_engine = get_fingerprint_engine()
-            div, explanation = fp_engine.check_divergence(_get_session_agent_id(), action_log)
-            if div >= 0.3 and explanation:
-                lines.append(f"[fingerprint] behavior diverging from profile ({div:.0%}): {explanation}")
-        except Exception:
-            pass
+        elif verbosity == "normal":
+            # Critical + top 2 important (3 extra lines max)
+            count = 0
+            for p, msg in findings:
+                if p <= 1 and count < 3:
+                    lines.append(msg)
+                    count += 1
 
-        # Actionable tips — the main value add
-        if tips:
-            for tip in tips:
-                lines.append(tip)
-
-        # Level-specific guidance (only at elevated levels)
-        if level_name == "CAUTION":
-            lines.append("[status] CAUTION — verify before mutating, Write/Edit may be restricted")
-        elif level_name == "DEGRADE":
-            lines.append("[status] DEGRADED — Bash/Agent blocked, use Read/Edit/Grep only")
-        elif level_name in ("QUARANTINE", "RESTART", "SAFE_MODE"):
-            lines.append(f"[status] {level_name} — only Read/Glob/Grep available")
-
-        # Task context — scope drift detection
-        try:
-            from soma.hooks.common import get_task_tracker
-            tracker = get_task_tracker()
-            ctx = tracker.get_context()
-            if ctx.scope_drift >= 0.4 and ctx.drift_explanation:
-                lines.append(f"[scope] drift={ctx.scope_drift:.0%}: {ctx.drift_explanation}")
-        except Exception:
-            pass
-
-        # Root cause analysis — plain English explanation
-        try:
-            from soma.rca import diagnose
-            rca = diagnose(action_log, vitals, pressure, level_name, actions)
-            if rca:
-                lines.append(f"[why] {rca}")
-        except Exception:
-            # Fallback to dominant signal
-            if level_name != "HEALTHY" and vitals:
-                worst_key = max(
-                    ((k, v) for k, v in vitals.items() if isinstance(v, (int, float))),
-                    key=lambda kv: kv[1],
-                    default=None,
-                )
-                if worst_key:
-                    lines.append(f"[dominant] {worst_key[0]}={worst_key[1]:.2f}")
+        else:  # verbose
+            # Everything (up to 6 extra lines)
+            for p, msg in findings[:6]:
+                lines.append(msg)
 
         if lines:
             print("\n".join(lines))

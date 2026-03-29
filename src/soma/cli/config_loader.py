@@ -59,9 +59,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
 # - Cold start grace period built into engine (first 10 actions penalty-free)
 CLAUDE_CODE_CONFIG: dict[str, Any] = {
     "soma": {
-        "version": "0.2.0",
+        "version": "0.3.0",
         "store": "~/.soma/state.json",
         "profile": "claude-code",
+    },
+    "hooks": {
+        "verbosity": "normal",  # minimal, normal, verbose
+        "validate_python": True,
+        "validate_js": True,
+        "lint_python": True,
+        "predict": True,
+        "fingerprint": True,
+        "quality": True,
+        "task_tracking": True,
     },
     "budget": {
         "tokens": 1_000_000,
