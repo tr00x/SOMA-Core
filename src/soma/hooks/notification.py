@@ -200,10 +200,16 @@ def main():
         my_id = _get_session_agent_id()
         agent = agents.get(my_id)
         if agent is None:
+            # Fallback: pick the most active cc-* agent (highest action_count)
+            best_agent = None
+            best_count = -1
             for aid, adata in agents.items():
                 if aid.startswith("cc-") or aid == "claude-code":
-                    agent = adata
-                    break
+                    count = adata.get("action_count", 0)
+                    if count > best_count:
+                        best_count = count
+                        best_agent = adata
+            agent = best_agent
         if agent is None:
             return
 
