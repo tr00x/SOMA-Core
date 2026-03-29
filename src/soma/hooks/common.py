@@ -119,6 +119,12 @@ def get_engine():
             custom_thresholds=CLAUDE_CODE_CONFIG["thresholds"],
         )
 
+    # Always ensure Claude Code config is applied (may be lost on state reload)
+    if engine._custom_weights is None:
+        engine._custom_weights = CLAUDE_CODE_CONFIG["weights"]
+    if engine._custom_thresholds is None:
+        engine._custom_thresholds = CLAUDE_CODE_CONFIG["thresholds"]
+
     agent_id = _get_session_agent_id()
     try:
         engine.get_level(agent_id)
@@ -164,6 +170,10 @@ def _inherit_baseline(engine, new_agent_id: str) -> None:
 
             # Copy known tools
             new_agent.known_tools = list(donor.known_tools)
+
+            # Skip grace period — baseline is inherited, not cold
+            # Set action_count to min_samples so pressure is applied immediately
+            new_agent.action_count = new_agent.baseline.min_samples
     except Exception:
         pass  # Never crash
 
