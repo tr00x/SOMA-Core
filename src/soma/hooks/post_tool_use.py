@@ -167,14 +167,12 @@ def main():
                     print(f"SOMA: syntax error in {short_name}: {js_err}", file=sys.stderr)
                     syntax_err = syntax_err or js_err
 
-        if hook_config.get("quality", True):
+        # Quality tracking — only Write/Edit (Bash errors tracked by engine error_rate)
+        if hook_config.get("quality", True) and tool_name in ("Write", "Edit", "NotebookEdit"):
             try:
                 from soma.hooks.common import get_quality_tracker, save_quality_tracker
                 qt = get_quality_tracker()
-                if tool_name in ("Write", "Edit", "NotebookEdit"):
-                    qt.record_write(had_syntax_error=bool(syntax_err), had_lint_issue=bool(lint_err))
-                elif tool_name == "Bash":
-                    qt.record_bash(error=error)
+                qt.record_write(had_syntax_error=bool(syntax_err), had_lint_issue=bool(lint_err))
                 save_quality_tracker(qt)
             except Exception:
                 pass
