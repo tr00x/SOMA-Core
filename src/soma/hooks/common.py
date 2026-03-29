@@ -108,41 +108,13 @@ SESSION_ID_PATH = SOMA_DIR / "session_id"
 
 
 def _get_session_agent_id() -> str:
-    """Return a stable session-scoped agent ID.
+    """Return a fixed agent ID for Claude Code.
 
-    Priority:
-    1. CLAUDE_CODE_SESSION env var (set by Claude Code)
-    2. Stored session ID in ~/.soma/session_id (persists across hook calls)
-    3. Create new session ID from PPID (first hook call of a session)
-
-    The file-based approach ensures all hooks in one Claude Code session
-    (PreToolUse, PostToolUse, UserPromptSubmit, Stop, statusline) see
-    the same agent, even though each hook runs as a separate subprocess
-    with a different PID.
+    One agent per machine. No sessions, no PIDs, no complexity.
+    Claude Code context compressions, reconnects, and subprocess spawning
+    all see the same agent with accumulated history.
     """
-    session = os.environ.get("CLAUDE_CODE_SESSION", "")
-    if session:
-        return f"cc-{session[:8]}"
-
-    # Try reading stored session ID
-    try:
-        if SESSION_ID_PATH.exists():
-            stored = SESSION_ID_PATH.read_text().strip()
-            if stored:
-                return stored
-    except (IOError, OSError):
-        pass
-
-    # Create new session ID from PPID
-    ppid = os.getppid()
-    agent_id = f"cc-{ppid}"
-    try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        SESSION_ID_PATH.write_text(agent_id)
-    except (IOError, OSError):
-        pass
-
-    return agent_id
+    return "claude-code"
 
 
 def get_engine():
@@ -179,12 +151,6 @@ def get_engine():
         engine.get_level(agent_id)
     except Exception:
         engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
-
-        # Inherit baseline from most recent session (cross-session memory)
-        _inherit_baseline(engine, agent_id)
-
-        # Clean up dead sessions (keep only this one + last 2)
-        _cleanup_old_agents(engine, agent_id, keep=2)
 
     return engine, agent_id
 
