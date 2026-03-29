@@ -1,0 +1,44 @@
+[soma]
+version = "0.3.0"
+store = "~/.soma/state.json"
+profile = "claude-code"
+
+[budget]
+tokens = 1000000
+cost_usd = 50.0
+
+[hooks]
+verbosity = "normal"         # minimal, normal, verbose
+validate_python = true       # py_compile syntax check after Write/Edit
+validate_js = true           # node --check after Write/Edit .js
+lint_python = true           # ruff check --select F after Write/Edit .py
+predict = true               # anomaly prediction (warn before escalation)
+fingerprint = true           # agent fingerprinting (detect behavior shifts)
+quality = true               # quality scoring (A-F grade per session)
+task_tracking = true         # task-aware monitoring (scope drift detection)
+
+[agents.claude-code]
+autonomy = "human_on_the_loop"
+sensitivity = "relaxed"
+tools = [
+    "Bash", "Edit", "Read", "Write", "Grep", "Glob",
+    "Agent", "WebSearch", "WebFetch", "Skill", "NotebookEdit",
+]
+
+[thresholds]
+caution = 0.40
+degrade = 0.60
+quarantine = 0.80
+restart = 0.95
+
+[weights]
+uncertainty = 1.2
+drift = 1.5
+error_rate = 2.5
+cost = 1.0
+token_usage = 0.6
+
+[graph]
+damping = 0.6
+trust_decay_rate = 0.03
+trust_recovery_rate = 0.04
