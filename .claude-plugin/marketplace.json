@@ -1,0 +1,19 @@
+{
+  "name": "soma-core",
+  "description": "Behavioral monitoring for AI agents — the nervous system for Claude Code",
+  "owner": {
+    "name": "Tim Hunt",
+    "url": "https://github.com/tr00x"
+  },
+  "plugins": [
+    {
+      "name": "soma-core",
+      "description": "Behavioral monitoring and directive control for AI agents",
+      "version": "0.3.0",
+      "source": "./",
+      "author": {
+        "name": "Tim Hunt"
+      }
+    }
+  ]
+}
