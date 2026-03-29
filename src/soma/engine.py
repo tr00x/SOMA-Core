@@ -332,8 +332,11 @@ class SOMAEngine:
         effective = self._graph.get_effective_pressure(agent_id)
 
         # Grace period: don't penalize during cold start
+        # Also zero the graph so get_snapshot returns 0
         if s.action_count <= s.baseline.min_samples:
             effective = 0.0
+            self._graph.set_internal_pressure(agent_id, 0.0)
+            self._graph._nodes[agent_id].effective_pressure = 0.0
 
         # 9. Trust
         if uncertainty > 0.5:
