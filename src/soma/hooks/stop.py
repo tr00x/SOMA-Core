@@ -11,8 +11,8 @@ import sys
 
 from soma.hooks.common import (
     get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH, TASK_TRACKER_PATH, QUALITY_PATH,
-    get_fingerprint_engine, save_fingerprint_engine, read_action_log, _get_session_agent_id,
-    get_quality_tracker,
+    SESSION_ID_PATH, get_fingerprint_engine, save_fingerprint_engine, read_action_log,
+    _get_session_agent_id, get_quality_tracker,
 )
 
 
@@ -39,6 +39,7 @@ def main():
         PREDICTOR_PATH.unlink(missing_ok=True)
         TASK_TRACKER_PATH.unlink(missing_ok=True)
         QUALITY_PATH.unlink(missing_ok=True)
+        SESSION_ID_PATH.unlink(missing_ok=True)
     except OSError:
         pass
 

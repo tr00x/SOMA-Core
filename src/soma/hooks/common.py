@@ -81,19 +81,45 @@ def append_action_log(tool_name: str, error: bool = False, file_path: str = "") 
     return log
 
 
-def _get_session_agent_id() -> str:
-    """Return a session-scoped agent ID.
+SESSION_ID_PATH = SOMA_DIR / "session_id"
 
-    Uses CLAUDE_CODE_SESSION env var if set, otherwise falls back to PPID.
-    This ensures each Claude Code window gets its own agent — no more
-    multi-session race conditions where two windows fight over one state.
+
+def _get_session_agent_id() -> str:
+    """Return a stable session-scoped agent ID.
+
+    Priority:
+    1. CLAUDE_CODE_SESSION env var (set by Claude Code)
+    2. Stored session ID in ~/.soma/session_id (persists across hook calls)
+    3. Create new session ID from PPID (first hook call of a session)
+
+    The file-based approach ensures all hooks in one Claude Code session
+    (PreToolUse, PostToolUse, UserPromptSubmit, Stop, statusline) see
+    the same agent, even though each hook runs as a separate subprocess
+    with a different PID.
     """
     session = os.environ.get("CLAUDE_CODE_SESSION", "")
     if session:
         return f"cc-{session[:8]}"
-    # Fallback: PPID groups all hooks from one Claude Code process
+
+    # Try reading stored session ID
+    try:
+        if SESSION_ID_PATH.exists():
+            stored = SESSION_ID_PATH.read_text().strip()
+            if stored:
+                return stored
+    except (IOError, OSError):
+        pass
+
+    # Create new session ID from PPID
     ppid = os.getppid()
-    return f"cc-{ppid}"
+    agent_id = f"cc-{ppid}"
+    try:
+        SOMA_DIR.mkdir(parents=True, exist_ok=True)
+        SESSION_ID_PATH.write_text(agent_id)
+    except (IOError, OSError):
+        pass
+
+    return agent_id
 
 
 def get_engine():
