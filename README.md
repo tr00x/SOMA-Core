@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="docs/claude-code-layer.md">Claude Code Layer</a> &bull;
   <a href="docs/PAPER.md">Research Paper</a> &bull;
   <a href="docs/TECHNICAL.md">Technical Reference</a> &bull;
   <a href="docs/guide.md">User Guide</a> &bull;
@@ -337,7 +338,7 @@ SOMA + healthy  3% · #42 · quality A
 | **relaxed** | 80% | Human-on-the-loop | Daily development (default) |
 | **autonomous** | 95% | No approvals | Trusted CI/CD pipelines |
 
-> *Full hook documentation in [Hook Reference](docs/hooks.md)*
+> *Full details: [Claude Code Layer deep-dive](docs/claude-code-layer.md) · [Hook Reference](docs/hooks.md)*
 
 ---
 
@@ -480,6 +481,7 @@ soma/
 | :triangular_ruler: | **[Technical Reference](docs/TECHNICAL.md)** | Every formula with source file:line references, all constants, formal properties (boundedness, monotonicity, convergence) |
 | :book: | **[User Guide](docs/guide.md)** | Setup, pressure model explained, baselines, learning, configuration, CLI commands, file paths |
 | :wrench: | **[API Reference](docs/api.md)** | Every class and method with code examples — SOMAEngine, Action, Level, Budget, Predictor, Quality, Fingerprint |
+| :robot: | **[Claude Code Layer](docs/claude-code-layer.md)** | How SOMA integrates with Claude Code — what the agent sees, 7 patterns, code validation, operating modes, Claude's own perspective |
 | :electric_plug: | **[Hook Reference](docs/hooks.md)** | All 4 Claude Code hooks — input/output format, configurable features, silence conditions, examples |
 | :world_map: | **[Roadmap](ROADMAP.md)** | 6 milestones through 2027 — Foundation (done), Agent Intelligence (done), Real-World Ready, Ecosystem, Intelligence, Platform |
 
