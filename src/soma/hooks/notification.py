@@ -188,7 +188,7 @@ def _collect_findings(
 def main():
     try:
         from soma.hooks.common import (
-            STATE_PATH, _get_session_agent_id, read_action_log, get_hook_config,
+            STATE_PATH, _get_session_agent_id, read_action_log, get_hook_config, SOMA_DIR,
         )
 
         if not STATE_PATH.exists():
@@ -227,17 +227,9 @@ def main():
         hook_config = get_hook_config()
         verbosity = hook_config.get("verbosity", "normal")
 
-        # ── Load and clean action log ──
+        # ── Load action log ──
+        # Stop hook cleans up between sessions, no stale detection needed here
         action_log = read_action_log()
-        if action_log:
-            last_ts = action_log[-1].get("ts", 0)
-            if time.time() - last_ts > 1800:
-                action_log = []
-                try:
-                    from soma.hooks.common import ACTION_LOG_PATH
-                    ACTION_LOG_PATH.unlink(missing_ok=True)
-                except OSError:
-                    pass
 
         # ── Collect all findings ──
         findings = _collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
