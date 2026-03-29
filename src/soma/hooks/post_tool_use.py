@@ -101,17 +101,20 @@ def main():
         else:
             output = str(raw_response)[:500]
 
-        # Error detection
+        # Error detection — only from Claude Code's own error signaling
+        # Claude Code wraps errors in specific format, don't heuristic-match content
         error = data.get("error", False) or data.get("is_error", False)
-        if not error and output:
-            output_lower = output[:500].lower()
-            if any(marker in output_lower for marker in (
-                "exit code 1", "exit code 2", "exit code 127",
-                "command not found", "no such file", "permission denied",
-                "traceback (most recent", "syntaxerror",
-                "modulenotfounderror", "filenotfounderror",
-            )):
-                error = True
+
+        # Claude Code tool_response starts with "Exit code N\n" for failed Bash
+        if not error and tool_name == "Bash" and isinstance(raw_response, str):
+            if raw_response.startswith("Exit code ") or raw_response.startswith("\nExit code "):
+                # Extract exit code — only non-zero is an error
+                try:
+                    code_str = raw_response.split("Exit code ")[1].split("\n")[0].strip()
+                    if code_str != "0":
+                        error = True
+                except (IndexError, ValueError):
+                    pass
 
         duration = float(data.get("duration_ms", 0)) / 1000.0
         file_path = _extract_file_path(data)

@@ -1743,7 +1743,8 @@ class TestQualityScoring:
         data = qt.to_dict()
         qt2 = QualityTracker.from_dict(data)
         assert qt2._syntax_errors == 1
-        assert qt2._bash_failures == 1
+        report = qt2.get_report()
+        assert report.bash_failures == 1
 
     def test_issues_list(self):
         from soma.quality import QualityTracker

@@ -36,70 +36,77 @@ class QualityTracker:
     quality score that tells you "is this agent writing good code?"
     """
 
-    def __init__(self) -> None:
+    def __init__(self, window: int = 30) -> None:
+        self._window = window
+        # Rolling window: list of (type, ok) tuples
+        self._events: list[tuple[str, bool]] = []
         self._syntax_errors: int = 0
         self._lint_issues: int = 0
-        self._bash_failures: int = 0
-        self._bash_total: int = 0
-        self._write_total: int = 0
-        self._write_clean: int = 0  # Writes with no syntax/lint issues
 
     def record_write(self, had_syntax_error: bool = False, had_lint_issue: bool = False) -> None:
         """Record a Write/Edit action and its validation result."""
-        self._write_total += 1
+        ok = not had_syntax_error and not had_lint_issue
+        self._events.append(("write", ok))
         if had_syntax_error:
             self._syntax_errors += 1
         if had_lint_issue:
             self._lint_issues += 1
-        if not had_syntax_error and not had_lint_issue:
-            self._write_clean += 1
+        self._trim()
 
     def record_bash(self, error: bool = False) -> None:
         """Record a Bash action and whether it failed."""
-        self._bash_total += 1
-        if error:
-            self._bash_failures += 1
+        self._events.append(("bash", not error))
+        self._trim()
+
+    def _trim(self) -> None:
+        """Keep only last N events."""
+        if len(self._events) > self._window:
+            self._events = self._events[-self._window:]
 
     def get_report(self) -> QualityReport:
-        """Generate quality report for current session."""
-        # Compute component scores
-        write_score = self._write_clean / self._write_total if self._write_total > 0 else 1.0
-        bash_score = 1.0 - (self._bash_failures / self._bash_total) if self._bash_total > 0 else 1.0
+        """Generate quality report from rolling window."""
+        writes = [(t, ok) for t, ok in self._events if t == "write"]
+        bashes = [(t, ok) for t, ok in self._events if t == "bash"]
 
-        # Weighted average: writes matter more than bash
-        if self._write_total + self._bash_total == 0:
+        write_total = len(writes)
+        write_clean = sum(1 for _, ok in writes if ok)
+        bash_total = len(bashes)
+        bash_failures = sum(1 for _, ok in bashes if not ok)
+
+        write_score = write_clean / write_total if write_total > 0 else 1.0
+        bash_score = 1.0 - (bash_failures / bash_total) if bash_total > 0 else 1.0
+
+        total = write_total + bash_total
+        if total == 0:
             score = 1.0
         else:
-            w_write = self._write_total / (self._write_total + self._bash_total)
-            w_bash = self._bash_total / (self._write_total + self._bash_total)
+            w_write = write_total / total
+            w_bash = bash_total / total
             score = w_write * write_score + w_bash * bash_score
 
-        # Penalty for syntax errors (these are bad)
+        # Penalty for syntax errors
         if self._syntax_errors > 0:
             score *= max(0.5, 1.0 - self._syntax_errors * 0.15)
 
         score = max(0.0, min(1.0, score))
-
-        # Grade
         grade = _score_to_grade(score)
 
-        # Issues
         issues = []
         if self._syntax_errors > 0:
             issues.append(f"{self._syntax_errors} syntax error{'s' if self._syntax_errors > 1 else ''}")
         if self._lint_issues > 0:
             issues.append(f"{self._lint_issues} lint issue{'s' if self._lint_issues > 1 else ''}")
-        if self._bash_total > 0 and self._bash_failures / self._bash_total > 0.3:
-            issues.append(f"{self._bash_failures}/{self._bash_total} bash commands failed")
+        if bash_total > 0 and bash_failures / bash_total > 0.3:
+            issues.append(f"{bash_failures}/{bash_total} bash commands failed")
 
         return QualityReport(
             score=score,
             grade=grade,
             syntax_errors=self._syntax_errors,
             lint_issues=self._lint_issues,
-            bash_failures=self._bash_failures,
-            total_writes=self._write_total,
-            total_bashes=self._bash_total,
+            bash_failures=bash_failures,
+            total_writes=write_total,
+            total_bashes=bash_total,
             issues=issues,
         )
 
@@ -107,21 +114,17 @@ class QualityTracker:
         return {
             "syntax_errors": self._syntax_errors,
             "lint_issues": self._lint_issues,
-            "bash_failures": self._bash_failures,
-            "bash_total": self._bash_total,
-            "write_total": self._write_total,
-            "write_clean": self._write_clean,
+            "events": self._events,
+            "window": self._window,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "QualityTracker":
-        obj = cls()
+        window = data.get("window", 30)
+        obj = cls(window=window)
         obj._syntax_errors = data.get("syntax_errors", 0)
         obj._lint_issues = data.get("lint_issues", 0)
-        obj._bash_failures = data.get("bash_failures", 0)
-        obj._bash_total = data.get("bash_total", 0)
-        obj._write_total = data.get("write_total", 0)
-        obj._write_clean = data.get("write_clean", 0)
+        obj._events = data.get("events", [])
         return obj
 
 

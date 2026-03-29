@@ -6,11 +6,11 @@ import math
 from typing import Any
 
 DEFAULTS: dict[str, float] = {
-    "uncertainty": 0.15,
-    "drift": 0.10,
-    "token_usage": 0.30,
-    "cost": 0.20,
-    "error_rate": 0.05,
+    "uncertainty": 0.05,
+    "drift": 0.05,
+    "token_usage": 0.01,
+    "cost": 0.01,
+    "error_rate": 0.01,
 }
 
 
