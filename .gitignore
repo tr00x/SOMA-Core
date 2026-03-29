@@ -7,3 +7,4 @@ __pycache__/
 examples/paperclip_session.json
 docs/superpowers/
 soma_session.json
+dist/
