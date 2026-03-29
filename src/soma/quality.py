@@ -38,24 +38,19 @@ class QualityTracker:
 
     def __init__(self, window: int = 30) -> None:
         self._window = window
-        # Rolling window: list of (type, ok) tuples
-        self._events: list[tuple[str, bool]] = []
-        self._syntax_errors: int = 0
-        self._lint_issues: int = 0
+        # Rolling window: list of (type, ok, flags) tuples
+        # flags: {"syntax": bool, "lint": bool} for writes, empty for bash
+        self._events: list[tuple[str, bool, dict]] = []
 
     def record_write(self, had_syntax_error: bool = False, had_lint_issue: bool = False) -> None:
         """Record a Write/Edit action and its validation result."""
         ok = not had_syntax_error and not had_lint_issue
-        self._events.append(("write", ok))
-        if had_syntax_error:
-            self._syntax_errors += 1
-        if had_lint_issue:
-            self._lint_issues += 1
+        self._events.append(("write", ok, {"syntax": had_syntax_error, "lint": had_lint_issue}))
         self._trim()
 
     def record_bash(self, error: bool = False) -> None:
         """Record a Bash action and whether it failed."""
-        self._events.append(("bash", not error))
+        self._events.append(("bash", not error, {}))
         self._trim()
 
     def _trim(self) -> None:
@@ -65,13 +60,17 @@ class QualityTracker:
 
     def get_report(self) -> QualityReport:
         """Generate quality report from rolling window."""
-        writes = [(t, ok) for t, ok in self._events if t == "write"]
-        bashes = [(t, ok) for t, ok in self._events if t == "bash"]
+        writes = [(t, ok, f) for t, ok, f in self._events if t == "write"]
+        bashes = [(t, ok, f) for t, ok, f in self._events if t == "bash"]
 
         write_total = len(writes)
-        write_clean = sum(1 for _, ok in writes if ok)
+        write_clean = sum(1 for _, ok, _ in writes if ok)
         bash_total = len(bashes)
-        bash_failures = sum(1 for _, ok in bashes if not ok)
+        bash_failures = sum(1 for _, ok, _ in bashes if not ok)
+
+        # Count errors from the rolling window, not a monotonic accumulator
+        syntax_errors = sum(1 for _, _, f in writes if f.get("syntax"))
+        lint_issues = sum(1 for _, _, f in writes if f.get("lint"))
 
         write_score = write_clean / write_total if write_total > 0 else 1.0
         bash_score = 1.0 - (bash_failures / bash_total) if bash_total > 0 else 1.0
@@ -85,25 +84,25 @@ class QualityTracker:
             score = w_write * write_score + w_bash * bash_score
 
         # Penalty for syntax errors
-        if self._syntax_errors > 0:
-            score *= max(0.5, 1.0 - self._syntax_errors * 0.15)
+        if syntax_errors > 0:
+            score *= max(0.5, 1.0 - syntax_errors * 0.15)
 
         score = max(0.0, min(1.0, score))
         grade = _score_to_grade(score)
 
         issues = []
-        if self._syntax_errors > 0:
-            issues.append(f"{self._syntax_errors} syntax error{'s' if self._syntax_errors > 1 else ''}")
-        if self._lint_issues > 0:
-            issues.append(f"{self._lint_issues} lint issue{'s' if self._lint_issues > 1 else ''}")
+        if syntax_errors > 0:
+            issues.append(f"{syntax_errors} syntax error{'s' if syntax_errors > 1 else ''}")
+        if lint_issues > 0:
+            issues.append(f"{lint_issues} lint issue{'s' if lint_issues > 1 else ''}")
         if bash_total > 0 and bash_failures / bash_total > 0.3:
             issues.append(f"{bash_failures}/{bash_total} bash commands failed")
 
         return QualityReport(
             score=score,
             grade=grade,
-            syntax_errors=self._syntax_errors,
-            lint_issues=self._lint_issues,
+            syntax_errors=syntax_errors,
+            lint_issues=lint_issues,
             bash_failures=bash_failures,
             total_writes=write_total,
             total_bashes=bash_total,
@@ -112,8 +111,6 @@ class QualityTracker:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "syntax_errors": self._syntax_errors,
-            "lint_issues": self._lint_issues,
             "events": self._events,
             "window": self._window,
         }
@@ -122,9 +119,15 @@ class QualityTracker:
     def from_dict(cls, data: dict[str, Any]) -> "QualityTracker":
         window = data.get("window", 30)
         obj = cls(window=window)
-        obj._syntax_errors = data.get("syntax_errors", 0)
-        obj._lint_issues = data.get("lint_issues", 0)
-        obj._events = data.get("events", [])
+        raw_events = data.get("events", [])
+        # Migrate old format: (type, ok) → (type, ok, {})
+        migrated = []
+        for ev in raw_events:
+            if len(ev) == 2:
+                migrated.append((ev[0], ev[1], {}))
+            else:
+                migrated.append((ev[0], ev[1], ev[2] if ev[2] else {}))
+        obj._events = migrated
         return obj
 
 
