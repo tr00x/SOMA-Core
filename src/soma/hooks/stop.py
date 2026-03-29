@@ -33,15 +33,11 @@ def main():
     except Exception:
         pass
 
-    # Clean up session artifacts — next session starts fresh
-    try:
-        ACTION_LOG_PATH.unlink(missing_ok=True)
-        PREDICTOR_PATH.unlink(missing_ok=True)
-        TASK_TRACKER_PATH.unlink(missing_ok=True)
-        QUALITY_PATH.unlink(missing_ok=True)
-        SESSION_ID_PATH.unlink(missing_ok=True)
-    except OSError:
-        pass
+    # NOTE: Don't delete session files here. Claude Code calls Stop during
+    # context compression (mid-session), not just at real session end.
+    # Deleting action_log/quality/predictor kills SOMA's memory mid-session.
+    # These files are bounded (max 20 entries) and don't grow indefinitely.
+    # Real cleanup happens when user runs `soma setup-claude` or `rm -rf ~/.soma`.
 
     try:
         snap = engine.get_snapshot(agent_id)
