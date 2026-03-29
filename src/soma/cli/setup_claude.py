@@ -290,7 +290,7 @@ def run_setup_claude() -> None:
     print("    /soma:help     — full command reference")
     print()
     print("  Plugin install (alternative):")
-    print("    /install tr00x/soma-core")
+    print("    /install tr00x/SOMA-Core")
     print()
     print("  To uninstall:")
     print("    soma uninstall-claude")

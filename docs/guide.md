@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-pip install soma-core
+pip install soma-ai
 soma setup-claude
 ```
 

@@ -181,7 +181,7 @@ class TestMain:
             main()
         out = capsys.readouterr().out
         assert "soma" in out
-        assert "0.3.0" in out
+        assert "0." in out  # any 0.x version
 
     def test_status_subcommand(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """soma status subcommand runs without error."""

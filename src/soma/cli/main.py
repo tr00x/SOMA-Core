@@ -241,7 +241,7 @@ def _cmd_tui() -> None:
         from soma.cli.hub import run_hub
         run_hub()
     except ImportError:
-        print("Install dashboard: pip install soma-core[dashboard]")
+        print("Install dashboard: pip install soma-ai[dashboard]")
 
 
 # ---------------------------------------------------------------------------
