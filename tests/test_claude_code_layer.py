@@ -1687,3 +1687,78 @@ class TestTaskTracker:
         tt2 = TaskTracker.from_dict(data)
         assert tt2._all_files == tt._all_files
         assert tt2._all_tools == tt._all_tools
+
+
+# ──────────────────────────────────────────────────────────────────
+# Quality Scoring
+# ──────────────────────────────────────────────────────────────────
+
+class TestQualityScoring:
+    """Tests for code quality tracking."""
+
+    def test_perfect_session(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        for _ in range(10):
+            qt.record_write(had_syntax_error=False, had_lint_issue=False)
+        for _ in range(5):
+            qt.record_bash(error=False)
+        report = qt.get_report()
+        assert report.grade == "A"
+        assert report.score >= 0.9
+
+    def test_syntax_errors_tank_score(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        qt.record_write(had_syntax_error=True)
+        qt.record_write(had_syntax_error=True)
+        qt.record_write(had_syntax_error=False)
+        report = qt.get_report()
+        assert report.grade in ("D", "F")
+        assert report.syntax_errors == 2
+
+    def test_lint_issues_lower_score(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        for _ in range(5):
+            qt.record_write(had_lint_issue=True)
+        report = qt.get_report()
+        assert report.grade in ("C", "D", "F")
+        assert report.lint_issues == 5
+
+    def test_bash_failures(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        for _ in range(5):
+            qt.record_bash(error=True)
+        qt.record_bash(error=False)
+        report = qt.get_report()
+        assert report.bash_failures == 5
+        assert report.grade != "A"
+
+    def test_empty_session(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        report = qt.get_report()
+        assert report.grade == "A"
+        assert report.score == 1.0
+
+    def test_serialization(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        qt.record_write(had_syntax_error=True)
+        qt.record_bash(error=True)
+
+        data = qt.to_dict()
+        qt2 = QualityTracker.from_dict(data)
+        assert qt2._syntax_errors == 1
+        assert qt2._bash_failures == 1
+
+    def test_issues_list(self):
+        from soma.quality import QualityTracker
+        qt = QualityTracker()
+        qt.record_write(had_syntax_error=True)
+        qt.record_write(had_lint_issue=True)
+        report = qt.get_report()
+        assert any("syntax" in i for i in report.issues)
+        assert any("lint" in i for i in report.issues)

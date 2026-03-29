@@ -10,8 +10,9 @@ from __future__ import annotations
 import sys
 
 from soma.hooks.common import (
-    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH, TASK_TRACKER_PATH,
+    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH, TASK_TRACKER_PATH, QUALITY_PATH,
     get_fingerprint_engine, save_fingerprint_engine, read_action_log, _get_session_agent_id,
+    get_quality_tracker,
 )
 
 
@@ -37,6 +38,7 @@ def main():
         ACTION_LOG_PATH.unlink(missing_ok=True)
         PREDICTOR_PATH.unlink(missing_ok=True)
         TASK_TRACKER_PATH.unlink(missing_ok=True)
+        QUALITY_PATH.unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -62,6 +64,18 @@ def main():
         if tools_used:
             top_3 = sorted(tools_used.items(), key=lambda x: -x[1])[:3]
             parts.append(f"  top tools: {', '.join(f'{t}={c}' for t, c in top_3)}")
+
+        # Quality grade
+        try:
+            qt = get_quality_tracker()
+            report = qt.get_report()
+            if report.total_writes + report.total_bashes >= 3:
+                q_str = f"  quality: {report.grade} ({report.score:.0%})"
+                if report.issues:
+                    q_str += f" — {', '.join(report.issues)}"
+                parts.append(q_str)
+        except Exception:
+            pass
 
         print("\n".join(parts), file=sys.stderr)
     except Exception:

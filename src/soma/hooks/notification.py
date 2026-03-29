@@ -152,6 +152,17 @@ def main():
         e = vitals.get("error_rate", 0)
         lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
 
+        # Quality score — warn when code quality drops
+        try:
+            from soma.hooks.common import get_quality_tracker
+            qt = get_quality_tracker()
+            report = qt.get_report()
+            if report.total_writes + report.total_bashes >= 5 and report.grade in ("D", "F"):
+                issues_str = ", ".join(report.issues) if report.issues else "quality declining"
+                lines.append(f"[quality] grade={report.grade} ({issues_str})")
+        except Exception:
+            pass
+
         # Prediction — warn before escalation
         try:
             from soma.hooks.common import get_predictor
