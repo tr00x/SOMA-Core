@@ -117,17 +117,13 @@ def main():
         actions = agent.get("action_count", 0)
         vitals = agent.get("vitals", {})
 
-        # Cold start
-        if actions < 10:
-            pressure = 0.0
-
         emoji, label = LEVEL_STYLE.get(level, ("?", level.lower()))
         bar = _bar(pressure)
 
         # Build parts
         parts = [f"🧠 SOMA {emoji} {label} {bar} {pressure:>3.0%}"]
 
-        # Vitals (only after cold start)
+        # Vitals
         v_str = _vitals_compact(vitals, actions)
         if v_str:
             parts.append(v_str)
@@ -136,15 +132,12 @@ def main():
         parts.append(f"#{actions}")
 
         # Badges
-        if actions < 10:
-            parts.append("warming up")
-        else:
-            phase = _phase_badge()
-            quality = _quality_badge()
-            if quality:
-                parts.append(quality)
-            if phase:
-                parts.append(phase)
+        phase = _phase_badge()
+        quality = _quality_badge()
+        if quality:
+            parts.append(quality)
+        if phase:
+            parts.append(phase)
 
         print(" · ".join(parts))
 
