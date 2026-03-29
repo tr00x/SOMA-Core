@@ -24,7 +24,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "agents": {
         "default": {
             "autonomy": "human_on_the_loop",
-            "sensitivity": "balanced",
         },
     },
     "thresholds": {
@@ -80,7 +79,6 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
     "agents": {
         "claude-code": {
             "autonomy": "human_on_the_loop",
-            "sensitivity": "relaxed",
             "tools": [
                 "Bash", "Edit", "Read", "Write", "Grep", "Glob",
                 "Agent", "WebSearch", "WebFetch", "Skill", "NotebookEdit",

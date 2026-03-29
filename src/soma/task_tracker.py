@@ -151,9 +151,6 @@ class TaskTracker:
             return 0.0, ""
 
         overlap = recent_dirs & self._initial_focus
-        if not recent_dirs:
-            return 0.0, ""
-
         drift = 1.0 - len(overlap) / len(recent_dirs)
 
         if drift < 0.3:

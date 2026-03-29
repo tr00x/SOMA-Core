@@ -11,7 +11,7 @@ from typing import Any
 
 from soma.cli.config_loader import load_config
 
-_VERSION = "0.1.0"
+_VERSION = "0.3.0"
 
 
 # ---------------------------------------------------------------------------
