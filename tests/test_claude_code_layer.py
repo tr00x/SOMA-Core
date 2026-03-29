@@ -1178,7 +1178,7 @@ class TestPatternAnalysis:
             {"tool": "Write", "error": False, "file": "/x/y.py", "ts": 5},
         ]
         tips = _analyze_patterns(log)
-        assert len(tips) <= 2
+        assert len(tips) <= 3
 
 
 # ──────────────────────────────────────────────────────────────────

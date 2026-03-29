@@ -22,7 +22,7 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
     """Analyze recent action log and return actionable tips.
 
     Each tip is a short, specific instruction — not a metric.
-    Returns at most 2 tips to avoid noise.
+    Returns at most 3 tips to avoid noise.
     """
     if not action_log:
         return []
@@ -30,24 +30,31 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
     tips: list[str] = []
     recent = action_log[-10:]
 
-    # Pattern 1: Writes without Reads
+    # Pattern 1: Writes without Reads (blind mutation)
     writes_since_read = 0
+    blind_files: list[str] = []
     for entry in reversed(recent):
         if entry["tool"] in ("Write", "Edit", "NotebookEdit"):
             writes_since_read += 1
+            f = entry.get("file", "")
+            if f:
+                blind_files.append(f.rsplit("/", 1)[-1])
         elif entry["tool"] == "Read":
             break
     if writes_since_read >= 2:
+        files_hint = f" ({', '.join(dict.fromkeys(blind_files[:3]))})" if blind_files else ""
         tips.append(
-            f"[pattern] {writes_since_read} writes without a Read — "
-            f"read the file before editing to avoid blind mutations"
+            f"[pattern] {writes_since_read} writes without a Read{files_hint} — "
+            f"Read the target file first to understand current state"
         )
 
     # Pattern 2: Consecutive Bash failures
     consecutive_bash_errors = 0
+    last_bash_cmds: list[str] = []
     for entry in reversed(recent):
         if entry["tool"] == "Bash" and entry.get("error"):
             consecutive_bash_errors += 1
+            last_bash_cmds.append(entry.get("file", ""))
         elif entry["tool"] == "Bash":
             break
         else:
@@ -55,7 +62,8 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
     if consecutive_bash_errors >= 2:
         tips.append(
             f"[pattern] {consecutive_bash_errors} consecutive Bash failures — "
-            f"stop retrying, check assumptions and environment first"
+            f"STOP retrying. Read the error output, check your assumptions, "
+            f"try a different approach"
         )
 
     # Pattern 3: High error rate
@@ -63,9 +71,16 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
         error_count = sum(1 for e in recent if e.get("error"))
         error_rate = error_count / len(recent)
         if error_rate >= 0.3:
+            # Identify which tools are failing
+            error_tools: dict[str, int] = {}
+            for e in recent:
+                if e.get("error"):
+                    t = e["tool"]
+                    error_tools[t] = error_tools.get(t, 0) + 1
+            worst_tool = max(error_tools, key=error_tools.get) if error_tools else "?"
             tips.append(
-                f"[pattern] {error_count}/{len(recent)} recent actions failed — "
-                f"slow down, read relevant files and verify approach before acting"
+                f"[pattern] {error_count}/{len(recent)} recent actions failed "
+                f"(mostly {worst_tool}) — pause and rethink your approach"
             )
 
     # Pattern 4: Thrashing same file
@@ -82,11 +97,42 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
                 fname, count = thrashed[0]
                 short = fname.rsplit("/", 1)[-1] if "/" in fname else fname
                 tips.append(
-                    f"[pattern] edited {short} {count}x in {len(recent)} actions — "
-                    f"plan the full change before editing, avoid incremental fixes"
+                    f"[pattern] edited {short} {count}x — "
+                    f"Read the file, plan ALL changes, then make ONE edit"
                 )
 
-    return tips[:2]
+    # Pattern 5: Agent/subagent spam — lots of Agent calls without progress
+    agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
+    if agent_calls >= 3:
+        tips.append(
+            f"[pattern] {agent_calls} Agent calls in {len(recent)} actions — "
+            f"are subagents producing results? Consider doing it directly"
+        )
+
+    # Pattern 6: Read-only stall (research paralysis)
+    if len(recent) >= 8:
+        read_tools = {"Read", "Grep", "Glob", "WebSearch", "WebFetch"}
+        reads = sum(1 for e in recent if e["tool"] in read_tools)
+        writes = sum(1 for e in recent if e["tool"] in ("Write", "Edit"))
+        if reads >= 7 and writes == 0:
+            tips.append(
+                f"[pattern] {reads} reads, 0 writes in last {len(recent)} actions — "
+                f"you may be stuck researching. Start implementing or ask the user"
+            )
+
+    # Pattern 7: Long sequence without user interaction
+    if len(action_log) >= 30:
+        last_30 = action_log[-30:]
+        user_tools = {"AskUserQuestion"}
+        user_interactions = sum(1 for e in last_30 if e["tool"] in user_tools)
+        edits = sum(1 for e in last_30 if e["tool"] in ("Write", "Edit", "Bash"))
+        if user_interactions == 0 and edits >= 15:
+            tips.append(
+                f"[pattern] {edits} mutations in 30 actions with no user check-in — "
+                f"verify you're still on track before continuing"
+            )
+
+    return tips[:3]
 
 
 def _collect_findings(
@@ -105,11 +151,26 @@ def _collect_findings(
 
     # Level status (priority 0 at elevated levels)
     if level_name == "CAUTION":
-        findings.append((0, "[status] CAUTION — verify before mutating"))
+        findings.append((0,
+            "[status] CAUTION — Read before every Write/Edit. "
+            "Verify your understanding of each file before changing it"
+        ))
     elif level_name == "DEGRADE":
-        findings.append((0, "[status] DEGRADED — Bash/Agent blocked"))
-    elif level_name in ("QUARANTINE", "RESTART", "SAFE_MODE"):
-        findings.append((0, f"[status] {level_name} — only Read/Glob/Grep available"))
+        findings.append((0,
+            "[status] DEGRADED — Bash/Agent blocked. "
+            "Focus on reading and planning. Fix the root cause before acting"
+        ))
+    elif level_name == "QUARANTINE":
+        findings.append((0,
+            "[status] QUARANTINE — read-only mode. "
+            "Stop all mutations. Read the relevant code, understand what went wrong, "
+            "then explain to the user what happened and ask for guidance"
+        ))
+    elif level_name in ("RESTART", "SAFE_MODE"):
+        findings.append((0,
+            f"[status] {level_name} — fully restricted. "
+            f"Ask the user what to do next"
+        ))
 
     # Quality (priority 0 if bad)
     if hook_config.get("quality", True):
@@ -137,10 +198,19 @@ def _collect_findings(
                 if thresholds:
                     pred = predictor.predict(thresholds[0])
                     if pred.will_escalate:
+                        # Specific advice per dominant reason
+                        reason = pred.dominant_reason
+                        advice = {
+                            "error_streak": "stop retrying the failing approach, try something different",
+                            "blind_writes": "Read the target files before editing",
+                            "thrashing": "plan the complete change first, then make one clean edit",
+                            "retry_storm": "investigate the root cause instead of retrying",
+                            "trend": "pressure is climbing — slow down and verify each step",
+                        }.get(reason, "slow down and verify your approach")
                         findings.append((
                             1,
                             f"[predict] escalation in ~{pred.actions_ahead} actions "
-                            f"({pred.dominant_reason}) — slow down"
+                            f"({reason}) — {advice}"
                         ))
         except Exception:
             pass
@@ -150,14 +220,19 @@ def _collect_findings(
     for tip in tips:
         findings.append((1, tip))
 
-    # Scope drift (priority 1)
+    # Scope drift (priority 1) + phase info
     if hook_config.get("task_tracking", True):
         try:
             from soma.hooks.common import get_task_tracker
             tracker = get_task_tracker()
             ctx = tracker.get_context()
             if ctx.scope_drift >= 0.4 and ctx.drift_explanation:
-                findings.append((1, f"[scope] {ctx.drift_explanation}"))
+                findings.append((1,
+                    f"[scope] {ctx.drift_explanation} — "
+                    f"is this intentional? If not, refocus on the original task"
+                ))
+            elif ctx.scope_drift >= 0.3 and ctx.drift_explanation:
+                findings.append((2, f"[scope] {ctx.drift_explanation}"))
         except Exception:
             pass
 
