@@ -108,6 +108,15 @@ def main():
         # ── Log action for pattern analysis ──
         append_action_log(tool_name, error=error, file_path=file_path)
 
+        # ── Task tracking ──
+        try:
+            from soma.hooks.common import get_task_tracker, save_task_tracker
+            tracker = get_task_tracker()
+            tracker.record(tool_name, file_path, error)
+            save_task_tracker(tracker)
+        except Exception:
+            pass
+
         action = Action(
             tool_name=tool_name,
             output_text=output,

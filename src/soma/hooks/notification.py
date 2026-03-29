@@ -192,6 +192,16 @@ def main():
         elif level_name in ("QUARANTINE", "RESTART", "SAFE_MODE"):
             lines.append(f"[status] {level_name} — only Read/Glob/Grep available")
 
+        # Task context — scope drift detection
+        try:
+            from soma.hooks.common import get_task_tracker
+            tracker = get_task_tracker()
+            ctx = tracker.get_context()
+            if ctx.scope_drift >= 0.4 and ctx.drift_explanation:
+                lines.append(f"[scope] drift={ctx.scope_drift:.0%}: {ctx.drift_explanation}")
+        except Exception:
+            pass
+
         # Root cause analysis — plain English explanation
         try:
             from soma.rca import diagnose

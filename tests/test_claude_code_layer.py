@@ -1609,3 +1609,81 @@ class TestFingerprinting:
             read_write_ratio=10.0,
         )
         assert fp1.divergence(fp_diff) > 0.3
+
+
+# ──────────────────────────────────────────────────────────────────
+# Task Tracker
+# ──────────────────────────────────────────────────────────────────
+
+class TestTaskTracker:
+    """Tests for task-aware monitoring."""
+
+    def test_phase_detection_research(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for _ in range(5):
+            tt.record("Read", "/src/auth.py")
+            tt.record("Grep", "/src/auth.py")
+        ctx = tt.get_context()
+        assert ctx.phase == "research"
+
+    def test_phase_detection_implement(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for _ in range(5):
+            tt.record("Edit", "/src/auth.py")
+            tt.record("Write", "/src/auth.py")
+        ctx = tt.get_context()
+        assert ctx.phase == "implement"
+
+    def test_phase_detection_debug(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for _ in range(5):
+            tt.record("Bash", "", error=True)
+            tt.record("Read", "/src/auth.py")
+        ctx = tt.get_context()
+        assert ctx.phase == "debug"
+
+    def test_focus_files(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        tt.record("Read", "/src/auth.py")
+        tt.record("Edit", "/src/auth.py")
+        tt.record("Read", "/src/models.py")
+        ctx = tt.get_context()
+        assert "auth.py" in ctx.focus_files
+        assert "models.py" in ctx.focus_files
+
+    def test_scope_drift(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        # Initial focus: all in src/auth/
+        for i in range(6):
+            tt.record("Read", f"/project/src/auth/file{i}.py")
+
+        # Now drift to completely different area
+        for i in range(10):
+            tt.record("Edit", f"/project/tests/integration/test{i}.py")
+
+        ctx = tt.get_context()
+        assert ctx.scope_drift > 0.3
+
+    def test_no_drift_same_area(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(15):
+            tt.record("Read", f"/project/src/auth/file{i % 3}.py")
+        ctx = tt.get_context()
+        assert ctx.scope_drift < 0.3
+
+    def test_serialization(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        tt.record("Read", "/src/foo.py")
+        tt.record("Edit", "/src/bar.py")
+
+        data = tt.to_dict()
+        tt2 = TaskTracker.from_dict(data)
+        assert tt2._all_files == tt._all_files
+        assert tt2._all_tools == tt._all_tools

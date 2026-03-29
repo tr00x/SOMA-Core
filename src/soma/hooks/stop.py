@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 
 from soma.hooks.common import (
-    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH,
+    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH, TASK_TRACKER_PATH,
     get_fingerprint_engine, save_fingerprint_engine, read_action_log, _get_session_agent_id,
 )
 
@@ -36,6 +36,7 @@ def main():
     try:
         ACTION_LOG_PATH.unlink(missing_ok=True)
         PREDICTOR_PATH.unlink(missing_ok=True)
+        TASK_TRACKER_PATH.unlink(missing_ok=True)
     except OSError:
         pass
 

@@ -15,6 +15,7 @@ STATE_PATH = SOMA_DIR / "state.json"
 ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
 PREDICTOR_PATH = SOMA_DIR / "predictor.json"
 FINGERPRINT_PATH = SOMA_DIR / "fingerprint.json"
+TASK_TRACKER_PATH = SOMA_DIR / "task_tracker.json"
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -213,6 +214,28 @@ def save_fingerprint_engine(engine) -> None:
     try:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         FINGERPRINT_PATH.write_text(json.dumps(engine.to_dict()))
+    except Exception:
+        pass
+
+
+def get_task_tracker():
+    """Load or create task tracker for this session."""
+    try:
+        from soma.task_tracker import TaskTracker
+        if TASK_TRACKER_PATH.exists():
+            data = json.loads(TASK_TRACKER_PATH.read_text())
+            return TaskTracker.from_dict(data)
+        return TaskTracker()
+    except Exception:
+        from soma.task_tracker import TaskTracker
+        return TaskTracker()
+
+
+def save_task_tracker(tracker) -> None:
+    """Persist task tracker state."""
+    try:
+        SOMA_DIR.mkdir(parents=True, exist_ok=True)
+        TASK_TRACKER_PATH.write_text(json.dumps(tracker.to_dict()))
     except Exception:
         pass
 
