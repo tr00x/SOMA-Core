@@ -65,7 +65,7 @@ Make SOMA work seamlessly in production. No rough edges. Install, configure, for
 
 | Deliverable | Priority | Status |
 |:------------|:---------|:-------|
-| **PyPI publish** — `pip install soma-core` works globally | Critical | |
+| **PyPI publish** — `pip install soma-ai` works globally | Critical | Done |
 | **GitHub Actions CI** — tests on every push/PR | Critical | |
 | **Async client support** — `soma.wrap(AsyncAnthropic())` | High | |
 | **Progress tracking** — detect stuck agents, not just confused | High | |

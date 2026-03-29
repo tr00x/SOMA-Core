@@ -9,7 +9,7 @@ description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "Tim Hunt", email = "tr00x@users.noreply.github.com" }]
+authors = [{ name = "Tim Hunt", email = "tr00x@proton.me" }]
 keywords = ["ai", "agents", "monitoring", "observability", "behavioral"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,7 +28,7 @@ dependencies = [
 dashboard = ["textual>=3.0"]
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 dev = ["pytest>=8.0", "pytest-cov"]
-all = ["soma-core[dashboard,otel,dev]"]
+all = ["soma-ai[dashboard,otel,dev]"]
 
 [project.scripts]
 soma = "soma.cli.main:main"
@@ -36,8 +36,8 @@ soma-hook = "soma.hooks.claude_code:main"
 soma-statusline = "soma.hooks.statusline:main"
 
 [project.urls]
-Homepage = "https://github.com/tr00x/soma-core"
-Repository = "https://github.com/tr00x/soma-core"
+Homepage = "https://github.com/tr00x/SOMA-Core"
+Repository = "https://github.com/tr00x/SOMA-Core"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
