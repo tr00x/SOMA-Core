@@ -161,6 +161,42 @@ def _cmd_config(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _cmd_mode(args: argparse.Namespace) -> None:
+    from soma.cli.config_loader import (
+        load_config, save_config, MODE_PRESETS, apply_mode,
+    )
+
+    if args.mode_name is None:
+        # Show current mode and available modes
+        config = load_config()
+        current = config.get("soma", {}).get("mode", "relaxed")
+        print(f"  Current mode: {current}")
+        print()
+        for name, preset in MODE_PRESETS.items():
+            autonomy = preset["agents"]["claude-code"]["autonomy"]
+            quarantine = preset["thresholds"]["quarantine"]
+            verbosity = preset["hooks"]["verbosity"]
+            marker = " <--" if name == current else ""
+            print(f"  {name:<12} autonomy={autonomy}, quarantine={quarantine:.0%}, verbosity={verbosity}{marker}")
+        print()
+        print("  Usage: soma mode <strict|relaxed|autonomous>")
+        return
+
+    mode_name = args.mode_name
+    config = load_config()
+    config = apply_mode(config, mode_name)
+    config.setdefault("soma", {})["mode"] = mode_name
+    save_config(config)
+    print(f"  Mode set to: {mode_name}")
+
+    preset = MODE_PRESETS[mode_name]
+    autonomy = preset["agents"]["claude-code"]["autonomy"]
+    quarantine = preset["thresholds"]["quarantine"]
+    print(f"  Autonomy: {autonomy}")
+    print(f"  Quarantine threshold: {quarantine:.0%}")
+    print(f"  Verbosity: {preset['hooks']['verbosity']}")
+
+
 def _cmd_export(args: argparse.Namespace) -> None:
     import json as _json
 
@@ -227,6 +263,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Configuration:\n"
             "  soma config show                Print current soma.toml\n"
             "  soma config set <key> <value>   Update a config value\n"
+            "  soma mode [name]                   Switch operating mode\n"
             "  soma init                       Run the interactive setup wizard\n"
             "\n"
             "Session:\n"
@@ -276,6 +313,11 @@ def _build_parser() -> argparse.ArgumentParser:
     cs.add_argument("key", help="Dotted key path (e.g. thresholds.caution)")
     cs.add_argument("value", help="New value")
 
+    # ---- Mode ----
+    mode_parser = subparsers.add_parser("mode", help="Switch SOMA operating mode")
+    mode_parser.add_argument("mode_name", nargs="?", default=None,
+                             help="Mode: strict, relaxed, or autonomous")
+
     # ---- Session ----
     export_p = subparsers.add_parser("export", help="Export current session state to JSON")
     export_p.add_argument(
@@ -321,6 +363,7 @@ def main() -> None:
         "release": _cmd_release,
         "reset": _cmd_reset,
         "approve": _cmd_approve,
+        "mode": _cmd_mode,
         "export": _cmd_export,
         "replay": _cmd_replay,
         "daemon": _cmd_daemon,

@@ -106,6 +106,99 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
 }
 
 
+MODE_PRESETS: dict[str, dict[str, Any]] = {
+    "strict": {
+        "agents": {
+            "claude-code": {
+                "autonomy": "human_in_the_loop",
+            },
+        },
+        "thresholds": {
+            "caution": 0.20,
+            "degrade": 0.40,
+            "quarantine": 0.60,
+            "restart": 0.80,
+        },
+        "hooks": {
+            "verbosity": "verbose",
+            "validate_python": True,
+            "validate_js": True,
+            "lint_python": True,
+            "predict": True,
+            "fingerprint": True,
+            "quality": True,
+            "task_tracking": True,
+        },
+    },
+    "relaxed": {
+        "agents": {
+            "claude-code": {
+                "autonomy": "human_on_the_loop",
+            },
+        },
+        "thresholds": {
+            "caution": 0.40,
+            "degrade": 0.60,
+            "quarantine": 0.80,
+            "restart": 0.95,
+        },
+        "hooks": {
+            "verbosity": "normal",
+            "validate_python": True,
+            "validate_js": True,
+            "lint_python": True,
+            "predict": True,
+            "fingerprint": True,
+            "quality": True,
+            "task_tracking": True,
+        },
+    },
+    "autonomous": {
+        "agents": {
+            "claude-code": {
+                "autonomy": "fully_autonomous",
+            },
+        },
+        "thresholds": {
+            "caution": 0.60,
+            "degrade": 0.80,
+            "quarantine": 0.95,
+            "restart": 0.99,
+        },
+        "hooks": {
+            "verbosity": "minimal",
+            "validate_python": True,
+            "validate_js": False,
+            "lint_python": False,
+            "predict": False,
+            "fingerprint": False,
+            "quality": False,
+            "task_tracking": False,
+        },
+    },
+}
+
+
+def apply_mode(config: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Deep-merge a mode preset into config. Returns the merged config."""
+    import copy
+    preset = MODE_PRESETS.get(mode)
+    if preset is None:
+        raise ValueError(f"Unknown mode: {mode!r}. Choose from: {', '.join(MODE_PRESETS)}")
+    result = copy.deepcopy(config)
+    _deep_merge(result, preset)
+    return result
+
+
+def _deep_merge(base: dict, override: dict) -> None:
+    """Recursively merge override into base, mutating base."""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
 def load_config(path: str = "soma.toml") -> dict[str, Any]:
     """Read and return config from *path*. Returns DEFAULT_CONFIG if file is missing."""
     if not os.path.exists(path):
