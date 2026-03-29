@@ -3,7 +3,7 @@
 The nervous system for AI agents. Monitors behavior, predicts problems, and intervenes before things go wrong.
 
 ```
-pip install soma-ai
+uv tool install soma-ai
 soma setup-claude
 ```
 
@@ -12,10 +12,12 @@ That's it. Your Claude Code now has a nervous system.
 ## Quick start
 
 ```bash
-# Install
-pip install soma-ai
+# Install (pick one)
+uv tool install soma-ai          # recommended (uv)
+pipx install soma-ai             # alternative (pipx)
+pip install soma-ai              # if you manage PATH yourself
 
-# Connect to Claude Code (installs hooks + status line)
+# Connect to Claude Code (installs hooks, status line, slash commands)
 soma setup-claude
 
 # Check it's working
