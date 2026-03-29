@@ -86,36 +86,24 @@ def _phase_badge() -> str:
 
 def main():
     try:
-        from soma.hooks.common import STATE_PATH, _get_session_agent_id
+        from soma.hooks.common import get_engine
 
-        if not STATE_PATH.exists():
+        engine, agent_id = get_engine()
+        if engine is None:
             print("🧠 SOMA · waiting")
             return
 
-        state = json.loads(STATE_PATH.read_text())
-        agents = state.get("agents", {})
-
-        my_id = _get_session_agent_id()
-        agent = agents.get(my_id)
-        if agent is None:
-            best_agent = None
-            best_count = -1
-            for aid, adata in agents.items():
-                if aid.startswith("cc-") or aid == "claude-code":
-                    count = adata.get("action_count", 0)
-                    if count > best_count:
-                        best_count = count
-                        best_agent = adata
-            agent = best_agent
-
-        if agent is None:
+        try:
+            snap = engine.get_snapshot(agent_id)
+        except Exception:
             print("🧠 SOMA · waiting")
             return
 
-        level = agent.get("level", "HEALTHY")
-        pressure = agent.get("pressure", 0.0)
-        actions = agent.get("action_count", 0)
-        vitals = agent.get("vitals", {})
+        level_obj = snap["level"]
+        level = level_obj.name if hasattr(level_obj, "name") else str(level_obj)
+        pressure = snap["pressure"]
+        actions = snap["action_count"]
+        vitals = snap.get("vitals", {})
 
         emoji, label = LEVEL_STYLE.get(level, ("?", level.lower()))
         bar = _bar(pressure)

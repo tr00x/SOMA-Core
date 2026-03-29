@@ -102,9 +102,13 @@ class SOMAEngine:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)
         s = self._agents[agent_id]
+        # Respect grace period: during cold start, effective pressure is 0
+        pressure = self._graph.get_effective_pressure(agent_id)
+        if s.action_count <= s.baseline.min_samples:
+            pressure = 0.0
         return {
             "level": s.ladder.current,
-            "pressure": self._graph.get_effective_pressure(agent_id),
+            "pressure": pressure,
             "vitals": {
                 "uncertainty": s.baseline.get("uncertainty"),
                 "drift": s.baseline.get("drift"),
@@ -140,9 +144,13 @@ class SOMAEngine:
             # create_engine_from_config() but has no real purpose in Claude Code
             if agent_id == "default":
                 continue
+            # Respect grace period in exported state too
+            pressure = self._graph.get_effective_pressure(agent_id)
+            if s.action_count <= s.baseline.min_samples:
+                pressure = 0.0
             state["agents"][agent_id] = {
                 "level": s.ladder.current.name,
-                "pressure": self._graph.get_effective_pressure(agent_id),
+                "pressure": pressure,
                 "vitals": {
                     "uncertainty": s.baseline.get("uncertainty"),
                     "drift": s.baseline.get("drift"),
