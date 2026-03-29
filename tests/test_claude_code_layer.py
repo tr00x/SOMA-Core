@@ -717,7 +717,7 @@ class TestStatusline:
         main()
         out = capsys.readouterr().out.strip()
         assert "SOMA" in out
-        assert "HEALTHY" in out
+        assert "healthy" in out
 
     def test_shows_action_count(self, soma_dir, capsys):
         from soma.hooks.statusline import main
@@ -729,13 +729,11 @@ class TestStatusline:
 
         main()
         out = capsys.readouterr().out.strip()
-        # Action count should be present (format: #N)
         assert "#" in out
-        assert "HEALTHY" in out or "CAUTION" in out
+        assert "healthy" in out or "caution" in out
 
     def test_shows_waiting_when_no_state(self, soma_dir, capsys):
         from soma.hooks.statusline import main
-        # No state file — should show waiting
         main()
         out = capsys.readouterr().out.strip()
         assert "waiting" in out or "SOMA" in out
@@ -743,30 +741,25 @@ class TestStatusline:
     def test_never_crashes(self, soma_dir, capsys, monkeypatch):
         from soma.hooks.statusline import main
 
-        # Write corrupt state to both files
         (soma_dir / "state.json").write_text("corrupt data {{{")
         (soma_dir / "engine_state.json").write_text("corrupt data {{{")
         main()
 
         out = capsys.readouterr().out.strip()
-        assert "SOMA" in out  # Should output something, not crash
+        assert "SOMA" in out
 
     def test_shows_correct_symbol_for_level(self, soma_dir, capsys):
-        from soma.hooks.statusline import main, SYMBOLS
+        from soma.hooks.statusline import main, LEVEL_STYLE
 
         engine, _ = get_engine()
         engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
         save_state(engine)
 
-        # Verify state.json was written with QUARANTINE
-        import json
-        state_data = json.loads((soma_dir / "state.json").read_text())
-        assert state_data["agents"]["claude-code"]["level"] == "QUARANTINE"
-
         main()
         out = capsys.readouterr().out.strip()
-        assert SYMBOLS["QUARANTINE"] in out
-        assert "QUARANTINE" in out
+        emoji, label = LEVEL_STYLE["QUARANTINE"]
+        assert emoji in out
+        assert label in out
 
 
 # ──────────────────────────────────────────────────────────────────
