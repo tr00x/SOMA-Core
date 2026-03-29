@@ -133,22 +133,8 @@ def main():
             except Exception:
                 pass
 
-        action = Action(
-            tool_name=tool_name,
-            output_text=output,
-            token_count=len(output) // 4,
-            error=error,
-            duration_sec=duration,
-        )
-
-        result = engine.record_action(agent_id, action)
-        save_state(engine)
-
-        level_name = result.level.name
-        pressure = result.pressure
-        vitals = result.vitals
-
-        # Post-write validation + quality
+        # Pre-record validation: check written code BEFORE recording action
+        # If syntax error found, mark action as error so engine pressure rises
         syntax_err = None
         lint_err = None
         if tool_name in ("Write", "Edit", "NotebookEdit") and file_path and not error:
@@ -166,6 +152,26 @@ def main():
                 if js_err:
                     print(f"SOMA: syntax error in {short_name}: {js_err}", file=sys.stderr)
                     syntax_err = syntax_err or js_err
+
+        # Syntax error = action error (makes engine pressure rise)
+        if syntax_err:
+            error = True
+
+        # Record action with engine (AFTER validation so errors are counted)
+        action = Action(
+            tool_name=tool_name,
+            output_text=output,
+            token_count=len(output) // 4,
+            error=error,
+            duration_sec=duration,
+        )
+
+        result = engine.record_action(agent_id, action)
+        save_state(engine)
+
+        level_name = result.level.name
+        pressure = result.pressure
+        vitals = result.vitals
 
         # Quality tracking — only Write/Edit (Bash errors tracked by engine error_rate)
         if hook_config.get("quality", True) and tool_name in ("Write", "Edit", "NotebookEdit"):
