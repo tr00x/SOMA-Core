@@ -26,6 +26,31 @@ CLAUDE_TOOLS = [
 # Maximum actions to keep in the log
 ACTION_LOG_MAX = 20
 
+# Default hook config (overridden by soma.toml [hooks] section)
+DEFAULT_HOOK_CONFIG = {
+    "verbosity": "normal",  # minimal, normal, verbose
+    "validate_python": True,
+    "validate_js": True,
+    "lint_python": True,
+    "predict": True,
+    "fingerprint": True,
+    "quality": True,
+    "task_tracking": True,
+}
+
+
+def get_hook_config() -> dict:
+    """Load hook configuration from soma.toml or use defaults."""
+    try:
+        from soma.cli.config_loader import load_config
+        config = load_config()
+        hook_cfg = config.get("hooks", {})
+        merged = dict(DEFAULT_HOOK_CONFIG)
+        merged.update(hook_cfg)
+        return merged
+    except Exception:
+        return dict(DEFAULT_HOOK_CONFIG)
+
 
 def read_action_log() -> list[dict]:
     """Read recent action log for pattern analysis."""
