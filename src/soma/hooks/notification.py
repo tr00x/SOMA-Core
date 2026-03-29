@@ -188,35 +188,22 @@ def _collect_findings(
 def main():
     try:
         from soma.hooks.common import (
-            STATE_PATH, _get_session_agent_id, read_action_log, get_hook_config, SOMA_DIR,
+            get_engine, read_action_log, get_hook_config,
         )
 
-        if not STATE_PATH.exists():
+        engine, agent_id = get_engine()
+        if engine is None:
             return
 
-        state = json.loads(STATE_PATH.read_text())
-        agents = state.get("agents", {})
-
-        my_id = _get_session_agent_id()
-        agent = agents.get(my_id)
-        if agent is None:
-            # Fallback: pick the most active cc-* agent (highest action_count)
-            best_agent = None
-            best_count = -1
-            for aid, adata in agents.items():
-                if aid.startswith("cc-") or aid == "claude-code":
-                    count = adata.get("action_count", 0)
-                    if count > best_count:
-                        best_count = count
-                        best_agent = adata
-            agent = best_agent
-        if agent is None:
+        try:
+            snap = engine.get_snapshot(agent_id)
+        except Exception:
             return
 
-        level_name = agent.get("level", "HEALTHY")
-        pressure = agent.get("pressure", 0.0)
-        actions = agent.get("action_count", 0)
-        vitals = agent.get("vitals", {})
+        level_name = snap["level"].name if hasattr(snap["level"], "name") else str(snap["level"])
+        pressure = snap["pressure"]
+        actions = snap["action_count"]
+        vitals = snap.get("vitals", {})
 
         # Show real pressure always — cold start suppression caused confusion
 
