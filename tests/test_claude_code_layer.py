@@ -1250,20 +1250,18 @@ class TestPostWriteValidation:
 class TestStopCleanup:
     """Tests that Stop hook cleans up session artifacts."""
 
-    def test_action_log_cleaned_on_stop(self, soma_dir, monkeypatch):
+    def test_action_log_preserved_on_stop(self, soma_dir, monkeypatch):
+        """Stop hook should NOT delete action_log (Claude Code calls Stop mid-session)."""
         from soma.hooks.stop import main
         import soma.hooks.common as _common
-        import soma.hooks.stop as _stop
 
-        # Point ACTION_LOG_PATH to temp dir
         log_path = soma_dir / "action_log.json"
         log_path.write_text('[{"tool": "Read", "ts": 1}]')
         monkeypatch.setattr(_common, "ACTION_LOG_PATH", log_path)
-        monkeypatch.setattr(_stop, "ACTION_LOG_PATH", log_path)
 
         main()
 
-        assert not log_path.exists()
+        assert log_path.exists()  # Should survive Stop
 
 
 # ──────────────────────────────────────────────────────────────────
