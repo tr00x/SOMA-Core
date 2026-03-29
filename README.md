@@ -28,9 +28,9 @@
 
 ---
 
-> **Your AI agent just burned $200 in a retry loop. Again.**
+> **Your AI agent just edited 5 files without reading any of them. It's retrying the same failing command for the 8th time. It wandered from your auth module into unrelated config files. And you have no idea until it's too late.**
 >
-> SOMA stops that. One line of code. Zero config. Sub-millisecond overhead.
+> SOMA sees all of this in real-time — and tells the agent to stop.
 
 ```bash
 pip install soma-ai
@@ -38,18 +38,37 @@ pip install soma-ai
 
 ---
 
-## Why SOMA?
+## What SOMA Does
 
-AI agents are powerful but fragile. They loop. They hallucinate. They edit files blind. They blow budgets. They retry failing commands 15 times. And in multi-agent pipelines, one confused agent can cascade failures across the entire system.
+SOMA is not a dashboard. It's not a logger. It's a **closed-loop behavioral control system** that watches every action an AI agent takes, detects problems as they develop, and **injects corrective feedback directly into the agent's context**.
 
-**Existing solutions don't cut it:**
+### Watch → Warn → Restrict → Learn → Predict
 
-| Approach | Observes behavior? | Intervenes? | Adapts? | Multi-agent? |
-|----------|:-:|:-:|:-:|:-:|
-| Guardrails (NeMo, Lakera) | Prompt-level only | Content filter | No | No |
-| Observability (LangSmith, Helicone) | Yes | **No** | No | Partial |
-| Rate limiters | No | Token cap | No | No |
-| **SOMA** | **5 behavioral signals** | **6-level escalation** | **Self-learning** | **Trust graph** |
+| | What | How |
+|:--|:-----|:----|
+| **Watch** | 5 behavioral signals per action | Uncertainty, drift, error rate, cost, token usage |
+| **Warn** | Injects specific advice into agent context | `"3 writes without a Read — Read the target file first"` |
+| **Restrict** | Progressively blocks dangerous tools | 6-level escalation: HEALTHY → CAUTION → DEGRADE → QUARANTINE |
+| **Learn** | Adapts thresholds to each agent | Tracks intervention outcomes, tunes over time |
+| **Predict** | Warns ~5 actions before escalation | Linear trend + pattern detection (error streaks, thrashing, blind writes) |
+
+### What SOMA Catches
+
+These are real messages SOMA injects into the agent's context:
+
+```
+[pattern] 3 writes without a Read (main.py, config.py) — Read the target file first
+[pattern] 4 consecutive Bash failures — STOP retrying, try a different approach
+[pattern] edited app.py 5x — Read the file, plan ALL changes, then make ONE edit
+[pattern] 7 reads, 0 writes in last 10 actions — you may be stuck researching
+[pattern] 15 mutations with no user check-in — verify you're still on track
+[predict] escalation in ~5 actions (error_streak) — stop retrying the failing approach
+[scope]   scope expanded to tests/, config/ — is this intentional? If not, refocus
+[quality] grade=D (2 syntax errors, 3/8 bash commands failed)
+[status]  QUARANTINE — stop all mutations, explain to user what went wrong
+```
+
+The agent reads these and **changes its behavior**. That's the feedback loop — not a human reading logs after the fact.
 
 ---
 
@@ -69,7 +88,7 @@ soma setup-claude
 That's it. Status line appears immediately:
 
 ```
-SOMA + healthy  2% · #42 · quality A
+SOMA + healthy  3% · #42 · quality A
 ```
 
 </td>
@@ -80,11 +99,12 @@ SOMA + healthy  2% · #42 · quality A
 ```python
 import anthropic, soma
 
-client = soma.wrap(
-    anthropic.Anthropic(),
-    budget={"tokens": 100_000}
+client = soma.wrap(anthropic.Anthropic())
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    messages=[...],
 )
-# Every API call monitored
+# Every API call is monitored
 ```
 
 </td>
@@ -93,60 +113,18 @@ client = soma.wrap(
 
 ---
 
-## How It Works
+## Why SOMA?
 
-<table>
-<tr><td>
+AI agents are powerful but fragile. They loop. They edit files blind. They retry failing commands endlessly. They drift from the task. And in multi-agent pipelines, one confused agent cascades failures across the entire system.
 
-```
-    Agent Action
-         |
-         v
-  ┌──────────────┐
-  │ COMPUTE       │  5 behavioral signals:
-  │ VITALS        │  uncertainty · drift · error · cost · tokens
-  └──────┬───────┘
-         v
-  ┌──────────────┐
-  │ NORMALIZE     │  z-score → sigmoid clamp → [0, 1]
-  └──────┬───────┘
-         v
-  ┌──────────────┐
-  │ AGGREGATE     │  0.7 × weighted_mean + 0.3 × max
-  │ PRESSURE      │  → single number: 0-100%
-  └──────┬───────┘
-         v
-  ┌──────────────┐
-  │ ESCALATION    │  HEALTHY → CAUTION → DEGRADE →
-  │ LADDER        │  QUARANTINE → RESTART → SAFE_MODE
-  └──────┬───────┘
-         v
-  ┌──────────────┐
-  │ PREDICT       │  ~5 actions ahead
-  │ + LEARN       │  adapt thresholds over time
-  └──────────────┘
-```
+**Existing solutions don't close the loop:**
 
-</td><td>
-
-### The 5 Behavioral Signals
-
-| Signal | Detects |
-|--------|---------|
-| **Uncertainty** | Retries, tool chaos, output entropy |
-| **Drift** | Deviation from baseline patterns |
-| **Error rate** | Broken code, failed commands |
-| **Cost** | Dollar burn rate vs budget |
-| **Token usage** | Token consumption vs limit |
-
-Each signal is z-score normalized against the agent's **own baseline** and sigmoid-clamped to [0,1].
-
-No magic numbers. Everything adapts to how *your* agent behaves.
-
-> *Full math in [Technical Reference](docs/TECHNICAL.md)*
-
-</td></tr>
-</table>
+| Approach | Observes behavior? | Tells the agent? | Blocks actions? | Adapts? | Multi-agent? |
+|----------|:-:|:-:|:-:|:-:|:-:|
+| Guardrails (NeMo, Lakera) | Prompt-level only | No | Content filter | No | No |
+| Observability (LangSmith, Helicone) | Yes | **No** | **No** | No | Partial |
+| Rate limiters | No | No | Token cap | No | No |
+| **SOMA** | **5 signals** | **7 pattern warnings** | **6-level escalation** | **Self-learning** | **Trust graph** |
 
 ---
 
@@ -162,31 +140,31 @@ HEALTHY    CAUTION     DEGRADE     QUARANTINE    RESTART    SAFE_MODE
 all ok     read first  bash blocked  read-only    full stop   budget gone
 ```
 
-| Level | Pressure | Intervention |
+| Level | Pressure | What SOMA Does |
 |:------|:---------|:------------|
-| **HEALTHY** | 0-24% | All tools allowed |
-| **CAUTION** | 25%+ | Writes require prior Read (prevents blind edits) |
-| **DEGRADE** | 50%+ | Bash and Agent tools blocked |
-| **QUARANTINE** | 75%+ | Read-only mode |
-| **RESTART** | 90%+ | Full stop |
-| **SAFE_MODE** | Budget gone | Nothing runs until budget restored |
+| **HEALTHY** | 0-24% | All tools allowed. Status line shows vitals. |
+| **CAUTION** | 25%+ | Blocks Write/Edit unless agent Read the file first. Injects: *"Read before every Write/Edit."* |
+| **DEGRADE** | 50%+ | Blocks Bash and Agent tools. Injects: *"Focus on reading and planning. Fix the root cause."* |
+| **QUARANTINE** | 75%+ | Read-only mode. Injects: *"Stop mutations. Explain to user what went wrong."* |
+| **RESTART** | 90%+ | Full stop. *"Ask the user what to do next."* |
+| **SAFE_MODE** | Budget gone | Nothing runs until budget restored. |
 
-**Hysteresis** prevents level thrashing (different thresholds for escalation vs de-escalation). **Multi-level jump** up for acute failures, **one-level-at-a-time** down for verified recovery.
+**Hysteresis** prevents level thrashing. **Multi-level jump** up for acute failures, **one-level-at-a-time** down for verified recovery.
 
 ---
 
 ## Predictive Intervention
 
-SOMA warns you **~5 actions before** problems happen:
+SOMA warns **~5 actions before** problems happen:
 
-| Pattern | Boost | Trigger |
-|---------|:-----:|---------|
-| `error_streak` | +15% | 3+ consecutive failures |
-| `retry_storm` | +12% | >40% error rate in window |
-| `blind_writes` | +10% | 2+ writes without reading first |
-| `thrashing` | +8% | Same file edited 3+ times |
+| Pattern | Boost | What It Tells the Agent |
+|---------|:-----:|------------------------|
+| `error_streak` | +15% | *"stop retrying the failing approach, try something different"* |
+| `retry_storm` | +12% | *"investigate the root cause instead of retrying"* |
+| `blind_writes` | +10% | *"Read the target files before editing"* |
+| `thrashing` | +8% | *"plan the complete change first, then make one clean edit"* |
 
-Linear trend extrapolation + pattern detection. Confidence-weighted. Only warns when R² fit + sample size justify it.
+Linear trend extrapolation + pattern detection. Confidence-weighted — only warns when the data justifies it.
 
 ---
 
@@ -204,16 +182,22 @@ Escalation → wait 5 actions → pressure dropped?
            (catch earlier)             (fewer false alarms)
 ```
 
-Adaptive step size: more consistent outcomes = faster convergence. Bounds prevent runaway: ±0.10 max shift per transition.
-
-> *After ~15 interventions, SOMA converges to agent-specific thresholds with near-zero false positive rate.*
+Adaptive step size. Bounded ±0.10 max shift. After ~15 interventions, SOMA converges to agent-specific thresholds.
 
 ---
 
 ## Enterprise: Multi-Agent Systems
 
+Running 5, 10, 50 agents? SOMA was built for this. Here's what it gives you that nothing else does:
+
+### The Problem at Scale
+
+When a planning agent hallucinates requirements, the coding agent implements them faithfully, the testing agent burns cycles on hallucinated features, and the deployment agent ships it. By the time a human notices, you've burned hours and dollars. **No one is watching the agents watch each other.**
+
+### What SOMA Gives Enterprise Teams
+
 <details>
-<summary><strong>Multi-Agent Pressure Propagation</strong> — trust-weighted graph with decay/recovery</summary>
+<summary><strong>Multi-Agent Pressure Propagation</strong> — when one agent spirals, downstream agents get restricted before they inherit the chaos</summary>
 
 ```python
 from soma import SOMAEngine
@@ -229,31 +213,17 @@ engine.graph.add_edge("coder", "reviewer", trust=0.6)
 ```
 
 - Pressure flows along trust-weighted edges (damping: 0.60)
-- Trust decays 2.5x faster than it recovers (asymmetric dynamics)
-- Convergence in ≤3 iterations
+- Trust decays 2.5x faster than it recovers — trust is easy to lose, hard to earn
+- When your planner spirals, the coder gets restricted **before** the bad outputs arrive
+- No manual intervention needed — the graph handles it automatically
 
-When your planner spirals, the coder gets restricted **before** the bad outputs arrive.
-
-</details>
-
-<details>
-<summary><strong>Budget Management</strong> — multi-dimensional with automatic SAFE_MODE</summary>
-
-```python
-client = soma.wrap(client, budget={
-    "tokens": 500_000,
-    "cost_usd": 25.00,
-})
-```
-
-- Automatic SAFE_MODE when any budget dimension exhausted
-- Burn rate projection detects overspend trajectory early
-- Per-agent and per-pipeline tracking
+**Without SOMA:** planner hallucinates → coder implements garbage → reviewer wastes time → you find out an hour later.
+**With SOMA:** planner's pressure rises → coder's effective pressure rises → coder gets restricted → pipeline pauses automatically.
 
 </details>
 
 <details>
-<summary><strong>Agent Fingerprinting</strong> — Jensen-Shannon divergence for behavioral shift detection</summary>
+<summary><strong>Agent Fingerprinting</strong> — catches behavioral shifts that simple monitoring misses</summary>
 
 Persistent behavioral signature per agent:
 - Tool distribution (Read 45%, Edit 30%, Bash 15%, ...)
@@ -261,12 +231,14 @@ Persistent behavioral signature per agent:
 - Read/write ratios
 - Session length norms
 
-**JSD divergence** catches subtle distribution shifts that threshold checks miss. Requires 10+ sessions before alerting (no false alarms from insufficient data).
+**Jensen-Shannon divergence** catches subtle distribution shifts. Your code-review agent suddenly doing 80% Bash? SOMA flags it instantly.
+
+Use cases: prompt injection detection, model regression, unintended behavioral drift after config changes.
 
 </details>
 
 <details>
-<summary><strong>Root Cause Analysis</strong> — plain English diagnostics, not error codes</summary>
+<summary><strong>Root Cause Analysis</strong> — plain English diagnostics that agents can act on</summary>
 
 ```
 "stuck in Edit→Bash→Edit loop on config.py (3 cycles)"
@@ -275,23 +247,48 @@ Persistent behavioral signature per agent:
 "behavioral drift=0.25 driven by uncertainty=0.30"
 ```
 
-5 detectors ranked by severity. The agent receives these diagnostics and can self-correct.
+5 detectors ranked by severity. These go directly into the agent's context — the agent self-corrects without human involvement.
 
 </details>
 
 <details>
-<summary><strong>Task Phase Detection</strong> — scope drift detection with directory tracking</summary>
+<summary><strong>Task Phase Detection</strong> — detects when agents wander off-task</summary>
 
-SOMA infers the current phase (research → implement → test → debug) and tracks file focus:
+SOMA infers current phase (research → implement → test → debug) and tracks file focus:
 
 ```
-[scope] scope expanded to tests/, config/    ← wandered off-task
-[phase] switched from implement to debug     ← unexpected shift
+[scope] scope expanded to tests/, config/ — is this intentional? If not, refocus
+[phase] switched from implement to debug — unexpected shift
 ```
 
-Drift > 30% triggers scope warning in agent context.
+For enterprise: ensures each agent stays in its lane. A coding agent that starts "researching" unrelated files gets flagged.
 
 </details>
+
+<details>
+<summary><strong>Budget Management</strong> — per-agent limits with automatic SAFE_MODE</summary>
+
+```python
+client = soma.wrap(client, budget={"tokens": 500_000, "cost_usd": 25.00})
+```
+
+- Automatic SAFE_MODE when any budget dimension exhausted
+- Burn rate projection detects overspend trajectory early
+- Per-agent and per-pipeline tracking
+
+A runaway agent hits its budget limit → SAFE_MODE → pipeline continues with other agents.
+
+</details>
+
+### Why This Matters for Enterprise
+
+| Without SOMA | With SOMA |
+|:-------------|:----------|
+| Agent loops for 30 minutes before anyone notices | Loop detected at iteration 3, agent warned, blocked at iteration 5 |
+| $500 API bill from a retry storm overnight | Budget SAFE_MODE after $25, agent stops automatically |
+| Planner hallucinates → entire pipeline builds garbage | Planner's pressure propagates, coder restricted before bad outputs arrive |
+| Post-mortem: "the agent edited 47 files it shouldn't have" | Real-time: `"scope expanded to unrelated dirs — is this intentional?"` |
+| "Which agent caused the cascade failure?" | RCA: `"error cascade: 4 consecutive failures in coder (error_rate=40%)"` |
 
 ---
 
@@ -315,7 +312,7 @@ uv tool install soma-ai && soma setup-claude
 ### Status Line (always visible)
 
 ```
-SOMA + healthy  2% · #42 · quality A
+SOMA + healthy  3% · #42 · quality A
 ```
 
 ### Slash Commands
@@ -341,6 +338,20 @@ SOMA + healthy  2% · #42 · quality A
 | **autonomous** | 95% | No approvals | Trusted CI/CD pipelines |
 
 > *Full hook documentation in [Hook Reference](docs/hooks.md)*
+
+---
+
+## Dogfooding
+
+SOMA monitors the agent that builds it. This README, the test suite, the banner, every commit — all produced by Claude Code under SOMA's watch.
+
+Real observations from development sessions:
+- **Blind writes caught**: SOMA flagged when the agent edited files without reading them first — the agent stopped and read the file
+- **Scope drift detected**: Working on docs, the agent started touching CLI code — SOMA flagged it, agent refocused
+- **Bash loops prevented**: Agent retried a failing command — SOMA warned at attempt 2, the agent changed approach
+- **Zero false positives**: HEALTHY level maintained throughout normal work, no unnecessary restrictions
+
+The feedback loop works. The agent is measurably more careful when SOMA is watching.
 
 ---
 
@@ -382,25 +393,12 @@ No neural networks. No black boxes. Every formula is documented and tested.
 | Formula | What It Does |
 |:--------|:------------|
 | `P = 0.7·mean(wᵢpᵢ) + 0.3·max(pᵢ)` | Aggregate pressure — catches both gradual and acute failures |
-| `z = (x - μ) / max(σ, 0.1)` → `sigmoid(z)` | Signal normalization — adapts to each agent's baseline |
+| `z = (x - μ) / max(σ, 0.05)` → `sigmoid(z)` | Signal normalization — adapts to each agent's baseline |
 | `μₜ = 0.15·x + 0.85·μₜ₋₁` | EMA baseline — half-life of ~4.3 observations |
 | `P̂ = P + slope·h + boost` | Prediction — linear trend + pattern boosts |
 | `Q = (w·Qw + b·Qb) · penalty` | Quality — write/bash success with syntax penalty |
 
 > *Complete derivations in [Technical Reference](docs/TECHNICAL.md). Theoretical foundations in [Research Paper](docs/PAPER.md).*
-
----
-
-## Terminal Dashboard
-
-```bash
-soma              # Full TUI dashboard (4 tabs: status, agents, config, replay)
-soma status       # Quick text summary
-soma agents       # List monitored agents
-soma mode         # Show/switch operating mode
-soma export       # Export session to JSON
-soma replay       # Replay recorded sessions
-```
 
 ---
 
@@ -470,7 +468,7 @@ soma/
 └── cli/               Terminal UI and commands
 ```
 
-2 dependencies: `rich` (terminal formatting) + `tomli-w` (config). Everything else is stdlib.
+3 dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
 
 ---
 
