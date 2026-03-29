@@ -218,11 +218,7 @@ def main():
         actions = agent.get("action_count", 0)
         vitals = agent.get("vitals", {})
 
-        # During cold start (< 10 actions), pressure is unreliable (baseline defaults)
-        # Show 0% but still allow findings (quality, patterns) to surface
-        cold_start = actions < 10
-        if cold_start:
-            pressure = 0.0
+        # Show real pressure always — cold start suppression caused confusion
 
         hook_config = get_hook_config()
         verbosity = hook_config.get("verbosity", "normal")
