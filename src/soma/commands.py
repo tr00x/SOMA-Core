@@ -95,7 +95,8 @@ def process_commands(engine) -> list[dict[str, Any]]:
 
             elif action == "replenish_budget":
                 amount = params.get("amount", {})
-                engine._budget.replenish(**amount)
+                for dim, amt in amount.items():
+                    engine._budget.replenish(dim, float(amt))
                 result = {"ok": True, "health": engine._budget.health()}
 
             elif action == "reset_baseline":
