@@ -1078,74 +1078,68 @@ class TestActionLog:
 # ──────────────────────────────────────────────────────────────────
 
 class TestPatternAnalysis:
-    """Tests for notification.py pattern detection."""
+    """Tests for pattern detection (via soma.patterns core module)."""
 
-    def test_no_tips_on_healthy_session(self):
-        from soma.hooks.notification import _analyze_patterns
+    def test_no_patterns_on_healthy_session(self):
+        from soma.patterns import analyze
         log = [
             {"tool": "Read", "error": False, "file": "a.py", "ts": 1},
             {"tool": "Edit", "error": False, "file": "a.py", "ts": 2},
             {"tool": "Read", "error": False, "file": "b.py", "ts": 3},
             {"tool": "Write", "error": False, "file": "b.py", "ts": 4},
         ]
-        assert _analyze_patterns(log) == []
+        results = analyze(log)
+        assert not any(r.severity == "warning" for r in results)
 
-    def test_edits_without_read(self):
-        from soma.hooks.notification import _analyze_patterns
-        # Only Edit counts as blind mutation — Write is often creating new files
+    def test_blind_edits_detected(self):
+        from soma.patterns import analyze
         log = [
             {"tool": "Edit", "error": False, "file": "a.py", "ts": 1},
             {"tool": "Edit", "error": False, "file": "b.py", "ts": 2},
             {"tool": "Edit", "error": False, "file": "c.py", "ts": 3},
         ]
-        tips = _analyze_patterns(log)
-        assert len(tips) >= 1
-        assert "[do]" in tips[0].lower()
+        results = analyze(log)
+        assert any(r.kind == "blind_edits" for r in results)
 
-    def test_writes_without_read_no_false_positive(self):
-        from soma.hooks.notification import _analyze_patterns
-        # Write (new file creation) should NOT trigger the pattern
+    def test_writes_no_false_positive(self):
+        from soma.patterns import analyze
         log = [
             {"tool": "Write", "error": False, "file": "a.py", "ts": 1},
             {"tool": "Write", "error": False, "file": "b.py", "ts": 2},
             {"tool": "Write", "error": False, "file": "c.py", "ts": 3},
         ]
-        tips = _analyze_patterns(log)
-        assert not any("edits without a Read" in t for t in tips)
+        results = analyze(log)
+        assert not any(r.kind == "blind_edits" for r in results)
 
-    def test_consecutive_bash_failures(self):
-        from soma.hooks.notification import _analyze_patterns
+    def test_bash_failures(self):
+        from soma.patterns import analyze
         log = [
             {"tool": "Bash", "error": True, "file": "", "ts": 1},
             {"tool": "Bash", "error": True, "file": "", "ts": 2},
             {"tool": "Bash", "error": True, "file": "", "ts": 3},
         ]
-        tips = _analyze_patterns(log)
-        assert any("[do]" in t and "retrying" in t.lower() for t in tips)
+        results = analyze(log)
+        assert any(r.kind == "bash_failures" for r in results)
 
     def test_high_error_rate(self):
-        from soma.hooks.notification import _analyze_patterns
+        from soma.patterns import analyze
         log = [{"tool": "Read", "error": False, "file": "", "ts": i} for i in range(3)]
         log += [{"tool": "Bash", "error": True, "file": "", "ts": i + 3} for i in range(4)]
-        tips = _analyze_patterns(log)
-        assert any("[do]" in t and "rethink" in t.lower() for t in tips)
+        results = analyze(log)
+        assert any(r.kind == "error_rate" for r in results)
 
     def test_file_thrashing(self):
-        from soma.hooks.notification import _analyze_patterns
-        log = [
-            {"tool": "Edit", "error": False, "file": "/foo/bar.py", "ts": i}
-            for i in range(4)
-        ]
-        tips = _analyze_patterns(log)
-        assert any("bar.py" in t for t in tips)
+        from soma.patterns import analyze
+        log = [{"tool": "Edit", "error": False, "file": "/foo/bar.py", "ts": i} for i in range(4)]
+        results = analyze(log)
+        assert any(r.kind == "thrashing" and "bar.py" in r.action for r in results)
 
     def test_empty_log(self):
-        from soma.hooks.notification import _analyze_patterns
-        assert _analyze_patterns([]) == []
+        from soma.patterns import analyze
+        assert analyze([]) == []
 
-    def test_max_two_tips(self):
-        from soma.hooks.notification import _analyze_patterns
-        # Trigger multiple patterns at once
+    def test_max_3_results(self):
+        from soma.patterns import analyze
         log = [
             {"tool": "Bash", "error": True, "file": "", "ts": 1},
             {"tool": "Bash", "error": True, "file": "", "ts": 2},
@@ -1153,8 +1147,8 @@ class TestPatternAnalysis:
             {"tool": "Write", "error": False, "file": "/x/y.py", "ts": 4},
             {"tool": "Write", "error": False, "file": "/x/y.py", "ts": 5},
         ]
-        tips = _analyze_patterns(log)
-        assert len(tips) <= 3
+        results = analyze(log)
+        assert len(results) <= 3
 
 
 # ──────────────────────────────────────────────────────────────────

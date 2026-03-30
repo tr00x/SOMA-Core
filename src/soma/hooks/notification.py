@@ -15,169 +15,6 @@ from __future__ import annotations
 import time
 
 
-def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[str]:
-    """Analyze recent action log and return actionable tips.
-
-    Each tip is a short, specific instruction — not a metric.
-    workflow_mode: "" (default), "plan", "execute", "discuss", "fast"
-    Returns at most 3 tips to avoid noise.
-    """
-    if not action_log:
-        return []
-
-    tips: list[str] = []
-    recent = action_log[-10:]
-
-    # Pattern 1: Blind edits — editing files without reading them first.
-    # Build set of recently-read files and directories (last 30 actions).
-    # Read/Grep/Glob all provide "read context" for a file or directory.
-    # Write is creating new files — never triggers this warning.
-    read_context: set[str] = set()
-    read_dirs: set[str] = set()
-    for entry in action_log[-30:]:
-        if entry["tool"] in ("Read", "Grep", "Glob"):
-            f = entry.get("file", "")
-            if f:
-                read_context.add(f)
-                if "/" in f:
-                    read_dirs.add(f.rsplit("/", 1)[0])
-
-    blind_edits = 0
-    blind_files: list[str] = []
-    for entry in reversed(recent):
-        if entry["tool"] in ("Edit", "NotebookEdit"):
-            f = entry.get("file", "")
-            if not f:
-                continue
-            # Check if this file or its directory was read
-            if f in read_context:
-                continue
-            parent = f.rsplit("/", 1)[0] if "/" in f else ""
-            if parent and parent in read_dirs:
-                continue
-            blind_edits += 1
-            blind_files.append(f.rsplit("/", 1)[-1])
-        elif entry["tool"] == "Read":
-            break
-    if blind_edits >= 3:
-        files_hint = f" ({', '.join(dict.fromkeys(blind_files[:3]))})" if blind_files else ""
-        tips.append(
-            f"[do] Read before editing{files_hint} — "
-            f"you made {blind_edits} edits to files you haven't read"
-        )
-
-    # Pattern 2: Consecutive Bash failures
-    consecutive_bash_errors = 0
-    last_bash_cmds: list[str] = []
-    for entry in reversed(recent):
-        if entry["tool"] == "Bash" and entry.get("error"):
-            consecutive_bash_errors += 1
-            last_bash_cmds.append(entry.get("file", ""))
-        elif entry["tool"] == "Bash":
-            break
-        else:
-            continue
-    if consecutive_bash_errors >= 2:
-        tips.append(
-            f"[do] Stop retrying — {consecutive_bash_errors} Bash failures in a row. "
-            f"Read the error, check assumptions, try a different approach"
-        )
-
-    # Pattern 3: High error rate
-    if len(recent) >= 5:
-        error_count = sum(1 for e in recent if e.get("error"))
-        error_rate = error_count / len(recent)
-        if error_rate >= 0.3:
-            # Identify which tools are failing
-            error_tools: dict[str, int] = {}
-            for e in recent:
-                if e.get("error"):
-                    t = e["tool"]
-                    error_tools[t] = error_tools.get(t, 0) + 1
-            worst_tool = max(error_tools, key=error_tools.get) if error_tools else "?"
-            tips.append(
-                f"[do] Pause and rethink — {error_count}/{len(recent)} actions failed "
-                f"(mostly {worst_tool}). Change approach, don't repeat"
-            )
-
-    # Pattern 4: Thrashing same file
-    if len(recent) >= 4:
-        edit_files = [
-            e["file"] for e in recent
-            if e["tool"] in ("Write", "Edit") and e.get("file")
-        ]
-        if edit_files:
-            from collections import Counter
-            file_counts = Counter(edit_files)
-            thrashed = [(f, c) for f, c in file_counts.items() if c >= 3]
-            if thrashed:
-                fname, count = thrashed[0]
-                short = fname.rsplit("/", 1)[-1] if "/" in fname else fname
-                tips.append(
-                    f"[do] Collect changes for {short} — "
-                    f"you've edited it {count}x. Read it, plan all changes, one edit"
-                )
-
-    # Pattern 5: Agent/subagent spam — lots of Agent calls without progress
-    # Suppressed during planning/discuss (agent spawning is expected)
-    if workflow_mode not in ("plan", "discuss"):
-        agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
-        if agent_calls >= 3:
-            tips.append(
-                f"[do] Check agent results — {agent_calls} spawned in {len(recent)} actions. "
-                f"Are they producing? Consider doing it directly"
-            )
-
-    # Pattern 6: Read-only stall (research paralysis)
-    # Suppressed during planning/discuss (reading is the whole point)
-    if workflow_mode not in ("plan", "discuss"):
-        if len(recent) >= 8:
-            read_tools = {"Read", "Grep", "Glob", "WebSearch", "WebFetch"}
-            reads = sum(1 for e in recent if e["tool"] in read_tools)
-            writes = sum(1 for e in recent if e["tool"] in ("Write", "Edit"))
-            if reads >= 7 and writes == 0:
-                tips.append(
-                    f"[do] Start implementing — {reads} reads, 0 writes. "
-                    f"You have enough context. Write code or ask the user"
-                )
-
-    # Pattern 7: Long sequence without user interaction
-    # Suppressed during execute/plan (autonomous work is expected)
-    if workflow_mode not in ("execute", "plan"):
-        if len(action_log) >= 30:
-            last_30 = action_log[-30:]
-            user_tools = {"AskUserQuestion"}
-            user_interactions = sum(1 for e in last_30 if e["tool"] in user_tools)
-            edits = sum(1 for e in last_30 if e["tool"] in ("Write", "Edit", "Bash"))
-            if user_interactions == 0 and edits >= 15:
-                tips.append(
-                    f"[do] Check in with user — {edits} mutations without asking. "
-                    f"Verify you're on track before continuing"
-                )
-
-    # ── Positive feedback (only if no negative tips) ──
-    if not tips:
-        # Check for read-before-edit streak
-        read_files_set: set[str] = set()
-        read_edit_pairs = 0
-        for entry in action_log[-20:]:
-            if entry["tool"] in ("Read", "Grep"):
-                f = entry.get("file", "")
-                if f:
-                    read_files_set.add(f)
-            elif entry["tool"] in ("Edit", "Write") and entry.get("file", "") in read_files_set:
-                read_edit_pairs += 1
-
-        if read_edit_pairs >= 3:
-            tips.append(f"[✓] read-before-edit maintained ({read_edit_pairs} pairs)")
-        # Check for zero-error streak
-        elif len(action_log) >= 10:
-            recent_errors = sum(1 for e in action_log[-10:] if e.get("error"))
-            if recent_errors == 0:
-                tips.append(f"[✓] clean streak — {min(len(action_log), 10)} actions, 0 errors")
-
-    return tips[:3]
-
 
 def _collect_findings(
     action_log: list[dict],
@@ -254,10 +91,18 @@ def _collect_findings(
     except Exception:
         workflow_mode = ""
 
-    # Patterns (priority 1)
-    tips = _analyze_patterns(action_log, workflow_mode=workflow_mode)
-    for tip in tips:
-        findings.append((1, tip))
+    # Patterns (via core patterns module)
+    try:
+        from soma.patterns import analyze as analyze_patterns
+        pattern_results = analyze_patterns(action_log, workflow_mode=workflow_mode)
+        for pr in pattern_results:
+            if pr.severity == "positive":
+                findings.append((2, f"[✓] {pr.action}"))
+            else:
+                msg = f"[do] {pr.action} — {pr.detail}" if pr.detail else f"[do] {pr.action}"
+                findings.append((1, msg))
+    except Exception:
+        pass
 
     # Scope drift (priority 1) + phase info
     # Suppressed during planning (touching many files is expected)
