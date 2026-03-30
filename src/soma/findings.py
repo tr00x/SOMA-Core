@@ -109,7 +109,7 @@ def collect(
 
     # ── Workflow mode ──
     try:
-        from soma.hooks.common import detect_workflow_mode
+        from soma.context import detect_workflow_mode
         workflow_mode = detect_workflow_mode()
     except Exception:
         workflow_mode = ""
