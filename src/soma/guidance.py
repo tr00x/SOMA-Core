@@ -1,13 +1,15 @@
 """SOMA Guidance Engine — the decision point.
 
-Replaces the old Ladder-based blocking system with gradient response.
-SOMA observes, suggests, warns — and only blocks truly destructive operations.
+Gradient response system: observes, suggests, warns, blocks only destructive ops.
 
-Response modes:
-    OBSERVE  (p=0-25%):  Silent. Metrics only.
-    GUIDE    (p=25-50%): Soft suggestions when patterns detected. Never blocks.
-    WARN     (p=50-75%): Insistent warnings + alternatives. Never blocks.
-    BLOCK    (p=75-100%): Blocks ONLY destructive operations.
+Response modes (thresholds configurable via soma.toml [thresholds]):
+    OBSERVE  (below guide):  Silent. Metrics only.
+    GUIDE    (guide → warn):  Soft suggestions. Never blocks.
+    WARN     (warn → block):  Insistent warnings. Never blocks.
+    BLOCK    (above block):   Blocks ONLY destructive operations.
+
+Defaults: guide=0.25, warn=0.50, block=0.75
+Claude Code: guide=0.40, warn=0.60, block=0.80
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Tests for notification improvements — read context, severity, positive feedback."""
 
-from soma.hooks.notification import _analyze_patterns
+from soma.hooks.notification import _analyze_patterns, _collect_findings
 
 
 class TestReadContextAwareness:
@@ -172,6 +172,47 @@ class TestActionableMetrics:
         tt = TaskTracker()
         m = tt.get_efficiency()
         assert m == {}
+
+
+class TestCollectFindings:
+    """Test _collect_findings with current level names."""
+
+    _MINIMAL_CONFIG = {
+        "quality": False, "predict": False,
+        "task_tracking": False, "fingerprint": False,
+    }
+
+    def test_warn_level_produces_status_finding(self):
+        findings = _collect_findings([], {}, 0.55, "WARN", 50, self._MINIMAL_CONFIG)
+        status = [m for _, m in findings if "[status]" in m]
+        assert len(status) == 1
+        assert "WARN" in status[0]
+
+    def test_block_level_produces_status_finding(self):
+        findings = _collect_findings([], {}, 0.80, "BLOCK", 100, self._MINIMAL_CONFIG)
+        status = [m for _, m in findings if "[status]" in m]
+        assert len(status) == 1
+        assert "BLOCK" in status[0]
+
+    def test_observe_no_status_finding(self):
+        findings = _collect_findings([], {}, 0.10, "OBSERVE", 20, self._MINIMAL_CONFIG)
+        status = [m for _, m in findings if "[status]" in m]
+        assert len(status) == 0
+
+    def test_guide_no_status_finding(self):
+        findings = _collect_findings([], {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
+        status = [m for _, m in findings if "[status]" in m]
+        assert len(status) == 0
+
+    def test_positive_pattern_in_findings(self):
+        """Positive feedback should appear in findings at low pressure."""
+        log = []
+        for i in range(12):
+            log.append({"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i * 2})
+            log.append({"tool": "Edit", "error": False, "file": f"/src/f{i}.py", "ts": i * 2 + 1})
+        findings = _collect_findings(log, {}, 0.05, "OBSERVE", 50, self._MINIMAL_CONFIG)
+        positive = [m for _, m in findings if "✓" in m]
+        assert len(positive) >= 1
 
 
 class TestExistingPatterns:
