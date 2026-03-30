@@ -1100,7 +1100,7 @@ class TestPatternAnalysis:
         ]
         tips = _analyze_patterns(log)
         assert len(tips) >= 1
-        assert "edits without a Read" in tips[0]
+        assert "blind edit" in tips[0].lower()
 
     def test_writes_without_read_no_false_positive(self):
         from soma.hooks.notification import _analyze_patterns

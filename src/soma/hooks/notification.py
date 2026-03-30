@@ -27,24 +27,42 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
     tips: list[str] = []
     recent = action_log[-10:]
 
-    # Pattern 1: Edits without Reads (blind mutation)
-    # Only count Edit/NotebookEdit (modifying existing files).
-    # Write is often creating new files — no Read needed.
-    edits_since_read = 0
+    # Pattern 1: Blind edits — editing files without reading them first.
+    # Build set of recently-read files and directories (last 30 actions).
+    # Read/Grep/Glob all provide "read context" for a file or directory.
+    # Write is creating new files — never triggers this warning.
+    read_context: set[str] = set()
+    read_dirs: set[str] = set()
+    for entry in action_log[-30:]:
+        if entry["tool"] in ("Read", "Grep", "Glob"):
+            f = entry.get("file", "")
+            if f:
+                read_context.add(f)
+                if "/" in f:
+                    read_dirs.add(f.rsplit("/", 1)[0])
+
+    blind_edits = 0
     blind_files: list[str] = []
     for entry in reversed(recent):
         if entry["tool"] in ("Edit", "NotebookEdit"):
-            edits_since_read += 1
             f = entry.get("file", "")
-            if f:
-                blind_files.append(f.rsplit("/", 1)[-1])
+            if not f:
+                continue
+            # Check if this file or its directory was read
+            if f in read_context:
+                continue
+            parent = f.rsplit("/", 1)[0] if "/" in f else ""
+            if parent and parent in read_dirs:
+                continue
+            blind_edits += 1
+            blind_files.append(f.rsplit("/", 1)[-1])
         elif entry["tool"] == "Read":
             break
-    if edits_since_read >= 3:
+    if blind_edits >= 3:
         files_hint = f" ({', '.join(dict.fromkeys(blind_files[:3]))})" if blind_files else ""
         tips.append(
-            f"[pattern] {edits_since_read} edits without a Read{files_hint} — "
-            f"Read the file first to understand current state"
+            f"[pattern] {blind_edits} blind edits{files_hint} — "
+            f"Read the target file first to understand current state"
         )
 
     # Pattern 2: Consecutive Bash failures
