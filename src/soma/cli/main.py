@@ -14,7 +14,7 @@ try:
     from importlib.metadata import version as _pkg_version
     _VERSION = _pkg_version("soma-ai")
 except Exception:
-    _VERSION = "0.4.0"
+    from soma import __version__ as _VERSION
 
 
 # ---------------------------------------------------------------------------

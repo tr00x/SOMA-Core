@@ -5,21 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from soma.types import InterventionOutcome, Level
+from soma.types import InterventionOutcome, ResponseMode
 
 
 @dataclass
 class _Record:
     """A single recorded intervention."""
     agent_id: str
-    old_level: Level
-    new_level: Level
+    old_level: ResponseMode
+    new_level: ResponseMode
     pressure: float
     trigger_signals: dict[str, float]
     actions_elapsed: int = 0
 
 
-def _transition_key(old: Level, new: Level) -> tuple[Level, Level]:
+def _transition_key(old: ResponseMode, new: ResponseMode) -> tuple[ResponseMode, ResponseMode]:
     return (old, new)
 
 
@@ -77,13 +77,13 @@ class LearningEngine:
         self._history: dict[str, list[_Record]] = {}
 
         # (old_level, new_level) → count of resolved failures for that transition
-        self._failure_counts: dict[tuple[Level, Level], int] = {}
+        self._failure_counts: dict[tuple[ResponseMode, ResponseMode], int] = {}
 
         # (old_level, new_level) → count of resolved successes for that transition
-        self._success_counts: dict[tuple[Level, Level], int] = {}
+        self._success_counts: dict[tuple[ResponseMode, ResponseMode], int] = {}
 
         # (old_level, new_level) → cumulative threshold shift applied so far
-        self._threshold_adjustments: dict[tuple[Level, Level], float] = {}
+        self._threshold_adjustments: dict[tuple[ResponseMode, ResponseMode], float] = {}
 
         # signal_name → cumulative weight adjustment applied so far (negative = lower)
         self._weight_adjustments: dict[str, float] = {}
@@ -95,8 +95,8 @@ class LearningEngine:
     def record_intervention(
         self,
         agent_id: str,
-        old: Level,
-        new: Level,
+        old: ResponseMode,
+        new: ResponseMode,
         pressure: float,
         signals: dict[str, float],
     ) -> None:
@@ -162,7 +162,7 @@ class LearningEngine:
 
         return outcome
 
-    def get_threshold_adjustment(self, old: Level, new: Level) -> float:
+    def get_threshold_adjustment(self, old: ResponseMode, new: ResponseMode) -> float:
         """Return the current cumulative threshold adjustment for this transition."""
         return self._threshold_adjustments.get(_transition_key(old, new), 0.0)
 
@@ -224,18 +224,18 @@ class LearningEngine:
         for key_str, v in data.get("threshold_adjustments", {}).items():
             old_name, new_name = key_str.split("->")
             obj._threshold_adjustments[
-                (Level[old_name], Level[new_name])
+                (ResponseMode[old_name], ResponseMode[new_name])
             ] = v
         obj._weight_adjustments = dict(data.get("weight_adjustments", {}))
         for key_str, v in data.get("failure_counts", {}).items():
             old_name, new_name = key_str.split("->")
             obj._failure_counts[
-                (Level[old_name], Level[new_name])
+                (ResponseMode[old_name], ResponseMode[new_name])
             ] = v
         for key_str, v in data.get("success_counts", {}).items():
             old_name, new_name = key_str.split("->")
             obj._success_counts[
-                (Level[old_name], Level[new_name])
+                (ResponseMode[old_name], ResponseMode[new_name])
             ] = v
         return obj
 
@@ -243,7 +243,7 @@ class LearningEngine:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _adaptive_step(self, key: tuple[Level, Level], is_failure: bool) -> float:
+    def _adaptive_step(self, key: tuple[ResponseMode, ResponseMode], is_failure: bool) -> float:
         """Compute adaptive step size based on consecutive same-type outcomes.
 
         More consecutive same-type outcomes → larger step (up to 3x base).
@@ -266,7 +266,7 @@ class LearningEngine:
 
     def _on_success(
         self,
-        key: tuple[Level, Level],
+        key: tuple[ResponseMode, ResponseMode],
         signals: dict[str, float],
     ) -> None:
         """React to a confirmed success for transition *key*.
@@ -296,7 +296,7 @@ class LearningEngine:
 
     def _on_failure(
         self,
-        key: tuple[Level, Level],
+        key: tuple[ResponseMode, ResponseMode],
         signals: dict[str, float],
     ) -> None:
         """React to a confirmed failure for transition *key*.

@@ -7,7 +7,10 @@ and task tracker from ~/.soma/. This is a core module — no hooks or CLI deps.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 SOMA_DIR = Path.home() / ".soma"
 PREDICTOR_PATH = SOMA_DIR / "predictor.json"
@@ -34,7 +37,7 @@ def save_quality_tracker(tracker) -> None:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         QUALITY_PATH.write_text(json.dumps(tracker.to_dict()))
     except Exception:
-        pass
+        log.warning("Failed to save quality tracker to %s", QUALITY_PATH, exc_info=True)
 
 
 def get_predictor():
@@ -55,7 +58,7 @@ def save_predictor(predictor) -> None:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         PREDICTOR_PATH.write_text(json.dumps(predictor.to_dict()))
     except Exception:
-        pass
+        log.warning("Failed to save predictor to %s", PREDICTOR_PATH, exc_info=True)
 
 
 def get_fingerprint_engine():
@@ -76,7 +79,7 @@ def save_fingerprint_engine(engine) -> None:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         FINGERPRINT_PATH.write_text(json.dumps(engine.to_dict()))
     except Exception:
-        pass
+        log.warning("Failed to save fingerprint engine to %s", FINGERPRINT_PATH, exc_info=True)
 
 
 def get_task_tracker(cwd: str = ""):
@@ -100,4 +103,4 @@ def save_task_tracker(tracker) -> None:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
         TASK_TRACKER_PATH.write_text(json.dumps(tracker.to_dict()))
     except Exception:
-        pass
+        log.warning("Failed to save task tracker to %s", TASK_TRACKER_PATH, exc_info=True)

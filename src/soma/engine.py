@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from soma.types import Action, Level, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig
+from soma.types import Action, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig
 from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
@@ -100,7 +100,7 @@ class SOMAEngine:
     def add_edge(self, source: str, target: str, trust_weight: float = 1.0) -> None:
         self._graph.add_edge(source, target, trust_weight)
 
-    def get_level(self, agent_id: str) -> Level:
+    def get_level(self, agent_id: str) -> ResponseMode:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)
         return self._agents[agent_id].mode
@@ -169,7 +169,7 @@ class SOMAEngine:
         from soma.persistence import save_engine_state
         save_engine_state(self)
 
-    def approve_escalation(self, agent_id: str) -> Level:
+    def approve_escalation(self, agent_id: str) -> ResponseMode:
         """Human approves pending escalation. Re-evaluates and applies."""
         s = self._agents[agent_id]
         snap = self.get_snapshot(agent_id)
@@ -222,6 +222,8 @@ class SOMAEngine:
             self._graph._nodes.pop(aid, None)
             self._graph._edges.pop(aid, None)
             self._graph._out_edges.pop(aid, None)
+            self._learning._pending.pop(aid, None)
+            self._learning._history.pop(aid, None)
         return to_evict
 
     def record_action(self, agent_id: str, action: Action) -> ActionResult:
