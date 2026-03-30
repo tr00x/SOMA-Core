@@ -9,7 +9,7 @@ tr00x@proton.me
 
 ## Abstract
 
-As AI agents transition from single-turn assistants to autonomous multi-step systems capable of executing code, managing files, and orchestrating sub-agents, the absence of runtime behavioral oversight presents critical risks: uncontrolled resource consumption, destructive action loops, silent quality degradation, and cascading failures in multi-agent pipelines. We present SOMA (System for Observational Monitoring of Agents), a deterministic, zero-inference behavioral monitoring framework that computes a unified pressure metric from five behavioral signals, applies progressive intervention through a hysteresis-stabilized escalation ladder, and self-tunes thresholds via an outcome-tracking learning engine. SOMA operates at tool-call granularity with sub-millisecond latency, requires no API calls or network access, and integrates with existing agent frameworks through a thin wrapper layer. We report 524 passing tests across 29 test modules, covering stress scenarios, multi-agent propagation, and full integration with Claude Code. SOMA is open-source (MIT) and available on PyPI as `soma-ai`.
+As AI agents transition from single-turn assistants to autonomous multi-step systems capable of executing code, managing files, and orchestrating sub-agents, the absence of runtime behavioral oversight presents critical risks: uncontrolled resource consumption, destructive action loops, silent quality degradation, and cascading failures in multi-agent pipelines. We present SOMA (System for Observational Monitoring of Agents), a deterministic, zero-inference behavioral monitoring framework that computes a unified pressure metric from five behavioral signals, applies graduated guidance through 4 response modes (OBSERVE/GUIDE/WARN/BLOCK), and self-tunes thresholds via an outcome-tracking learning engine. SOMA operates at tool-call granularity with sub-millisecond latency, requires no API calls or network access, and integrates with existing agent frameworks through a thin wrapper layer. We report 524 passing tests across 29 test modules, covering stress scenarios, multi-agent propagation, and full integration with Claude Code. SOMA is open-source (MIT) and available on PyPI as `soma-ai`.
 
 ---
 
@@ -54,7 +54,7 @@ SOMA addresses this gap. Our contributions are:
 
 1. **A formal pressure model** that aggregates five behavioral signals (uncertainty, drift, error rate, cost, token usage) into a single bounded metric via z-score normalization and sigmoid clamping.
 
-2. **A hysteresis-stabilized escalation ladder** with six levels, preventing the oscillation problem inherent in threshold-based control systems.
+2. **A graduated guidance system** with 4 response modes (OBSERVE, GUIDE, WARN, BLOCK) that preserves agent capability while providing progressive behavioral feedback, blocking only destructive operations at the highest pressure levels.
 
 3. **A self-learning engine** that tracks intervention outcomes and adapts both thresholds and signal weights, reducing false positives over time without human tuning.
 
@@ -72,7 +72,7 @@ SOMA addresses this gap. Our contributions are:
 
 The name SOMA references the soma (cell body) of a neuron — the integration center where incoming signals are processed and action potentials are generated. Like biological nervous systems, SOMA aggregates multiple sensory signals into a unified response, applies thresholds with hysteresis to prevent noise-triggered responses, and adapts sensitivity over time through a learning mechanism.
 
-The escalation ladder mirrors the biological concept of **graded potentials**: small stimuli produce proportional responses (CAUTION), while large stimuli trigger all-or-nothing protective reflexes (QUARANTINE). The hysteresis mechanism parallels **refractory periods** in neural signaling — once activated, the system requires the stimulus to drop significantly before resetting.
+The guidance system mirrors the biological concept of **graded potentials**: small stimuli produce proportional responses (GUIDE), while large stimuli trigger protective reflexes (BLOCK). Unlike a binary threshold, the graduated response allows the system to communicate with the agent at varying levels of urgency.
 
 ### 2.2 Control Theory
 
@@ -135,7 +135,7 @@ record_action(agent_id, action) → ActionResult
   6. Signal pressures ← z_score → sigmoid    // per signal
   7. Aggregate ← 0.7·mean + 0.3·max          // blended
   8. Graph.propagate()                        // multi-agent
-  9. Level ← Ladder.evaluate(pressure, budget) // with hysteresis
+  9. Mode ← pressure_to_mode(pressure)         // guidance mapping
  10. Learning.evaluate(outcome)               // adapt thresholds
 ```
 
@@ -223,35 +223,35 @@ For the first min_samples actions, effective pressure is forced to zero regardle
 
 ---
 
-## 6. Escalation Ladder
+## 6. Guidance System
 
-### 6.1 Levels and Thresholds
+### 6.1 Response Modes
 
-SOMA defines six escalation levels with distinct intervention policies:
+SOMA defines 4 response modes with graduated intervention:
 
-| Level | Esc. Threshold | De-esc. Threshold | Policy |
-|-------|---------------|-------------------|--------|
-| HEALTHY | 0.00 | 0.00 | All actions permitted |
-| CAUTION | 0.25 | 0.20 | Write/Edit requires prior Read |
-| DEGRADE | 0.50 | 0.45 | Bash and Agent tools blocked |
-| QUARANTINE | 0.75 | 0.70 | Read-only (Read, Glob, Grep only) |
-| RESTART | 0.90 | 0.85 | Full stop |
-| SAFE_MODE | budget ≤ 0 | budget > 0.10 | Budget exhaustion override |
+| Mode | Pressure Range | Policy |
+|------|---------------|--------|
+| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
+| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
+| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
+| BLOCK | 75–100% | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes). |
 
-### 6.2 Hysteresis
+### 6.2 Design: No Hysteresis
 
-Each transition has a 0.05 gap between escalation and de-escalation thresholds. Without this gap, noise around a threshold causes rapid oscillation between levels — a phenomenon well-known in control theory as "chattering." The hysteresis gap creates a dead zone where the current level is maintained, requiring a definitive improvement before de-escalation.
+The guidance system uses direct pressure-to-mode mapping without hysteresis. This is a deliberate departure from the classical control approach. Hysteresis prevents chattering when transitions have discontinuous effects (e.g., blocking Bash). The guidance redesign eliminates discontinuous effects: moving between GUIDE and WARN changes message tone, not tool availability. Only the BLOCK→destructive-op boundary produces a hard gate, and that boundary is high enough (75%) that noise-driven oscillation is unlikely.
 
-### 6.3 Asymmetric Transitions
+### 6.3 Destructive Operation Detection
 
-Escalation can jump multiple levels in a single step (e.g., HEALTHY → QUARANTINE if pressure spikes to 0.80). De-escalation drops exactly one level per action. This asymmetry reflects the reality that:
+At BLOCK mode, the system evaluates each tool invocation for destructive intent:
 
-- Acute failures demand immediate response (rapid escalation)
-- Recovery should be gradual and verified (slow de-escalation)
+- **Bash**: Matches against patterns for `rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, `chmod 777`, `kill -9`
+- **Write/Edit**: Checks if the target path matches sensitive file patterns (`.env`, credentials, `.pem`, `.key`)
 
-### 6.4 SAFE_MODE Latch
+Only these specific invocations are blocked. Write, Edit, Bash, and Agent are never blocked as tool categories. This preserves agent capability while preventing irreversible damage.
 
-Budget exhaustion triggers SAFE_MODE, which latches: it persists until budget_health exceeds 0.10 (10% headroom). This prevents an agent from consuming the last scraps of budget in rapid succession before the system can react.
+### 6.4 Rationale
+
+The previous 6-level escalation ladder (HEALTHY through SAFE_MODE) progressively stripped tools from the agent. In practice, blocking Bash and Agent at moderate pressure levels (50-60%) often forced the agent into a worse state — unable to run the commands needed to diagnose and fix the actual problem. The guidance model keeps all tools available and instead communicates with increasing urgency, trusting that a well-informed agent will self-correct. Only at extreme pressure (75%+) does SOMA intervene, and only against operations that could cause irreversible damage.
 
 ---
 
@@ -443,7 +443,7 @@ SOMA's primary integration is with Claude Code (Anthropic), where it monitors al
 - **UserPromptSubmit**: Inject diagnostics into agent context
 - **Stop**: Save state, update fingerprint, show session summary
 
-In this configuration, SOMA acts as an always-on safety layer that restricts the agent's capabilities proportionally to its behavioral health. A developer using Claude Code sees a status line (`SOMA + healthy 2% · #42 · quality A`) and receives warnings only when the agent's behavior degrades.
+In this configuration, SOMA acts as an always-on behavioral guidance layer. A developer using Claude Code sees a status line (`SOMA + observe 2% · #42 · quality A`) and receives suggestions and warnings only when the agent's behavior degrades. Tools are never stripped — only destructive operations are blocked at extreme pressure.
 
 ### 13.2 Multi-Agent Orchestrator
 
@@ -573,7 +573,7 @@ SOMA has been deployed in active Claude Code development sessions (March 2026). 
 
 ## 17. Conclusion
 
-SOMA demonstrates that deterministic behavioral monitoring of AI agents is both feasible and practical. By computing a unified pressure metric from five behavioral signals, applying progressive intervention through a hysteresis-stabilized ladder, and self-tuning through outcome-based learning, SOMA provides runtime safety guarantees that complement existing alignment and guardrail approaches.
+SOMA demonstrates that deterministic behavioral monitoring of AI agents is both feasible and practical. By computing a unified pressure metric from five behavioral signals, applying graduated guidance through 4 response modes, and self-tuning through outcome-based learning, SOMA provides runtime safety guarantees that complement existing alignment and guardrail approaches.
 
 The system is fully operational, comprehensively tested (524 tests, <1 second), and deployed in production with Claude Code. It requires no API calls, no network access, and no inference — just arithmetic on bounded numbers, executed in sub-millisecond time.
 
@@ -616,7 +616,7 @@ As AI agents become more autonomous and more widely deployed, the gap between "a
 | U | Uncertainty (composite) |
 | Q | Quality score |
 | h | Prediction horizon (5 actions) |
-| L | Escalation level (HEALTHY through SAFE_MODE) |
+| M | Response mode (OBSERVE through BLOCK) |
 
 ## Appendix B: Availability
 
