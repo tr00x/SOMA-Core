@@ -220,6 +220,8 @@ class SOMAEngine:
         for aid in to_evict:
             del self._agents[aid]
             self._graph._nodes.pop(aid, None)
+            self._graph._edges.pop(aid, None)
+            self._graph._out_edges.pop(aid, None)
         return to_evict
 
     def record_action(self, agent_id: str, action: Action) -> ActionResult:

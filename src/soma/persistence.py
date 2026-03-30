@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import time as _time
 from pathlib import Path
 
 try:
@@ -144,7 +145,6 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         s.baseline_vector = agent_state.get("baseline_vector")
 
         # Restore last_active
-        import time as _time
         s._last_active = agent_state.get("last_active", _time.time())
 
         # Restore mode

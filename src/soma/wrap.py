@@ -263,7 +263,7 @@ def wrap(
         )
 
         # Check SOMA status
-        print(client.soma_level)     # Level.HEALTHY
+        print(client.soma_level)     # ResponseMode.OBSERVE
         print(client.soma_pressure)  # 0.03
     """
     if engine is None:
