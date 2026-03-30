@@ -19,13 +19,13 @@ import functools
 from typing import Any
 
 from soma.engine import SOMAEngine
-from soma.types import Action, Level, ResponseMode
+from soma.types import Action, ResponseMode
 from soma.recorder import SessionRecorder
 
 
 class SomaBlocked(Exception):
     """Raised when SOMA blocks an API call due to high pressure."""
-    def __init__(self, agent_id: str, level: Level, pressure: float):
+    def __init__(self, agent_id: str, level: ResponseMode, pressure: float):
         self.agent_id = agent_id
         self.level = level
         self.pressure = pressure
@@ -83,7 +83,7 @@ class WrappedClient:
         return self._recorder
 
     @property
-    def soma_level(self) -> Level:
+    def soma_level(self) -> ResponseMode:
         return self._engine.get_level(self._agent_id)
 
     @property

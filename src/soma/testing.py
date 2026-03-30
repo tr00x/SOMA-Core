@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from soma.engine import SOMAEngine, ActionResult
-from soma.types import Action, Level, ResponseMode
+from soma.types import Action, ResponseMode
 
 
 class Monitor:
@@ -86,14 +86,14 @@ class Monitor:
         return self._total_cost
 
     @property
-    def current_level(self) -> Level:
+    def current_level(self) -> ResponseMode:
         """Escalation level from the most recently recorded action."""
         if not self._history:
             return ResponseMode.OBSERVE
         return self._history[-1].level
 
     @property
-    def max_level(self) -> Level:
+    def max_level(self) -> ResponseMode:
         """Highest escalation level observed across all recorded results."""
         if not self._history:
             return ResponseMode.OBSERVE
@@ -115,7 +115,7 @@ class Monitor:
                 f" (max_level={self.max_level.name})"
             )
 
-    def assert_below(self, level: Level) -> None:
+    def assert_below(self, level: ResponseMode) -> None:
         """Raise AssertionError if max_level is >= *level*.
 
         Uses ``max_level`` so any transient escalation is captured.
