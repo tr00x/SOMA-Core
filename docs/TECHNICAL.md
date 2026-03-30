@@ -1,7 +1,7 @@
 # SOMA Technical Reference
 ### System of Oversight and Monitoring for Agents
 
-**Version 0.4.0 | March 2026**
+**Version 0.4.11 | March 2026**
 
 A formal specification of the mathematical models, algorithms, and system architecture behind SOMA — the behavioral monitoring and control system for AI agents.
 
@@ -27,8 +27,13 @@ A formal specification of the mathematical models, algorithms, and system archit
 13. [Agent Fingerprinting](#13-agent-fingerprinting)
 14. [Task Phase Detection & Scope Drift](#14-task-phase-detection--scope-drift)
 15. [Drift Mode Classification](#15-drift-mode-classification)
-16. [System Constants](#16-system-constants)
-17. [Formal Properties](#17-formal-properties)
+16. [Core Modules](#16-core-modules)
+    - 16.1 [Pattern Analysis](#161-pattern-analysis)
+    - 16.2 [Findings Collector](#162-findings-collector)
+    - 16.3 [Session Context](#163-session-context)
+17. [Config Migration](#17-config-migration)
+18. [System Constants](#18-system-constants)
+19. [Formal Properties](#19-formal-properties)
 
 ---
 
@@ -38,9 +43,9 @@ SOMA operates on a discrete event model. Each **action** (tool call, API call) i
 
 ### Invariants
 
-- **Deterministic**: Same action sequence always produces the same pressure, level, and signals.
+- **Deterministic**: Same action sequence always produces the same pressure, mode, and signals.
 - **Bounded**: All signals, pressures, and scores are clamped to [0, 1].
-- **Monotonic escalation**: Pressure can escalate multiple levels in one step, but de-escalation drops one level at a time.
+- **Monotonic escalation**: Pressure can escalate multiple modes in one step, but de-escalation drops one mode at a time.
 - **Grace period**: First `min_samples` actions (default 10) produce zero pressure.
 
 ### Data Flow
@@ -65,7 +70,7 @@ Action(tool, output, error, tokens, cost, duration, retried)
   │
   ├─→ [GRAPH PROPAGATION] trust-weighted multi-agent
   │
-  ├─→ [GUIDANCE] pressure_to_mode → ResponseMode
+  ├─→ [GUIDANCE] pressure_to_mode(thresholds?) → ResponseMode
   │
   ├─→ [LEARNING] evaluate intervention outcomes
   │
@@ -97,7 +102,7 @@ The pipeline executes on every `record_action(agent_id, action)` call. Steps are
 | 11 | Set internal pressure on graph, propagate | `effective_pressure` |
 | 12 | Grace period check (action_count ≤ min_samples → pressure = 0) | |
 | 13 | Trust decay/recovery based on uncertainty | Edge weights mutated |
-| 14 | Map pressure to response mode via `pressure_to_mode()` | `ResponseMode` |
+| 14 | Map pressure to response mode via `pressure_to_mode(thresholds?)` | `ResponseMode` |
 | 15 | Check autonomy mode, emit events, record intervention | Events emitted |
 | 16 | Evaluate pending learning interventions | `InterventionOutcome` |
 | 17 | Export state (if auto_export) | JSON written |
@@ -327,22 +332,33 @@ Returns 0.1 for signals with no observations (ensures z-scores remain bounded).
 
 ### Response Modes
 
-| Mode | Pressure Range | Policy |
-|------|---------------|--------|
-| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
-| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
-| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
-| BLOCK | 75–100% | Blocks ONLY destructive operations. |
+| Mode | Default Threshold | Policy |
+|------|-------------------|--------|
+| OBSERVE | below guide (0.25) | Silent. Metrics collected, no intervention. |
+| GUIDE | guide (0.25) | Soft suggestions when patterns detected. Never blocks. |
+| WARN | warn (0.50) | Insistent warnings with alternatives. Never blocks. |
+| BLOCK | block (0.75) | Blocks ONLY destructive operations. |
+
+Threshold names: **guide**, **warn**, **block**. These replace the previous caution/degrade/quarantine/restart scheme.
+
+### Default Thresholds
+
+```python
+DEFAULT_THRESHOLDS = {"guide": 0.25, "warn": 0.50, "block": 0.75}
+```
 
 ### Mode Mapping
 
 ```
-pressure_to_mode(pressure):
-    if pressure >= 0.75 → BLOCK
-    if pressure >= 0.50 → WARN
-    if pressure >= 0.25 → GUIDE
-    else                → OBSERVE
+pressure_to_mode(pressure, thresholds=None):
+    t = thresholds or DEFAULT_THRESHOLDS
+    if pressure >= t["block"]  → BLOCK
+    if pressure >= t["warn"]   → WARN
+    if pressure >= t["guide"]  → GUIDE
+    else                       → OBSERVE
 ```
+
+The `thresholds` parameter is an optional `dict[str, float]` with keys `guide`, `warn`, `block`. When `None`, `DEFAULT_THRESHOLDS` is used. The engine passes `custom_thresholds` (loaded from config) to every `pressure_to_mode()` call.
 
 No hysteresis is needed. The guidance system uses direct pressure-to-mode mapping because the modes are graduated responses, not hard capability gates. There is no oscillation risk — moving between GUIDE and WARN produces only a change in message tone, not a tool lockout.
 
@@ -365,7 +381,7 @@ Only these specific invocations are blocked. Write, Edit, Bash, and Agent tools 
 
 ### Learning Adjustments
 
-The learning engine (Section 10) still produces threshold shifts. These adjust the pressure boundaries between modes:
+The learning engine (Section 10) still produces threshold shifts. These adjust the guide/warn/block boundaries:
 
 ```
 adjusted_threshold = base_threshold + learning_shift
@@ -490,7 +506,7 @@ The learning engine tracks whether escalation interventions actually helped, and
 
 ### Intervention Lifecycle
 
-1. **Record**: When a level change occurs, record `(agent, old_level, new_level, pressure, signals)`
+1. **Record**: When a mode change occurs, record `(agent, old_mode, new_mode, pressure, signals)`
 2. **Wait**: Count `actions_since` until `evaluation_window` (default 5) is reached
 3. **Evaluate**: Compare current pressure to recorded pressure:
    - `delta = pressure_at_intervention - pressure_now`
@@ -723,6 +739,8 @@ Divergence > 0.2 triggers an explanation listing the top 3 behavioral shifts.
 
 **Source**: `src/soma/task_tracker.py`
 
+`TaskTracker` accepts an optional `cwd` parameter (working directory) and a `drift_window` (default 10).
+
 ### Phase Detection
 
 Recent tool usage (last `drift_window` actions) is classified into phases:
@@ -748,6 +766,18 @@ drift = 1.0 - |overlap| / |recent_dirs|
 
 Drift > 0.3 triggers an explanation: `"scope expanded to tests/, config/"`.
 
+### Efficiency Metrics
+
+`get_efficiency()` returns a dict summarizing the agent's work patterns:
+
+```python
+{
+    "read_write_ratio": reads / max(writes, 1),
+    "error_rate": errors / max(total, 1),
+    "focus_score": 1.0 - scope_drift,
+}
+```
+
 ---
 
 ## 15. Drift Mode Classification
@@ -770,7 +800,111 @@ This prevents exploratory behavior (high drift but low errors/uncertainty) from 
 
 ---
 
-## 16. System Constants
+## 16. Core Modules
+
+Three layer-agnostic modules provide structured analysis that any integration layer can consume.
+
+### 16.1 Pattern Analysis
+
+**Source**: `src/soma/patterns.py`
+
+`analyze(action_log, workflow_mode="")` scans the action log for behavioral patterns and returns up to 3 `PatternResult` objects sorted by severity.
+
+```python
+@dataclass(frozen=True)
+class PatternResult:
+    kind: str       # pattern identifier
+    severity: str   # "positive", "info", "warning", "critical"
+    action: str     # what the agent should do
+    detail: str     # context about the pattern
+    data: dict      # structured data for programmatic use
+```
+
+#### Detected Patterns
+
+| Kind | Severity | Trigger |
+|------|----------|---------|
+| `blind_edits` | warning | 3+ Edit/NotebookEdit without prior Read of the file |
+| `bash_failures` | warning | 2+ consecutive Bash errors |
+| `error_rate` | warning | 30%+ error rate in last 10 actions |
+| `thrashing` | warning | Same file edited 3+ times in window |
+| `agent_spam` | info | 3+ Agent calls in window (suppressed in plan/discuss) |
+| `research_stall` | info | 7/8 recent actions are reads, 0 writes (suppressed in plan/discuss) |
+| `no_checkin` | info | 15+ mutations without user interaction (suppressed in execute/plan) |
+| `good_read_edit` | positive | 3+ read-before-edit pairs (only when no negatives) |
+| `good_clean_streak` | positive | 10 actions, 0 errors (only when no negatives) |
+
+The `workflow_mode` parameter suppresses patterns that are normal during specific GSD phases (e.g., agent spawning during plan/discuss).
+
+### 16.2 Findings Collector
+
+**Source**: `src/soma/findings.py`
+
+`collect(action_log, vitals, pressure, level_name, actions, hook_config)` aggregates all monitoring insights into a sorted list of `Finding` objects.
+
+```python
+@dataclass(frozen=True)
+class Finding:
+    priority: int       # 0=critical, 1=important, 2=informational
+    category: str       # "status", "quality", "predict", "pattern",
+                        # "scope", "fingerprint", "rca", "positive"
+    message: str        # what's happening
+    action: str = ""    # what to do about it
+```
+
+The `level_name` parameter accepts mode names: `OBSERVE`, `GUIDE`, `WARN`, `BLOCK`.
+
+Finding sources (in evaluation order):
+1. **Status** (priority 0): WARN/BLOCK mode announcements
+2. **Quality** (priority 0-2): grade from quality tracker
+3. **Prediction** (priority 1): escalation forecasts
+4. **Patterns** (priority 1-2): from `patterns.analyze()`
+5. **Scope drift** (priority 1-2): from task tracker
+6. **Fingerprint** (priority 2): divergence from historical profile
+7. **RCA** (priority 1-2): root cause diagnosis
+
+### 16.3 Session Context
+
+**Source**: `src/soma/context.py`
+
+`SessionContext` provides structured context about the agent's environment.
+
+```python
+@dataclass(frozen=True)
+class SessionContext:
+    cwd: str              # working directory
+    workflow_mode: str    # "", "plan", "execute", "discuss", "fast"
+    gsd_active: bool      # .planning/ directory exists
+    action_count: int     # total actions in session
+    pressure: float       # current pressure level
+```
+
+`detect_workflow_mode(cwd="")` reads `.planning/STATE.md` to infer the current GSD phase. Returns `""` when no GSD project is active.
+
+`get_session_context(cwd="", action_count=0, pressure=0.0)` builds a complete `SessionContext`.
+
+---
+
+## 17. Config Migration
+
+**Source**: `src/soma/cli/config_loader.py`
+
+`migrate_config()` auto-converts old configuration keys to the current schema. This handles the rename of threshold keys from the previous caution/degrade/quarantine/restart scheme to the current guide/warn/block scheme.
+
+Old keys are mapped as follows:
+
+| Old Key | New Key |
+|---------|---------|
+| `caution` | `guide` |
+| `degrade` | `warn` |
+| `quarantine` | `block` |
+| `restart` | (removed) |
+
+Migration runs automatically on config load. Old keys are preserved for backward compatibility but the new keys take precedence.
+
+---
+
+## 18. System Constants
 
 ### Default Weights
 
@@ -796,14 +930,14 @@ This prevents exploratory behavior (high drift but low errors/uncertainty) from 
 | Drift threshold | 0.30 | `engine.py:262` |
 | Uncertainty threshold | 0.30 | `engine.py:262` |
 
-### Response Mode Thresholds (Default)
+### Response Mode Thresholds (DEFAULT_THRESHOLDS)
 
-| Mode | Pressure Threshold |
-|------|-------------------|
-| OBSERVE | 0.00 |
-| GUIDE | 0.25 |
-| WARN | 0.50 |
-| BLOCK | 0.75 |
+| Threshold Key | Value | Mode Above |
+|---------------|-------|------------|
+| (below guide) | 0.00 | OBSERVE |
+| `guide` | 0.25 | GUIDE |
+| `warn` | 0.50 | WARN |
+| `block` | 0.75 | BLOCK |
 
 ### Pattern Boosts
 
@@ -825,7 +959,7 @@ This prevents exploratory behavior (high drift but low errors/uncertainty) from 
 
 ---
 
-## 17. Formal Properties
+## 19. Formal Properties
 
 ### Boundedness
 
@@ -837,12 +971,12 @@ All outputs are in [0, 1]:
 
 ### Direct Mode Mapping
 
-Let M(t) be the mode at time t:
+Let M(t) be the mode at time t, T the threshold configuration:
 ```
-M(t) = pressure_to_mode(P(t))
+M(t) = pressure_to_mode(P(t), T)
 ```
 
-The mode is a direct function of current pressure — no state machine, no hysteresis. This is possible because mode transitions change guidance tone, not hard capability gates. Moving from GUIDE to WARN adds urgency to messages; it does not lock out tools.
+Where `T = {guide, warn, block}` defaults to `{0.25, 0.50, 0.75}`. The mode is a direct function of current pressure and thresholds — no state machine, no hysteresis. This is possible because mode transitions change guidance tone, not hard capability gates. Moving from GUIDE to WARN adds urgency to messages; it does not lock out tools.
 
 ### Convergence of Learning
 

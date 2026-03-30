@@ -4,7 +4,7 @@
 
 ### `SOMAEngine`
 
-The main pipeline. Records actions, computes vitals, manages pressure and levels.
+The main pipeline. Records actions, computes vitals, manages pressure and modes.
 
 ```python
 from soma import SOMAEngine
@@ -12,7 +12,7 @@ from soma import SOMAEngine
 engine = SOMAEngine(
     budget={"tokens": 100000, "cost_usd": 5.0},
     custom_weights={"error_rate": 2.5},
-    custom_thresholds={"caution": 0.40},
+    custom_thresholds={"guide": 0.40},
 )
 ```
 
@@ -21,7 +21,7 @@ engine = SOMAEngine(
 | Method | Description |
 |--------|------------|
 | `register_agent(agent_id, autonomy?, system_prompt?, tools?)` | Add agent to monitoring |
-| `record_action(agent_id, action) -> ActionResult` | Main pipeline: action -> vitals -> pressure -> level |
+| `record_action(agent_id, action) -> ActionResult` | Main pipeline: action -> vitals -> pressure -> mode |
 | `get_level(agent_id) -> ResponseMode` | Current response mode (alias `get_mode`) |
 | `get_snapshot(agent_id) -> dict` | Full state: mode, pressure, vitals, action_count, budget_health |
 | `add_edge(source, target, trust_weight?)` | Connect agents in trust graph |
@@ -102,8 +102,115 @@ response.suggestions # list[str] — context-aware suggestions
 from soma import AutonomyMode
 
 AutonomyMode.FULLY_AUTONOMOUS   # Never asks for approval
-AutonomyMode.HUMAN_ON_THE_LOOP  # Approval only for QUARANTINE+
+AutonomyMode.HUMAN_ON_THE_LOOP  # Approval only for BLOCK+
 AutonomyMode.HUMAN_IN_THE_LOOP  # Approval blocks escalation
+```
+
+## Core Modules
+
+### `soma.patterns` — Pattern Analysis
+
+Detects behavioral patterns in agent action logs. Layer-agnostic: returns structured `PatternResult` objects.
+
+#### `PatternResult`
+
+```python
+from soma.patterns import PatternResult
+
+PatternResult(
+    kind="blind_edits",     # pattern type
+    severity="warning",     # "positive", "info", "warning", "critical"
+    action="Read before editing (foo.py, bar.py)",  # what agent should do
+    detail="you made 4 edits to files you haven't read",
+    data={"count": 4, "files": ["foo.py", "bar.py"]},
+)
+```
+
+Pattern kinds: `blind_edits`, `bash_failures`, `error_rate`, `thrashing`, `agent_spam`, `research_stall`, `no_checkin`, `good_read_edit`, `good_clean_streak`.
+
+#### `analyze()`
+
+```python
+from soma.patterns import analyze
+
+results = analyze(action_log, workflow_mode="")
+# Returns: list[PatternResult], max 3, sorted by severity
+```
+
+Args:
+- `action_log`: list of action dicts with keys: `tool`, `error`, `file`, `ts`
+- `workflow_mode`: `""` (default), `"plan"`, `"execute"`, `"discuss"`, `"fast"` — suppresses irrelevant patterns per mode
+
+### `soma.findings` — Findings Collector
+
+Gathers all monitoring insights (patterns, quality, predictions, scope drift, fingerprint divergence, RCA) into a structured list. Layers call `collect()` and format the results.
+
+#### `Finding`
+
+```python
+from soma.findings import Finding
+
+Finding(
+    priority=0,          # 0=critical (always show), 1=important, 2=informational
+    category="status",   # "status", "quality", "predict", "pattern", "scope",
+                         # "fingerprint", "rca", "positive"
+    message="Pressure elevated (p=65%)",
+    action="Slow down. Read->Think->Act, not Act->Fix->Retry",
+)
+```
+
+#### `collect()`
+
+```python
+from soma.findings import collect
+
+findings = collect(
+    action_log=action_log,
+    vitals=vitals_dict,
+    pressure=0.65,
+    level_name="WARN",        # OBSERVE, GUIDE, WARN, BLOCK
+    actions=30,
+    hook_config={"quality": True, "predict": True},
+)
+# Returns: list[Finding], sorted by priority (critical first)
+```
+
+### `soma.context` — Session Context
+
+Provides structured context about the agent's working environment. Used by patterns, findings, and layers for context-aware behavior.
+
+#### `SessionContext`
+
+```python
+from soma.context import SessionContext
+
+SessionContext(
+    cwd="/path/to/project",
+    workflow_mode="execute",   # "", "plan", "execute", "discuss", "fast"
+    gsd_active=True,           # .planning/ directory exists
+    action_count=42,
+    pressure=0.30,
+)
+```
+
+#### `detect_workflow_mode()`
+
+```python
+from soma.context import detect_workflow_mode
+
+mode = detect_workflow_mode(cwd="/path/to/project")
+# Returns: "" (default), "plan", "execute", "discuss", "fast"
+# Reads .planning/STATE.md to infer GSD workflow phase
+```
+
+#### `get_session_context()`
+
+```python
+from soma.context import get_session_context
+
+ctx = get_session_context(cwd="", action_count=42, pressure=0.30)
+# Returns: SessionContext with all fields populated
+# cwd defaults to CLAUDE_WORKING_DIRECTORY env var or os.getcwd()
 ```
 
 ## Client Wrapper
@@ -139,26 +246,27 @@ Full engine state serialized: agents (baselines, levels), budget, graph, learnin
 
 ```python
 from soma.testing import Monitor
-from soma import Action
+from soma import Action, ResponseMode
 
 with Monitor(budget={"tokens": 10000}) as m:
     m.record("agent-1", Action(tool_name="Read", output_text="ok", token_count=10))
     m.record("agent-1", Action(tool_name="Bash", output_text="err", token_count=10, error=True))
 
-    assert m.current_level("agent-1") == Level.HEALTHY
+    assert m.current_level("agent-1") == ResponseMode.OBSERVE
     m.assert_healthy("agent-1")
-    m.assert_below("agent-1", Level.QUARANTINE)
+    m.assert_below("agent-1", ResponseMode.BLOCK)
 ```
 
 ## Guidance
 
-The guidance module (`soma.guidance`) replaces the old ladder-based blocking system.
+The guidance module (`soma.guidance`) is the decision point for all tool calls.
 
 ```python
 from soma.guidance import pressure_to_mode, evaluate, is_destructive_bash, is_sensitive_file
 
-# Map pressure to response mode
+# Map pressure to response mode (with optional custom thresholds)
 mode = pressure_to_mode(0.60)  # ResponseMode.WARN
+mode = pressure_to_mode(0.60, thresholds={"guide": 0.40, "warn": 0.60, "block": 0.80})
 
 # Full guidance evaluation (used by PreToolUse hook)
 response = evaluate(
@@ -166,6 +274,7 @@ response = evaluate(
     tool_name="Bash",
     tool_input={"command": "rm -rf /tmp/build"},
     action_log=[...],
+    thresholds={"guide": 0.40, "warn": 0.60, "block": 0.80},
 )
 response.allow       # False — destructive bash at BLOCK mode
 response.message     # "SOMA blocked: destructive command: rm -rf /tmp/build (p=80%)"
@@ -176,6 +285,9 @@ is_destructive_bash("python main.py")                 # False
 is_sensitive_file(".env.production")                   # True
 is_sensitive_file("src/main.py")                       # False
 ```
+
+Default thresholds: `guide=0.25, warn=0.50, block=0.75`.
+Claude Code overrides: `guide=0.40, warn=0.60, block=0.80`.
 
 ## Events
 
@@ -243,7 +355,7 @@ div, explanation = fe.check_divergence("agent-1", current_log)
 ```python
 from soma.task_tracker import TaskTracker
 
-tt = TaskTracker(drift_window=10)
+tt = TaskTracker(drift_window=10, cwd="/path/to/project")
 tt.record("Read", "/src/auth.py")
 tt.record("Edit", "/src/auth.py")
 
@@ -251,6 +363,11 @@ ctx = tt.get_context()
 ctx.phase          # "implement"
 ctx.focus_files    # ["auth.py"]
 ctx.scope_drift    # 0.0
+
+eff = tt.get_efficiency()
+eff["context_efficiency"]  # read-to-write ratio (0-1)
+eff["success_rate"]        # 1.0 - error_rate
+eff["focus"]               # 1.0 - scope_drift
 ```
 
 ## Root Cause Analysis

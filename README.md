@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/v/soma-ai?style=for-the-badge&color=blue&label=PyPI" alt="PyPI" /></a>&nbsp;
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/pyversions/soma-ai?style=for-the-badge" alt="Python" /></a>&nbsp;
   <a href="https://github.com/tr00x/SOMA-Core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tr00x/SOMA-Core?style=for-the-badge" alt="License" /></a>&nbsp;
-  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-524%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
+  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-565%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -59,15 +59,15 @@ SOMA is not a dashboard. It's not a logger. It's a **closed-loop behavioral guid
 These are real messages SOMA injects into the agent's context:
 
 ```
-[pattern] 3 writes without a Read (main.py, config.py) — Read the target file first
-[pattern] 4 consecutive Bash failures — STOP retrying, try a different approach
-[pattern] edited app.py 5x — Read the file, plan ALL changes, then make ONE edit
-[pattern] 7 reads, 0 writes in last 10 actions — you may be stuck researching
-[pattern] 15 mutations with no user check-in — verify you're still on track
+[do] Read main.py and config.py before editing — 3 writes without a Read
+[do] STOP retrying, try a different approach — 4 consecutive Bash failures
+[do] Read the file, plan ALL changes, then make ONE edit — edited app.py 5x
+[do] Start writing code — 7 reads, 0 writes in last 10 actions
+[do] Verify you're still on track — 15 mutations with no user check-in
 [predict] escalation in ~5 actions (error_streak) — stop retrying the failing approach
 [scope]   scope expanded to tests/, config/ — is this intentional? If not, refocus
 [quality] grade=D (2 syntax errors, 3/8 bash commands failed)
-[status]  WARN 60% — pressure is high, slow down and verify your approach
+[✓] good — read before writing, clean edits
 ```
 
 The agent reads these and **changes its behavior**. That's the feedback loop — not a human reading logs after the fact.
@@ -87,10 +87,10 @@ uv tool install soma-ai
 soma setup-claude
 ```
 
-That's it. Status line appears immediately:
+That's it. Phase-aware status line appears immediately:
 
 ```
-SOMA + observe  3% · #42 · quality A
+SOMA: #42 [implement] ctx=73% focused
 ```
 
 </td>
@@ -132,7 +132,7 @@ AI agents are powerful but fragile. They loop. They edit files blind. They retry
 
 ## The Guidance System
 
-SOMA doesn't just alert. It **guides** — progressively increasing urgency as pressure rises, but never blocking your normal workflow.
+SOMA doesn't just alert. It **guides** — progressively increasing urgency as pressure rises, but never blocking your normal workflow. SOMA is always present — even at low pressure it provides actionable metrics and positive feedback, not silence.
 
 ```
   0%          25%         50%           75%          budget=0
@@ -140,13 +140,13 @@ SOMA doesn't just alert. It **guides** — progressively increasing urgency as p
   ▼           ▼           ▼             ▼               ▼
 OBSERVE      GUIDE       WARN         BLOCK          SAFE_MODE
 metrics    suggestions  insistent   destructive ops   budget gone
-only       never blocks never blocks only             read-only
++ [✓]      never blocks never blocks only             read-only
 ```
 
 | Mode | Pressure | What SOMA Does |
 |:-----|:---------|:------------|
-| **OBSERVE** | 0-24% | All tools allowed. Status line shows vitals. Metrics collected silently. |
-| **GUIDE** | 25-49% | Soft suggestions injected into context. *"Read before every Write/Edit."* Never blocks anything. |
+| **OBSERVE** | 0-24% | All tools allowed. Status line shows vitals. Actionable metrics: `ctx=73% focus=focused`. Positive feedback: `[✓] good — read before writing`. |
+| **GUIDE** | 25-49% | Soft suggestions injected into context. *"Read before every Write/Edit."* Never blocks anything. Workflow-aware — severity suppressed during planning phases. |
 | **WARN** | 50-74% | Insistent warnings with increasing urgency. *"Pressure is high — slow down and verify."* Still never blocks normal tools. |
 | **BLOCK** | 75%+ | Blocks ONLY destructive operations: `rm -rf`, `git push --force`, `.env` file writes. Write, Edit, Bash, Agent — all still work. |
 | **SAFE_MODE** | Budget gone | Nothing runs until budget restored. |
@@ -165,6 +165,8 @@ SOMA warns **~5 actions before** problems happen:
 | `retry_storm` | +12% | *"investigate the root cause instead of retrying"* |
 | `blind_writes` | +10% | *"Read the target files before editing"* |
 | `thrashing` | +8% | *"plan the complete change first, then make one clean edit"* |
+
+Read-context awareness eliminates false positives — edits after reads are not flagged as blind writes.
 
 Linear trend extrapolation + pattern detection. Confidence-weighted — only warns when the data justifies it.
 
@@ -263,6 +265,8 @@ SOMA infers current phase (research → implement → test → debug) and tracks
 [phase] switched from implement to debug — unexpected shift
 ```
 
+Workflow-aware severity: warnings are suppressed during planning phases to avoid false positives when broad exploration is expected.
+
 For enterprise: ensures each agent stays in its lane. A coding agent that starts "researching" unrelated files gets flagged.
 
 </details>
@@ -314,8 +318,10 @@ uv tool install soma-ai && soma setup-claude
 ### Status Line (always visible)
 
 ```
-SOMA + observe  3% · #42 · quality A
+SOMA: #42 [implement] ctx=73% focused
 ```
+
+Phase-aware header with actionable metrics — shows current task, phase, context usage, and focus state at a glance.
 
 ### Slash Commands
 
@@ -334,6 +340,7 @@ SOMA + observe  3% · #42 · quality A
 ```bash
 soma setup-claude    # Install hooks + slash commands into Claude Code
 soma status          # Show current pressure, mode, quality
+soma doctor          # Diagnose installation and configuration issues
 soma reset           # Reset baselines to defaults
 soma start           # Start SOMA monitoring
 soma stop            # Stop SOMA monitoring
@@ -360,7 +367,8 @@ Real observations from development sessions:
 - **Blind writes caught**: SOMA flagged when the agent edited files without reading them first — the agent stopped and read the file
 - **Scope drift detected**: Working on docs, the agent started touching CLI code — SOMA flagged it, agent refocused
 - **Bash loops prevented**: Agent retried a failing command — SOMA warned at attempt 2, the agent changed approach
-- **Zero false positives**: OBSERVE mode maintained throughout normal work, no unnecessary warnings
+- **Positive feedback works**: Agent gets `[✓] good — clean edits` and maintains good habits through the session
+- **Read-context aware**: No false positives for edits after reads — SOMA knows the agent already read the file
 
 The feedback loop works. The agent is measurably more careful when SOMA is watching.
 
@@ -419,7 +427,7 @@ No neural networks. No black boxes. Every formula is documented and tested.
 <tr>
 <td>
 
-**524 tests. 0 failures. 0.70 seconds.**
+**565 tests. 0 failures. 0.70 seconds.**
 
 Every formula, threshold, edge case, and integration path is covered.
 
@@ -466,6 +474,9 @@ soma/
 ├── vitals.py          5 behavioral signal computations
 ├── baseline.py        EMA baselines with cold-start blending
 ├── guidance.py        4-mode guidance system (OBSERVE → GUIDE → WARN → BLOCK)
+├── patterns.py        Behavioral pattern detection and [do] directive injection
+├── findings.py        Structured findings with severity and context
+├── context.py         Read-context tracking and phase-aware awareness
 ├── learning.py        Self-tuning threshold adaptation
 ├── predictor.py       5-action-ahead pressure prediction
 ├── quality.py         A-F code quality grading
