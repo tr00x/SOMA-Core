@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.5] — 2026-03-30
+
+### Fixed
+- "Edit without Read" no longer fires when file/directory was recently read via Read/Grep/Glob
+- Pattern detection checks last 30 actions for read context, not just sequential edits
+
 ## [0.4.4] — 2026-03-30
 
 ### Added

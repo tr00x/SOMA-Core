@@ -1,6 +1,6 @@
 """SOMA Core — Behavioral monitoring and directive control for AI agents."""
 
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 from soma.types import (
     Action, Level, ResponseMode, AutonomyMode, DriftMode,
