@@ -358,11 +358,23 @@ def main():
         # ── Build output based on verbosity ──
         lines = []
 
-        # Status line — always present
+        # Status line — actionable metrics when healthy, raw vitals when stressed
         u = vitals.get("uncertainty", 0)
         d = vitals.get("drift", 0)
         e = vitals.get("error_rate", 0)
-        lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
+        if pressure < 0.25:
+            try:
+                from soma.hooks.common import get_task_tracker
+                tracker = get_task_tracker()
+                m = tracker.get_efficiency()
+                ctx_pct = int(m.get("context_efficiency", 0) * 100)
+                focus_val = m.get("focus", 1.0)
+                focus_label = "focused" if focus_val >= 0.7 else "drifting" if focus_val < 0.4 else "ok"
+                lines.append(f"SOMA: #{actions} ctx={ctx_pct}% focus={focus_label}")
+            except Exception:
+                lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
+        else:
+            lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
 
         # Sort findings by priority
         findings.sort(key=lambda x: x[0])

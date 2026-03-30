@@ -191,6 +191,31 @@ class TaskTracker:
 
         return drift, "working in different area than initial focus"
 
+    def get_efficiency(self) -> dict[str, float]:
+        """Compute actionable metrics from action history."""
+        if not self._all_tools:
+            return {}
+
+        total = len(self._all_tools)
+        metrics: dict[str, float] = {}
+
+        # Read-to-write ratio: how much reading before writing
+        reads = sum(1 for t in self._all_tools if t in ("Read", "Grep", "Glob"))
+        writes = sum(1 for t in self._all_tools if t in ("Write", "Edit"))
+        if writes > 0:
+            ratio = reads / writes
+            metrics["context_efficiency"] = min(ratio / 2.0, 1.0)
+
+        # Error-free rate
+        errors = sum(1 for e in self._all_errors if e)
+        metrics["success_rate"] = 1.0 - (errors / total) if total > 0 else 1.0
+
+        # Focus score (inverse of scope drift)
+        ctx = self.get_context()
+        metrics["focus"] = 1.0 - ctx.scope_drift
+
+        return metrics
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "drift_window": self.drift_window,
