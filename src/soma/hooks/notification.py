@@ -150,26 +150,14 @@ def _collect_findings(
     findings: list[tuple[int, str]] = []
 
     # Level status (priority 0 at elevated levels)
-    if level_name == "CAUTION":
+    if level_name in ("WARN", "DEGRADE"):
         findings.append((0,
-            "[status] CAUTION — Read before every Write/Edit. "
-            "Verify your understanding of each file before changing it"
+            "[status] WARN — pressure elevated. Slow down, verify each step"
         ))
-    elif level_name == "DEGRADE":
+    elif level_name in ("BLOCK", "QUARANTINE", "RESTART", "SAFE_MODE"):
         findings.append((0,
-            "[status] DEGRADED — Bash/Agent blocked. "
-            "Focus on reading and planning. Fix the root cause before acting"
-        ))
-    elif level_name == "QUARANTINE":
-        findings.append((0,
-            "[status] QUARANTINE — read-only mode. "
-            "Stop all mutations. Read the relevant code, understand what went wrong, "
-            "then explain to the user what happened and ask for guidance"
-        ))
-    elif level_name in ("RESTART", "SAFE_MODE"):
-        findings.append((0,
-            f"[status] {level_name} — fully restricted. "
-            f"Ask the user what to do next"
+            "[status] BLOCK — destructive operations blocked. "
+            "Normal Write/Edit/Bash/Agent still allowed"
         ))
 
     # Quality (priority 0 if bad)
@@ -191,14 +179,13 @@ def _collect_findings(
     if hook_config.get("predict", True):
         try:
             from soma.hooks.common import get_predictor
-            from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
             predictor = get_predictor()
             if predictor._pressures:
-                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
-                if thresholds:
-                    pred = predictor.predict(thresholds[0])
+                boundaries = [0.25, 0.50, 0.75]
+                next_boundary = next((b for b in boundaries if b > pressure), None)
+                if next_boundary:
+                    pred = predictor.predict(next_boundary)
                     if pred.will_escalate:
-                        # Specific advice per dominant reason
                         reason = pred.dominant_reason
                         advice = {
                             "error_streak": "stop retrying the failing approach, try something different",
@@ -296,7 +283,7 @@ def main():
         has_critical = any(p == 0 for p, _ in findings)
         has_important = any(p <= 1 for p, _ in findings)
 
-        if level_name == "HEALTHY" and pressure < 0.15 and not has_critical and not has_important:
+        if level_name in ("OBSERVE", "HEALTHY", "GUIDE", "CAUTION") and pressure < 0.15 and not has_critical and not has_important:
             return
 
         # ── Build output based on verbosity ──
