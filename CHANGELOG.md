@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2] — 2026-03-30
+
+### Fixed
+- Scope drift uses cwd-relative paths — moving between `src/` and `tests/` in same project no longer triggers false drift
+- Skip pattern analysis at very low pressure (<10%) — reduces noise in healthy sessions
+- GSD active suppresses agent spawn suggestions — agent spawning is expected in workflows
+
 ## [0.4.1] — 2026-03-30
 
 ### Changed
