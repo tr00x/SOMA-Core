@@ -88,7 +88,7 @@ class TestClaudeCodeConfig:
 
     def test_thresholds_are_higher_than_default(self):
         """Claude Code needs higher thresholds to avoid false alarms."""
-        for key in ["caution", "degrade", "quarantine", "restart"]:
+        for key in ["guide", "warn", "block"]:
             assert CLAUDE_CODE_CONFIG["thresholds"][key] > DEFAULT_CONFIG["thresholds"][key], \
                 f"Threshold {key} should be higher for Claude Code"
 
@@ -110,7 +110,7 @@ class TestClaudeCodeConfig:
 
     def test_thresholds_are_ordered(self):
         t = CLAUDE_CODE_CONFIG["thresholds"]
-        assert t["caution"] < t["degrade"] < t["quarantine"] < t["restart"]
+        assert t["guide"] < t["warn"] < t["block"]
 
     def test_all_weights_positive(self):
         for key, val in CLAUDE_CODE_CONFIG["weights"].items():
@@ -291,7 +291,7 @@ class TestPersistenceWithConfig:
         assert "custom_weights" in data
         assert "custom_thresholds" in data
         assert data["custom_weights"]["error_rate"] == 2.5
-        assert data["custom_thresholds"]["quarantine"] == 0.8
+        assert data["custom_thresholds"]["block"] == 0.8
 
     def test_load_restores_mode(self, tmp_path):
         """Restored mode should reflect what was saved."""
