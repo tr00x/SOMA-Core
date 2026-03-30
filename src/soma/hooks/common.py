@@ -64,6 +64,34 @@ def get_guidance_thresholds() -> dict[str, float] | None:
     return None
 
 
+def detect_workflow_mode() -> str:
+    """Detect current GSD workflow mode from environment.
+
+    Returns: "" (default), "plan", "execute", "discuss", "fast"
+    """
+    import os
+    cwd = os.environ.get("CLAUDE_WORKING_DIRECTORY", "")
+    if not cwd:
+        return ""
+    planning_dir = os.path.join(cwd, ".planning")
+    if not os.path.isdir(planning_dir):
+        return ""
+    state_path = os.path.join(planning_dir, "STATE.md")
+    if not os.path.exists(state_path):
+        return ""
+    try:
+        with open(state_path) as f:
+            content = f.read(500)
+        lower = content.lower()
+        if "executing" in lower:
+            return "execute"
+        if "planning" in lower or "discussing" in lower:
+            return "plan"
+    except Exception:
+        pass
+    return ""
+
+
 def read_action_log() -> list[dict]:
     """Read recent action log for pattern analysis."""
     try:

@@ -15,10 +15,11 @@ from __future__ import annotations
 import time
 
 
-def _analyze_patterns(action_log: list[dict]) -> list[str]:
+def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[str]:
     """Analyze recent action log and return actionable tips.
 
     Each tip is a short, specific instruction — not a metric.
+    workflow_mode: "" (default), "plan", "execute", "discuss", "fast"
     Returns at most 3 tips to avoid noise.
     """
     if not action_log:
@@ -119,35 +120,41 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
                 )
 
     # Pattern 5: Agent/subagent spam — lots of Agent calls without progress
-    agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
-    if agent_calls >= 3:
-        tips.append(
-            f"[pattern] {agent_calls} Agent calls in {len(recent)} actions — "
-            f"are subagents producing results? Consider doing it directly"
-        )
+    # Suppressed during planning/discuss (agent spawning is expected)
+    if workflow_mode not in ("plan", "discuss"):
+        agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
+        if agent_calls >= 3:
+            tips.append(
+                f"[pattern] {agent_calls} Agent calls in {len(recent)} actions — "
+                f"are subagents producing results? Consider doing it directly"
+            )
 
     # Pattern 6: Read-only stall (research paralysis)
-    if len(recent) >= 8:
-        read_tools = {"Read", "Grep", "Glob", "WebSearch", "WebFetch"}
-        reads = sum(1 for e in recent if e["tool"] in read_tools)
-        writes = sum(1 for e in recent if e["tool"] in ("Write", "Edit"))
-        if reads >= 7 and writes == 0:
-            tips.append(
-                f"[pattern] {reads} reads, 0 writes in last {len(recent)} actions — "
-                f"you may be stuck researching. Start implementing or ask the user"
-            )
+    # Suppressed during planning/discuss (reading is the whole point)
+    if workflow_mode not in ("plan", "discuss"):
+        if len(recent) >= 8:
+            read_tools = {"Read", "Grep", "Glob", "WebSearch", "WebFetch"}
+            reads = sum(1 for e in recent if e["tool"] in read_tools)
+            writes = sum(1 for e in recent if e["tool"] in ("Write", "Edit"))
+            if reads >= 7 and writes == 0:
+                tips.append(
+                    f"[pattern] {reads} reads, 0 writes in last {len(recent)} actions — "
+                    f"you may be stuck researching. Start implementing or ask the user"
+                )
 
     # Pattern 7: Long sequence without user interaction
-    if len(action_log) >= 30:
-        last_30 = action_log[-30:]
-        user_tools = {"AskUserQuestion"}
-        user_interactions = sum(1 for e in last_30 if e["tool"] in user_tools)
-        edits = sum(1 for e in last_30 if e["tool"] in ("Write", "Edit", "Bash"))
-        if user_interactions == 0 and edits >= 15:
-            tips.append(
-                f"[pattern] {edits} mutations in 30 actions with no user check-in — "
-                f"verify you're still on track before continuing"
-            )
+    # Suppressed during execute/plan (autonomous work is expected)
+    if workflow_mode not in ("execute", "plan"):
+        if len(action_log) >= 30:
+            last_30 = action_log[-30:]
+            user_tools = {"AskUserQuestion"}
+            user_interactions = sum(1 for e in last_30 if e["tool"] in user_tools)
+            edits = sum(1 for e in last_30 if e["tool"] in ("Write", "Edit", "Bash"))
+            if user_interactions == 0 and edits >= 15:
+                tips.append(
+                    f"[pattern] {edits} mutations in 30 actions with no user check-in — "
+                    f"verify you're still on track before continuing"
+                )
 
     return tips[:3]
 
@@ -219,13 +226,21 @@ def _collect_findings(
         except Exception:
             pass
 
+    # Detect workflow mode for severity adjustment
+    try:
+        from soma.hooks.common import detect_workflow_mode
+        workflow_mode = detect_workflow_mode()
+    except Exception:
+        workflow_mode = ""
+
     # Patterns (priority 1)
-    tips = _analyze_patterns(action_log)
+    tips = _analyze_patterns(action_log, workflow_mode=workflow_mode)
     for tip in tips:
         findings.append((1, tip))
 
     # Scope drift (priority 1) + phase info
-    if hook_config.get("task_tracking", True):
+    # Suppressed during planning (touching many files is expected)
+    if hook_config.get("task_tracking", True) and workflow_mode not in ("plan", "discuss"):
         try:
             from soma.hooks.common import get_task_tracker
             tracker = get_task_tracker()

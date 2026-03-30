@@ -50,6 +50,45 @@ class TestReadContextAwareness:
         tips = _analyze_patterns(log)
         assert not any("blind" in t.lower() for t in tips)
 
+class TestWorkflowSeverity:
+    def test_agent_spam_suppressed_in_planning(self):
+        """Agent spawns during planning workflows should not warn."""
+        log = [
+            {"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)
+        ]
+        tips = _analyze_patterns(log, workflow_mode="plan")
+        assert not any("agent" in t.lower() for t in tips)
+
+    def test_agent_spam_warns_in_default_mode(self):
+        """Agent spawns without workflow context should still warn."""
+        log = [
+            {"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)
+        ]
+        tips = _analyze_patterns(log, workflow_mode="")
+        assert any("agent" in t.lower() for t in tips)
+
+    def test_read_stall_suppressed_in_planning(self):
+        """Research paralysis pattern is expected during planning."""
+        log = [
+            {"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i}
+            for i in range(10)
+        ]
+        tips = _analyze_patterns(log, workflow_mode="plan")
+        assert not any("read" in t.lower() and "write" in t.lower() for t in tips)
+
+    def test_long_sequence_suppressed_in_execute(self):
+        """Long sequence without user check-in is expected during execution."""
+        log = [
+            {"tool": "Edit", "error": False, "file": f"/src/f{i}.py", "ts": i}
+            for i in range(35)
+        ]
+        tips = _analyze_patterns(log, workflow_mode="execute")
+        assert not any("user check-in" in t.lower() for t in tips)
+
+
+class TestExistingPatterns:
+    """Ensure existing patterns still work."""
+
     def test_grep_counts_as_read_context(self):
         """Grep/Glob provide read context too."""
         log = [
