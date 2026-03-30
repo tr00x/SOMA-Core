@@ -90,7 +90,7 @@ class TestPositiveFeedback:
     def test_read_before_edit_streak(self):
         """Consistent read-before-edit pattern gets positive feedback."""
         log = []
-        for i in range(12):
+        for i in range(5):
             log.append({"tool": "Read", "error": False, "file": f"/src/file{i}.py", "ts": i * 2})
             log.append({"tool": "Edit", "error": False, "file": f"/src/file{i}.py", "ts": i * 2 + 1})
         tips = _analyze_patterns(log)
@@ -109,10 +109,10 @@ class TestPositiveFeedback:
         assert not any("✓" in t for t in tips)
 
     def test_zero_error_streak(self):
-        """Long streak with zero errors gets positive feedback."""
+        """Streak with zero errors gets positive feedback (10+ actions)."""
         log = [
             {"tool": "Bash", "error": False, "file": "", "ts": i}
-            for i in range(20)
+            for i in range(12)
         ]
         tips = _analyze_patterns(log)
         assert any("clean" in t.lower() or "✓" in t for t in tips)
@@ -205,7 +205,7 @@ class TestCollectFindings:
     def test_positive_pattern_in_findings(self):
         """Positive feedback should appear in findings at low pressure."""
         log = []
-        for i in range(12):
+        for i in range(5):
             log.append({"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i * 2})
             log.append({"tool": "Edit", "error": False, "file": f"/src/f{i}.py", "ts": i * 2 + 1})
         findings = _collect_findings(log, {}, 0.05, "OBSERVE", 50, self._MINIMAL_CONFIG)
