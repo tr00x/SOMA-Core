@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from soma.engine import SOMAEngine, ActionResult
-from soma.types import Action, Level
+from soma.types import Action, Level, ResponseMode
 
 
 class Monitor:
@@ -14,7 +14,7 @@ class Monitor:
         with Monitor(budget={"tokens": 10000}) as mon:
             mon.record("agent", action)
         mon.assert_healthy()
-        mon.assert_below(Level.DEGRADE)
+        mon.assert_below(ResponseMode.WARN)
     """
 
     def __init__(self, budget: dict[str, float] | None = None) -> None:
@@ -89,14 +89,14 @@ class Monitor:
     def current_level(self) -> Level:
         """Escalation level from the most recently recorded action."""
         if not self._history:
-            return Level.HEALTHY
+            return ResponseMode.OBSERVE
         return self._history[-1].level
 
     @property
     def max_level(self) -> Level:
         """Highest escalation level observed across all recorded results."""
         if not self._history:
-            return Level.HEALTHY
+            return ResponseMode.OBSERVE
         return max(r.level for r in self._history)
 
     # ------------------------------------------------------------------ #
@@ -109,7 +109,7 @@ class Monitor:
         Uses ``current_level`` (most recent result) rather than ``max_level``
         so that transient cold-start escalation does not cause false failures.
         """
-        if self.current_level != Level.HEALTHY:
+        if self.current_level != ResponseMode.OBSERVE:
             raise AssertionError(
                 f"Expected current_level HEALTHY but got {self.current_level.name}"
                 f" (max_level={self.max_level.name})"

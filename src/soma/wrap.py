@@ -19,7 +19,7 @@ import functools
 from typing import Any
 
 from soma.engine import SOMAEngine, ActionResult
-from soma.types import Action, Level
+from soma.types import Action, Level, ResponseMode
 from soma.recorder import SessionRecorder
 
 
@@ -51,7 +51,7 @@ class WrappedClient:
         engine: SOMAEngine,
         agent_id: str = "default",
         auto_export: bool = True,
-        block_at: Level = Level.QUARANTINE,
+        block_at: ResponseMode = ResponseMode.BLOCK,
     ) -> None:
         self._client = client
         self._engine = engine
@@ -227,7 +227,7 @@ def wrap(
     budget: dict[str, float] | None = None,
     agent_id: str = "default",
     auto_export: bool = True,
-    block_at: Level = Level.QUARANTINE,
+    block_at: ResponseMode = ResponseMode.BLOCK,
 ) -> WrappedClient:
     """Wrap an API client with SOMA monitoring and control.
 
@@ -236,7 +236,7 @@ def wrap(
         budget: Budget limits (e.g., {"tokens": 50000, "cost_usd": 1.0}).
         agent_id: Name for this agent in the SOMA dashboard.
         auto_export: Write state to ~/.soma/state.json after each call.
-        block_at: Level at which to block API calls (default: QUARANTINE).
+        block_at: ResponseMode at which to block API calls (default: BLOCK).
 
     Returns:
         A WrappedClient that proxies all calls through SOMA.
