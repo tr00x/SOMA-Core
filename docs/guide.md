@@ -15,8 +15,8 @@ Every tool call in Claude Code now flows through SOMA:
 
 ```
 You type a command
-  -> PreToolUse checks if tool is allowed at current pressure level
-  -> Tool executes (or gets blocked)
+  -> PreToolUse evaluates guidance: observe, suggest, warn, or block destructive ops
+  -> Tool executes (or gets blocked if destructive at high pressure)
   -> PostToolUse records the action, validates code, computes pressure
   -> Next prompt: UserPromptSubmit injects feedback into agent context
   -> Session ends: Stop saves state, updates fingerprint
@@ -40,18 +40,16 @@ Each signal gets a z-score pressure (sigmoid-clamped), then they're aggregated:
 pressure = 0.7 * weighted_mean + 0.3 * max_signal
 ```
 
-Pressure maps to escalation levels:
+Pressure maps to response modes:
 
-| Level | Threshold | What happens |
-|-------|-----------|-------------|
-| HEALTHY | 0.00 | Everything allowed |
-| CAUTION | 0.40 | Write/Edit requires prior Read |
-| DEGRADE | 0.60 | Bash and Agent blocked |
-| QUARANTINE | 0.80 | Only Read/Glob/Grep allowed |
-| RESTART | 0.95 | Same as QUARANTINE |
-| SAFE_MODE | budget=0 | Budget exhausted, read-only |
+| Mode | Pressure Range | What happens |
+|------|---------------|-------------|
+| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
+| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
+| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
+| BLOCK | 75–100% | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes). |
 
-Thresholds have hysteresis: CAUTION escalates at 0.40, de-escalates at 0.35.
+Write, Edit, Bash, and Agent are **never blocked**. Only genuinely destructive operations are stopped, and only at 75%+ pressure.
 
 ## Baselines and learning
 
@@ -62,8 +60,8 @@ SOMA uses exponential moving averages (EMA, alpha=0.15) to learn what's "normal"
 - After 20: baselines reflect actual agent behavior
 
 The learning engine tracks intervention outcomes:
-- If escalation helped (pressure dropped) -> lower threshold slightly
-- If escalation didn't help (pressure stayed) -> raise threshold
+- If intervention helped (pressure dropped) -> lower threshold slightly
+- If intervention didn't help (pressure stayed) -> raise threshold
 - Adaptive step: more consistent outcomes = larger adjustments
 
 This means SOMA gets fewer false positives over time.
@@ -112,14 +110,13 @@ quality = true               # A-F quality grading
 task_tracking = true         # scope drift detection
 
 [budget]
-tokens = 1000000             # token limit (SAFE_MODE when exhausted)
+tokens = 1000000             # token limit
 cost_usd = 50.0              # cost limit
 
 [thresholds]
-caution = 0.40               # pressure level for CAUTION
-degrade = 0.60               # pressure level for DEGRADE
-quarantine = 0.80            # pressure level for QUARANTINE
-restart = 0.95               # pressure level for RESTART
+guide = 0.25                 # pressure for GUIDE mode
+warn = 0.50                  # pressure for WARN mode
+block = 0.75                 # pressure for BLOCK mode
 
 [weights]
 uncertainty = 1.2            # signal weight in pressure aggregation
@@ -139,11 +136,13 @@ soma agents           # List all monitored agents
 soma replay <file>    # Replay a recorded session
 soma init             # Create soma.toml interactively
 soma version          # Print version
-soma quarantine <id>  # Force agent to QUARANTINE
-soma release <id>     # Reset agent to HEALTHY
+soma stop             # Disable SOMA hooks in Claude Code
+soma start            # Re-enable SOMA hooks in Claude Code
+soma uninstall-claude # Remove SOMA from Claude Code completely
 soma reset <id>       # Reset agent baseline
 soma config show      # View current config
 soma config set k v   # Change config value
+soma mode <name>      # Switch operating mode (strict/relaxed/autonomous)
 ```
 
 ## Files
@@ -160,9 +159,10 @@ soma config set k v   # Change config value
 | `~/.soma/fingerprint.json` | Agent fingerprints (persists across sessions) |
 | `~/.claude/settings.json` | Claude Code hook configuration |
 
-## Uninstalling
+## Disabling and uninstalling
 
 ```bash
-soma uninstall-claude   # Remove hooks from Claude Code
+soma stop               # Disable hooks (keep config, easy re-enable with soma start)
+soma uninstall-claude   # Remove hooks from Claude Code entirely
 rm -rf ~/.soma          # Remove all state
 ```
