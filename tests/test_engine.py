@@ -1,12 +1,12 @@
 from soma.engine import SOMAEngine, ActionResult
-from soma.types import Action, Level, AutonomyMode
+from soma.types import Action, ResponseMode, AutonomyMode
 
 
 class TestSOMAEngine:
     def test_create_and_register(self):
         e = SOMAEngine(budget={"tokens": 10000})
         e.register_agent("a")
-        assert e.get_level("a") == Level.HEALTHY
+        assert e.get_level("a") == ResponseMode.OBSERVE
 
     def test_record_normal(self):
         e = SOMAEngine(budget={"tokens": 100000})
@@ -17,7 +17,7 @@ class TestSOMAEngine:
             r = e.record_action("a", Action(
                 tool_name="search", output_text=f"found {i} results for query", token_count=100,
             ))
-        assert r.level == Level.HEALTHY
+        assert r.mode == ResponseMode.OBSERVE
         assert 0.0 <= r.pressure <= 1.0
         assert isinstance(r.vitals.uncertainty, float)
 
@@ -29,7 +29,7 @@ class TestSOMAEngine:
             r = e.record_action("a", action)
         # One more error action after grace period ends
         r = e.record_action("a", error_actions[0])
-        assert r.level.value >= Level.CAUTION.value
+        assert r.mode.value >= ResponseMode.GUIDE.value
 
     def test_multi_agent_pressure(self):
         e = SOMAEngine(budget={"tokens": 500000})
@@ -46,13 +46,16 @@ class TestSOMAEngine:
         ))
         assert r.pressure >= 0.0
 
-    def test_safe_mode(self):
-        e = SOMAEngine(budget={"tokens": 500})
+    def test_budget_depletion_raises_pressure(self):
+        e = SOMAEngine(budget={"tokens": 100})
         e.register_agent("a")
-        for _ in range(6):
-            e.record_action("a", Action(tool_name="bash", output_text="x", token_count=100))
-        r = e.record_action("a", Action(tool_name="bash", output_text="x", token_count=0))
-        assert r.level == Level.SAFE_MODE
+        # Exhaust budget and pass grace period
+        for _ in range(15):
+            r = e.record_action("a", Action(tool_name="bash", output_text="x", token_count=100))
+        # Budget is massively overdrawn — pressure should be elevated
+        assert r.mode >= ResponseMode.GUIDE, (
+            f"Expected at least GUIDE after budget depletion, got {r.mode}"
+        )
 
     def test_events_fired(self, error_actions):
         e = SOMAEngine(budget={"tokens": 100000})
@@ -61,7 +64,7 @@ class TestSOMAEngine:
         e.events.on("level_changed", lambda d: events.append(d))
         for action in error_actions:
             e.record_action("a", action)
-        if e.get_level("a") != Level.HEALTHY:
+        if e.get_level("a") != ResponseMode.OBSERVE:
             assert len(events) >= 1
             assert "agent_id" in events[0]
 
@@ -89,14 +92,14 @@ class TestSOMAEngine:
                 tool_name="search", output_text="ok " * 20, token_count=50,
             ))
         # Without edge, b should not be affected
-        assert e.get_level("b") == Level.HEALTHY
+        assert e.get_level("b") == ResponseMode.OBSERVE
 
     def test_action_result_is_frozen(self):
         e = SOMAEngine(budget={"tokens": 10000})
         e.register_agent("a")
         r = e.record_action("a", Action(tool_name="bash", output_text="ok", token_count=50))
         try:
-            r.level = Level.RESTART  # type: ignore
+            r.mode = ResponseMode.BLOCK  # type: ignore
             assert False, "Should not allow mutation"
         except AttributeError:
             pass

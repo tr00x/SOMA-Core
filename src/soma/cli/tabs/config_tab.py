@@ -15,31 +15,15 @@ from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Static, Input, Button, Rule, TabPane
 
 from soma.cli.config_loader import load_config, save_config, DEFAULT_CONFIG, CLAUDE_CODE_CONFIG
-from soma.types import Level
+from soma.types import ResponseMode
+from soma.guidance import pressure_to_mode
 
 
-# ── Threshold -> Level helper ────────────────────────────────────
-
-def _pressure_to_level(pressure: float, thresholds: dict[str, float]) -> Level:
-    """Replicate the ladder logic using raw threshold values."""
-    if pressure >= thresholds.get("restart", 0.90):
-        return Level.RESTART
-    if pressure >= thresholds.get("quarantine", 0.75):
-        return Level.QUARANTINE
-    if pressure >= thresholds.get("degrade", 0.50):
-        return Level.DEGRADE
-    if pressure >= thresholds.get("caution", 0.25):
-        return Level.CAUTION
-    return Level.HEALTHY
-
-
-LEVEL_COLORS = {
-    Level.HEALTHY:    "#22c55e",
-    Level.CAUTION:    "#eab308",
-    Level.DEGRADE:    "#f97316",
-    Level.QUARANTINE: "#ef4444",
-    Level.RESTART:    "#a855f7",
-    Level.SAFE_MODE:  "#ffffff",
+MODE_COLORS = {
+    ResponseMode.OBSERVE:  "#22c55e",
+    ResponseMode.GUIDE:    "#eab308",
+    ResponseMode.WARN:     "#f97316",
+    ResponseMode.BLOCK:    "#ef4444",
 }
 
 # Example pressure for threshold preview
@@ -221,15 +205,12 @@ class ConfigTab(TabPane):
     # ── Preview ──────────────────────────────────────────────────
 
     def _build_preview(self, thresholds: dict[str, Any]) -> str:
-        """Show what level an agent at example pressure would get."""
-        th_floats = {k: float(v) for k, v in thresholds.items()}
-        current_level = _pressure_to_level(_PREVIEW_PRESSURE, th_floats)
+        """Show what mode an agent at example pressure would get."""
+        current_level = pressure_to_mode(_PREVIEW_PRESSURE)
+        orig_level = pressure_to_mode(_PREVIEW_PRESSURE)
 
-        orig_th = DEFAULT_CONFIG["thresholds"]
-        orig_level = _pressure_to_level(_PREVIEW_PRESSURE, orig_th)
-
-        color = LEVEL_COLORS.get(current_level, "white")
-        orig_color = LEVEL_COLORS.get(orig_level, "white")
+        color = MODE_COLORS.get(current_level, "white")
+        orig_color = MODE_COLORS.get(orig_level, "white")
 
         if current_level == orig_level:
             change = "[dim](no change from default)[/]"

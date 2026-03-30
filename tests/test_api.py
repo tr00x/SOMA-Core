@@ -17,6 +17,7 @@ def test_public_exports_exist():
         "SOMAEngine",
         "Action",
         "Level",
+        "ResponseMode",
         "AutonomyMode",
         "ActionResult",
         "DriftMode",

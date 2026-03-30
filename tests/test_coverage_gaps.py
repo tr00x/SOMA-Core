@@ -76,7 +76,7 @@ class TestBudgetCoverageGaps:
 # ---------------------------------------------------------------------------
 
 from soma.context_control import apply_context_control, _keep_newest
-from soma.types import Level
+from soma.types import ResponseMode
 
 
 class TestContextControlCoverageGaps:
@@ -92,7 +92,7 @@ class TestContextControlCoverageGaps:
             "tools": ["tool_a"],
             "system_prompt": "sp",
         }
-        result = apply_context_control(ctx, Level.CAUTION)
+        result = apply_context_control(ctx, ResponseMode.GUIDE)
         assert result["messages"] == []
         assert result["tools"] == ["tool_a"]
 
@@ -104,7 +104,7 @@ class TestContextControlCoverageGaps:
             "system_prompt": "sp",
             "expensive_tools": ["tool_b"],
         }
-        result = apply_context_control(ctx, Level.DEGRADE)
+        result = apply_context_control(ctx, ResponseMode.WARN)
         assert result["messages"] == []
         assert "tool_b" not in result["tools"]
 
@@ -213,17 +213,17 @@ class TestMonitorCoverageGaps:
         with pytest.raises(RuntimeError, match="context manager"):
             mon.record("agent", action)
 
-    # line 92: current_level is HEALTHY when history is empty (before any record call)
+    # line 92: current_level is OBSERVE when history is empty (before any record call)
     def test_current_level_empty_history(self):
         mon = Monitor()
-        assert mon.current_level == Level.HEALTHY
+        assert mon.current_level == ResponseMode.OBSERVE
 
-    # line 99: max_level is HEALTHY when history is empty
+    # line 99: max_level is OBSERVE when history is empty
     def test_max_level_empty_history(self):
         mon = Monitor()
-        assert mon.max_level == Level.HEALTHY
+        assert mon.max_level == ResponseMode.OBSERVE
 
-    # line 113: assert_healthy raises AssertionError when current level is not HEALTHY
+    # line 113: assert_healthy raises AssertionError when current level is not OBSERVE
     def test_assert_healthy_raises_on_escalation(self):
         with Monitor(budget={"tokens": 100_000}) as mon:
             # Drive the engine into escalation with repeated errors
@@ -233,7 +233,7 @@ class TestMonitorCoverageGaps:
                     output_text="error output",
                     error=True,
                 ))
-        if mon.current_level != Level.HEALTHY:
+        if mon.current_level != ResponseMode.OBSERVE:
             with pytest.raises(AssertionError):
                 mon.assert_healthy()
         else:

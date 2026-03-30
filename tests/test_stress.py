@@ -10,7 +10,7 @@ import pytest
 from soma.engine import SOMAEngine
 from soma.graph import PressureGraph
 from soma.learning import LearningEngine
-from soma.types import Action, Level
+from soma.types import Action, ResponseMode
 
 
 # ---------------------------------------------------------------------------
@@ -48,13 +48,13 @@ def _error_action(i: int = 0) -> Action:
 # ---------------------------------------------------------------------------
 
 def test_gradual_degradation_pressure_and_levels():
-    """Pressure monotonically increases (with tolerance) and levels escalate
+    """Pressure monotonically increases (with tolerance) and modes escalate
     as error rate climbs from 0% to 100% over 50 steps."""
     engine = SOMAEngine(budget={"tokens": 500_000})
     engine.register_agent("agent")
 
     pressures: list[float] = []
-    levels: list[Level] = []
+    modes: list[ResponseMode] = []
 
     rng = random.Random(42)
 
@@ -65,7 +65,7 @@ def test_gradual_degradation_pressure_and_levels():
         action = _error_action(step) if is_error else _normal_action(step)
         result = engine.record_action("agent", action)
         pressures.append(result.pressure)
-        levels.append(result.level)
+        modes.append(result.mode)
 
     # Pressure should show an upward trend. We compare quartile means:
     # first quarter average should be less than last quarter average.
@@ -76,15 +76,15 @@ def test_gradual_degradation_pressure_and_levels():
         f"first quarter mean ({q1_avg:.3f})"
     )
 
-    # Levels should eventually escalate past HEALTHY
-    final_level = levels[-1]
-    assert final_level > Level.HEALTHY, (
-        f"Expected escalation beyond HEALTHY after full-error ramp, got {final_level}"
+    # Modes should eventually escalate past OBSERVE
+    final_mode = modes[-1]
+    assert final_mode > ResponseMode.OBSERVE, (
+        f"Expected escalation beyond OBSERVE after full-error ramp, got {final_mode}"
     )
 
-    # CAUTION should appear somewhere in the run
-    assert Level.CAUTION in levels or any(l > Level.CAUTION for l in levels), (
-        "Expected CAUTION or higher to appear during gradual ramp"
+    # GUIDE should appear somewhere in the run
+    assert ResponseMode.GUIDE in modes or any(m > ResponseMode.GUIDE for m in modes), (
+        "Expected GUIDE or higher to appear during gradual ramp"
     )
 
 
@@ -93,7 +93,7 @@ def test_gradual_degradation_pressure_and_levels():
 # ---------------------------------------------------------------------------
 
 def test_recovery_after_crisis():
-    """Agent escalates under 20 error actions, then recovers to HEALTHY
+    """Agent escalates under 20 error actions, then recovers to OBSERVE
     after 30 normal actions."""
     engine = SOMAEngine(budget={"tokens": 500_000})
     engine.register_agent("agent")
@@ -102,19 +102,19 @@ def test_recovery_after_crisis():
     for i in range(20):
         engine.record_action("agent", _error_action(i))
 
-    escalated_level = engine.get_level("agent")
-    assert escalated_level > Level.HEALTHY, (
-        f"Expected escalation after 20 errors, got {escalated_level}"
+    escalated_mode = engine.get_level("agent")
+    assert escalated_mode > ResponseMode.OBSERVE, (
+        f"Expected escalation after 20 errors, got {escalated_mode}"
     )
 
     # Phase 2: recovery — 30 normal actions
-    final_level = escalated_level
+    final_mode = escalated_mode
     for i in range(30):
         result = engine.record_action("agent", _normal_action(i))
-        final_level = result.level
+        final_mode = result.mode
 
-    assert final_level == Level.HEALTHY, (
-        f"Expected recovery to HEALTHY after 30 normal actions, got {final_level}"
+    assert final_mode == ResponseMode.OBSERVE, (
+        f"Expected recovery to OBSERVE after 30 normal actions, got {final_mode}"
     )
 
 
@@ -131,26 +131,26 @@ def test_sudden_spike_then_recovery():
     for i in range(10):
         engine.record_action("agent", _normal_action(i))
 
-    pre_spike_level = engine.get_level("agent")
+    pre_spike_mode = engine.get_level("agent")
 
     # Spike: 3 concentrated errors
     for i in range(3):
         result = engine.record_action("agent", _error_action(i))
-    post_spike_level = engine.get_level("agent")
+    post_spike_mode = engine.get_level("agent")
 
     # Should escalate during or after the spike
-    assert post_spike_level >= pre_spike_level, (
-        f"Level should not drop during error spike: pre={pre_spike_level}, post={post_spike_level}"
+    assert post_spike_mode >= pre_spike_mode, (
+        f"Mode should not drop during error spike: pre={pre_spike_mode}, post={post_spike_mode}"
     )
 
     # Recovery: 20 normal actions
-    final_level = post_spike_level
+    final_mode = post_spike_mode
     for i in range(20):
         result = engine.record_action("agent", _normal_action(100 + i))
-        final_level = result.level
+        final_mode = result.mode
 
-    assert final_level == Level.HEALTHY, (
-        f"Expected recovery to HEALTHY after spike recovery, got {final_level}"
+    assert final_mode == ResponseMode.OBSERVE, (
+        f"Expected recovery to OBSERVE after spike recovery, got {final_mode}"
     )
 
 
@@ -201,47 +201,33 @@ def test_contagion_agent_b_pressure_increases():
 # Test 5: Budget depletion race
 # ---------------------------------------------------------------------------
 
-def test_budget_depletion_safe_mode():
+def test_budget_depletion_raises_pressure():
     """3 agents each spending 100 tokens/action. With budget=1000,
-    SAFE_MODE should trigger before 1100 total tokens spent."""
+    pressure should rise as budget depletes."""
     engine = SOMAEngine(budget={"tokens": 1000})
     engine.register_agent("a1")
     engine.register_agent("a2")
     engine.register_agent("a3")
 
     agents = ["a1", "a2", "a3"]
-    safe_mode_triggered = False
-    total_tokens_at_safe_mode = None
 
-    for step in range(12):  # 3 agents × 4 rounds = 12 actions × 100 = 1200 tokens total
+    # Record enough actions to deplete budget and pass grace period
+    for step in range(20):
         for agent in agents:
             result = engine.record_action(
                 agent,
                 Action(tool_name="bash", output_text="output", token_count=100),
             )
-            spent = sum(engine.budget.spent.values())
-            if result.level == Level.SAFE_MODE and not safe_mode_triggered:
-                safe_mode_triggered = True
-                total_tokens_at_safe_mode = spent
 
-        if safe_mode_triggered:
-            break
-
-    assert safe_mode_triggered, "SAFE_MODE should have triggered before token budget exhausted"
-    assert total_tokens_at_safe_mode is not None
-    assert total_tokens_at_safe_mode <= 1100, (
-        f"SAFE_MODE should trigger before 1100 tokens, triggered at {total_tokens_at_safe_mode}"
-    )
-
-    # All three agents should eventually be in SAFE_MODE
-    # (next action on each agent will see budget_health <= 0)
+    # After 60 actions at 100 tokens each (6000 total, 6x budget),
+    # all agents should have elevated pressure
     for agent in agents:
         result = engine.record_action(
             agent,
             Action(tool_name="bash", output_text="x", token_count=0),
         )
-        assert result.level == Level.SAFE_MODE, (
-            f"Agent {agent} should be in SAFE_MODE, got {result.level}"
+        assert result.pressure > 0.1, (
+            f"Agent {agent} should have elevated pressure after budget depletion, got {result.pressure:.3f}"
         )
 
 
@@ -293,22 +279,18 @@ def test_learning_adjusts_thresholds():
         threshold_adj_step=0.02,
     )
 
-    # Record 10 interventions that will resolve as failures:
-    # pressure at intervention time > current pressure (so delta <= 0 → failure)
-    # We set intervention_pressure == current_pressure so delta == 0 → failure.
     for _ in range(10):
         learning.record_intervention(
             agent_id="agent",
-            old=Level.HEALTHY,
-            new=Level.CAUTION,
+            old=ResponseMode.OBSERVE,
+            new=ResponseMode.GUIDE,
             pressure=0.5,
             signals={"error_rate": 0.5, "uncertainty": 0.3},
         )
-        # Each evaluate call passes pressure == 0.5 (same as at intervention) → failure
         learning.evaluate("agent", current_pressure=0.5, actions_since=3)
 
-    # Threshold adjustment should be non-zero for HEALTHY→CAUTION transition
-    adj = learning.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    # Threshold adjustment should be non-zero for OBSERVE→GUIDE transition
+    adj = learning.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj > 0.0, (
         f"Expected positive threshold adjustment after repeated failures, got {adj}"
     )
@@ -352,10 +334,7 @@ def test_pressure_graph_isolation():
         f"internal={c_node.internal_pressure:.4f}"
     )
 
-    # B should have elevated effective pressure compared to C
-    b_node = graph._nodes["B"]
-    # B may or may not have its own actions, but the key assertion is C isolation
-    # Let's confirm C's pressure is not inflated by A's pressure
+    # C should be isolated from A's pressure
     a_node = graph._nodes["A"]
     assert c_node.effective_pressure < a_node.effective_pressure or (
         c_node.effective_pressure == c_node.internal_pressure
@@ -368,26 +347,26 @@ def test_pressure_graph_isolation():
 
 def test_cold_start_convergence():
     """Fresh agent receiving 20 identical normal actions. By action 15+,
-    pressure should be consistently near zero and level should be HEALTHY."""
+    pressure should be consistently near zero and mode should be OBSERVE."""
     engine = SOMAEngine(budget={"tokens": 500_000})
     engine.register_agent("agent")
 
     pressures_after_15: list[float] = []
-    levels_after_15: list[Level] = []
+    modes_after_15: list[ResponseMode] = []
 
     for i in range(20):
         result = engine.record_action("agent", _normal_action(i))
         if i >= 15:
             pressures_after_15.append(result.pressure)
-            levels_after_15.append(result.level)
+            modes_after_15.append(result.mode)
 
     avg_late_pressure = sum(pressures_after_15) / len(pressures_after_15)
     assert avg_late_pressure < 0.35, (
         f"Pressure should converge near zero after cold start for normal actions, "
         f"got avg={avg_late_pressure:.4f}"
     )
-    assert all(l == Level.HEALTHY for l in levels_after_15), (
-        f"Level should be HEALTHY after cold start convergence, got: {levels_after_15}"
+    assert all(m == ResponseMode.OBSERVE for m in modes_after_15), (
+        f"Mode should be OBSERVE after cold start convergence, got: {modes_after_15}"
     )
 
 

@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from soma.engine import SOMAEngine
-from soma.types import Action, Level
+from soma.types import Action, ResponseMode
 from soma.persistence import save_engine_state, load_engine_state
 
 
@@ -82,16 +82,15 @@ class TestSaveLoadRoundtrip:
         engine = SOMAEngine(budget={"tokens": 50000})
         engine.register_agent("agent-x")
 
-        # Force to a non-HEALTHY level
-        from soma.types import Level
-        engine._agents["agent-x"].ladder.force_level(Level.CAUTION)
+        # Force to a non-OBSERVE mode
+        engine._agents["agent-x"].mode = ResponseMode.GUIDE
 
         state_file = tmp_path / "engine_state.json"
         save_engine_state(engine, str(state_file))
         restored = load_engine_state(str(state_file))
 
         assert restored is not None
-        assert restored.get_level("agent-x") == Level.CAUTION
+        assert restored.get_level("agent-x") == ResponseMode.GUIDE
 
     def test_roundtrip_known_tools(self, tmp_path):
         engine, state_file = _build_engine_with_agents(tmp_path)
@@ -138,7 +137,7 @@ class TestRestoredEngineIsUsable:
         # Should be able to record more actions without error
         result = restored.record_action("agent-alpha", _make_action(999))
         assert result is not None
-        assert isinstance(result.level, Level)
+        assert isinstance(result.mode, ResponseMode)
         assert restored._agents["agent-alpha"].action_count == 6
 
     def test_restored_engine_correct_budget_limits(self, tmp_path):

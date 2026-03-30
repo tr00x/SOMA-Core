@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from soma.types import Action, Level
+from soma.types import Action, ResponseMode
 from soma.engine import SOMAEngine, ActionResult
 from soma.testing import Monitor
 
@@ -49,7 +49,7 @@ def test_basic_usage():
         mon.record("agent1", _action())
 
     assert mon.total_actions == 1
-    assert isinstance(mon.max_level, Level)
+    assert isinstance(mon.max_level, ResponseMode)
 
 
 def test_tracks_max_level():
@@ -58,7 +58,7 @@ def test_tracks_max_level():
         for _ in range(15):
             mon.record("agent1", _action(error=True))
 
-    assert mon.max_level >= Level.CAUTION
+    assert mon.max_level >= ResponseMode.GUIDE
 
 
 def test_assert_healthy_passes_when_healthy():
@@ -79,11 +79,11 @@ def test_assert_healthy_fails_on_escalation():
             mon.record("agent1", _action(error=True))
 
     # max_level must be >= CAUTION after sustained errors
-    assert mon.max_level >= Level.CAUTION, (
+    assert mon.max_level >= ResponseMode.GUIDE, (
         "Engine did not escalate after 15 errors — test pre-condition not met"
     )
     with pytest.raises(AssertionError):
-        mon.assert_below(Level.CAUTION)
+        mon.assert_below(ResponseMode.GUIDE)
 
 
 def test_cost_tracking():
@@ -113,7 +113,7 @@ def test_assert_below_passes():
         mon.record("agent1", _action())
 
     # max_level after checkpoint reflects only clean post-warmup actions
-    mon.assert_below(Level.DEGRADE)
+    mon.assert_below(ResponseMode.WARN)
 
 
 def test_assert_below_fails():
@@ -122,8 +122,8 @@ def test_assert_below_fails():
         for _ in range(15):
             mon.record("agent1", _action(error=True))
 
-    assert mon.max_level >= Level.CAUTION, (
+    assert mon.max_level >= ResponseMode.GUIDE, (
         "Engine did not reach CAUTION after 15 errors — test pre-condition not met"
     )
     with pytest.raises(AssertionError):
-        mon.assert_below(Level.CAUTION)
+        mon.assert_below(ResponseMode.GUIDE)

@@ -16,35 +16,29 @@ from textual.containers import Horizontal
 from textual.widgets import Static, RichLog, TabPane
 from textual.timer import Timer
 
-from soma.types import Level
+from soma.types import ResponseMode
 
 # ── Colors ──────────────────────────────────────────────────────
 
-LEVEL_COLORS = {
-    Level.HEALTHY:    "#22c55e",
-    Level.CAUTION:    "#eab308",
-    Level.DEGRADE:    "#f97316",
-    Level.QUARANTINE: "#ef4444",
-    Level.RESTART:    "#a855f7",
-    Level.SAFE_MODE:  "#ffffff",
+MODE_COLORS = {
+    ResponseMode.OBSERVE:  "#22c55e",
+    ResponseMode.GUIDE:    "#eab308",
+    ResponseMode.WARN:     "#f97316",
+    ResponseMode.BLOCK:    "#ef4444",
 }
 
-LEVEL_LABEL = {
-    Level.HEALTHY:    "OK",
-    Level.CAUTION:    "WATCH",
-    Level.DEGRADE:    "BAD",
-    Level.QUARANTINE: "STOP",
-    Level.RESTART:    "RESET",
-    Level.SAFE_MODE:  "EMERGENCY",
+MODE_LABELS = {
+    ResponseMode.OBSERVE:  "OK",
+    ResponseMode.GUIDE:    "GUIDE",
+    ResponseMode.WARN:     "WARN",
+    ResponseMode.BLOCK:    "BLOCK",
 }
 
-LEVEL_CSS_CLASS = {
-    Level.HEALTHY:    "healthy",
-    Level.CAUTION:    "caution",
-    Level.DEGRADE:    "degrade",
-    Level.QUARANTINE: "quarantine",
-    Level.RESTART:    "restart",
-    Level.SAFE_MODE:  "safe-mode",
+MODE_NAMES = {
+    ResponseMode.OBSERVE:  "observe",
+    ResponseMode.GUIDE:    "guide",
+    ResponseMode.WARN:     "warn",
+    ResponseMode.BLOCK:    "block",
 }
 
 
@@ -56,12 +50,10 @@ class AgentCard(Static):
         width: 1fr; height: auto; min-height: 5;
         background: #141414; border: round #333; padding: 0 1; margin: 1;
     }
-    AgentCard.healthy    { border: round #22c55e; }
-    AgentCard.caution    { border: round #eab308; }
-    AgentCard.degrade    { border: round #f97316; }
-    AgentCard.quarantine { border: round #ef4444; }
-    AgentCard.restart    { border: round #a855f7; }
-    AgentCard.safe-mode  { border: round #fff; background: #7f1d1d; }
+    AgentCard.observe  { border: round #22c55e; }
+    AgentCard.guide    { border: round #eab308; }
+    AgentCard.warn     { border: round #f97316; }
+    AgentCard.block    { border: round #ef4444; }
     """
 
     def __init__(self, agent_id: str) -> None:
@@ -73,16 +65,16 @@ class AgentCard(Static):
         self, level, pressure, uncertainty, drift, error_rate,
         action_count=0, cost=0.0, token_usage=0.0,
     ):
-        color = LEVEL_COLORS.get(level, "white")
-        label = LEVEL_LABEL.get(level, "?")
+        color = MODE_COLORS.get(level, "white")
+        label = MODE_LABELS.get(level, "?")
 
         bar_len = 20
         filled = min(int(pressure * bar_len), bar_len)
         bar = f"[{color}]{'█' * filled}[/]{'░' * (bar_len - filled)}"
 
-        for cls in LEVEL_CSS_CLASS.values():
+        for cls in MODE_NAMES.values():
             self.remove_class(cls)
-        self.add_class(LEVEL_CSS_CLASS.get(level, "healthy"))
+        self.add_class(MODE_NAMES.get(level, "observe"))
 
         self._text = (
             f"[bold]{self.agent_id}[/bold] [dim]#{action_count}[/dim]  [{color} bold]{label}[/]\n"
@@ -153,11 +145,11 @@ class DashboardTab(TabPane):
                 log = self.query_one("#dash-log", RichLog)
                 log.write(f"  [#22c55e]New agent: {agent_id}[/]")
 
-            level_name = state.get("level", "HEALTHY")
+            level_name = state.get("level", "OBSERVE")
             try:
-                level = Level[level_name]
+                level = ResponseMode[level_name]
             except KeyError:
-                level = Level.HEALTHY
+                level = ResponseMode.OBSERVE
 
             pressure = state.get("pressure", 0.0)
             action_count = state.get("action_count", 0)

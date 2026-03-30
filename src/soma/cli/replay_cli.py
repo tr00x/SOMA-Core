@@ -10,23 +10,21 @@ from rich import box
 
 from soma.recorder import SessionRecorder
 from soma.replay import replay_session
-from soma.types import Level
+from soma.types import ResponseMode
 from soma.cli.config_loader import load_config, DEFAULT_CONFIG
 
 
-# Level -> rich colour mapping
-_LEVEL_COLOURS: dict[Level, str] = {
-    Level.HEALTHY: "green",
-    Level.CAUTION: "yellow",
-    Level.DEGRADE: "dark_orange",
-    Level.QUARANTINE: "red",
-    Level.RESTART: "bold red",
-    Level.SAFE_MODE: "magenta",
+# Mode -> rich colour mapping
+_MODE_COLOURS: dict[ResponseMode, str] = {
+    ResponseMode.OBSERVE: "green",
+    ResponseMode.GUIDE: "yellow",
+    ResponseMode.WARN: "dark_orange",
+    ResponseMode.BLOCK: "red",
 }
 
 
-def _level_markup(level: Level) -> str:
-    colour = _LEVEL_COLOURS.get(level, "white")
+def _level_markup(level: ResponseMode) -> str:
+    colour = _MODE_COLOURS.get(level, "white")
     return f"[{colour}]{level.name}[/{colour}]"
 
 
@@ -96,7 +94,7 @@ def run_replay_cli(session_path: str) -> None:
 
     # --------------------------------------------------------------- summary
     # Per-agent max level and max pressure
-    agent_max_level: dict[str, Level] = {}
+    agent_max_level: dict[str, ResponseMode] = {}
     agent_max_pressure: dict[str, float] = {}
 
     for ra, result in zip(recording.actions, results):
@@ -108,7 +106,7 @@ def run_replay_cli(session_path: str) -> None:
 
     console.print("[bold]Summary:[/bold]")
     for aid in agent_ids:
-        max_level = agent_max_level.get(aid, Level.HEALTHY)
+        max_level = agent_max_level.get(aid, ResponseMode.OBSERVE)
         max_pressure = agent_max_pressure.get(aid, 0.0)
         level_str = _level_markup(max_level)
         console.print(

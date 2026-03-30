@@ -25,7 +25,7 @@ def diagnose(
     Returns None if pressure is low and nothing interesting is happening.
     Returns a single sentence explaining the dominant problem.
     """
-    if pressure < 0.15 and level == "HEALTHY":
+    if pressure < 0.15 and level in ("HEALTHY", "OBSERVE"):
         return None
 
     findings: list[tuple[float, str]] = []  # (severity, explanation)
