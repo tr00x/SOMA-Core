@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.4] — 2026-03-30
+
+### Added
+- Ruff lint in CI pipeline (GitHub Actions)
+- Ruff config in pyproject.toml with per-file ignores
+
+### Fixed
+- All lint errors across core modules (unused imports, f-strings)
+
 ## [0.4.3] — 2026-03-30
 
 ### Added
