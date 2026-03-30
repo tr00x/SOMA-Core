@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.11] — 2026-03-30
+
+### Changed
+- **Architecture: layer-agnostic intelligence** — pattern analysis, findings collection, workflow context extracted from Claude Code hooks into core modules
+- `soma/patterns.py` (core) — `PatternResult` dataclass + `analyze()` public API
+- `soma/findings.py` (core) — `Finding` dataclass + `collect()` public API
+- `soma/context.py` (core) — `SessionContext` + `detect_workflow_mode()` + `get_session_context()`
+- `notification.py` reduced from 420 to 154 lines — now a thin Claude Code formatter
+- New layers (Cursor, Windsurf, etc) get full intelligence by importing core modules
+
 ## [0.4.10] — 2026-03-30
 
 ### Fixed
