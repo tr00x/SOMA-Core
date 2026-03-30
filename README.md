@@ -7,7 +7,7 @@
 <p align="center">
   <strong>System of Oversight and Monitoring for Agents</strong><br/>
   <em>The nervous system for AI agents.</em><br/>
-  Real-time behavioral monitoring. Predictive intervention. Autonomous safety control.
+  Real-time behavioral monitoring. Predictive guidance. Autonomous safety control.
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@
 
 > **Your AI agent just edited 5 files without reading any of them. It's retrying the same failing command for the 8th time. It wandered from your auth module into unrelated config files. And you have no idea until it's too late.**
 >
-> SOMA sees all of this in real-time — and tells the agent to stop.
+> SOMA sees all of this in real-time — and steers the agent back on track.
 
 ```bash
 pip install soma-ai
@@ -41,15 +41,16 @@ pip install soma-ai
 
 ## What SOMA Does
 
-SOMA is not a dashboard. It's not a logger. It's a **closed-loop behavioral control system** that watches every action an AI agent takes, detects problems as they develop, and **injects corrective feedback directly into the agent's context**.
+SOMA is not a dashboard. It's not a logger. It's a **closed-loop behavioral guidance system** that watches every action an AI agent takes, detects problems as they develop, and **injects corrective feedback directly into the agent's context**.
 
-### Watch → Warn → Restrict → Learn → Predict
+### Watch → Guide → Warn → Block (only destructive ops)
 
 | | What | How |
 |:--|:-----|:----|
 | **Watch** | 5 behavioral signals per action | Uncertainty, drift, error rate, cost, token usage |
-| **Warn** | Injects specific advice into agent context | `"3 writes without a Read — Read the target file first"` |
-| **Restrict** | Progressively blocks dangerous tools | 6-level escalation: HEALTHY → CAUTION → DEGRADE → QUARANTINE |
+| **Guide** | Injects specific advice into agent context | `"3 writes without a Read — Read the target file first"` |
+| **Warn** | Escalating warnings as pressure rises | Insistent guidance with increasing urgency |
+| **Block** | Blocks ONLY destructive operations | `rm -rf`, `git push --force`, `.env` writes — never blocks normal tools |
 | **Learn** | Adapts thresholds to each agent | Tracks intervention outcomes, tunes over time |
 | **Predict** | Warns ~5 actions before escalation | Linear trend + pattern detection (error streaks, thrashing, blind writes) |
 
@@ -66,7 +67,7 @@ These are real messages SOMA injects into the agent's context:
 [predict] escalation in ~5 actions (error_streak) — stop retrying the failing approach
 [scope]   scope expanded to tests/, config/ — is this intentional? If not, refocus
 [quality] grade=D (2 syntax errors, 3/8 bash commands failed)
-[status]  QUARANTINE — stop all mutations, explain to user what went wrong
+[status]  WARN 60% — pressure is high, slow down and verify your approach
 ```
 
 The agent reads these and **changes its behavior**. That's the feedback loop — not a human reading logs after the fact.
@@ -89,7 +90,7 @@ soma setup-claude
 That's it. Status line appears immediately:
 
 ```
-SOMA + healthy  3% · #42 · quality A
+SOMA + observe  3% · #42 · quality A
 ```
 
 </td>
@@ -120,37 +121,37 @@ AI agents are powerful but fragile. They loop. They edit files blind. They retry
 
 **Existing solutions don't close the loop:**
 
-| Approach | Observes behavior? | Tells the agent? | Blocks actions? | Adapts? | Multi-agent? |
+| Approach | Observes behavior? | Tells the agent? | Guides actions? | Adapts? | Multi-agent? |
 |----------|:-:|:-:|:-:|:-:|:-:|
 | Guardrails (NeMo, Lakera) | Prompt-level only | No | Content filter | No | No |
 | Observability (LangSmith, Helicone) | Yes | **No** | **No** | No | Partial |
 | Rate limiters | No | No | Token cap | No | No |
-| **SOMA** | **5 signals** | **7 pattern warnings** | **6-level escalation** | **Self-learning** | **Trust graph** |
+| **SOMA** | **5 signals** | **7 pattern warnings** | **4-mode guidance** | **Self-learning** | **Trust graph** |
 
 ---
 
-## The Escalation Ladder
+## The Guidance System
 
-SOMA doesn't just alert. It **acts** — progressively restricting capabilities as pressure rises.
+SOMA doesn't just alert. It **guides** — progressively increasing urgency as pressure rises, but never blocking your normal workflow.
 
 ```
-  0%          25%         50%           75%          90%      budget=0
-  │           │           │             │            │           │
-  ▼           ▼           ▼             ▼            ▼           ▼
-HEALTHY    CAUTION     DEGRADE     QUARANTINE    RESTART    SAFE_MODE
-all ok     read first  bash blocked  read-only    full stop   budget gone
+  0%          25%         50%           75%          budget=0
+  │           │           │             │               │
+  ▼           ▼           ▼             ▼               ▼
+OBSERVE      GUIDE       WARN         BLOCK          SAFE_MODE
+metrics    suggestions  insistent   destructive ops   budget gone
+only       never blocks never blocks only             read-only
 ```
 
-| Level | Pressure | What SOMA Does |
-|:------|:---------|:------------|
-| **HEALTHY** | 0-24% | All tools allowed. Status line shows vitals. |
-| **CAUTION** | 25%+ | Blocks Write/Edit unless agent Read the file first. Injects: *"Read before every Write/Edit."* |
-| **DEGRADE** | 50%+ | Blocks Bash and Agent tools. Injects: *"Focus on reading and planning. Fix the root cause."* |
-| **QUARANTINE** | 75%+ | Read-only mode. Injects: *"Stop mutations. Explain to user what went wrong."* |
-| **RESTART** | 90%+ | Full stop. *"Ask the user what to do next."* |
+| Mode | Pressure | What SOMA Does |
+|:-----|:---------|:------------|
+| **OBSERVE** | 0-24% | All tools allowed. Status line shows vitals. Metrics collected silently. |
+| **GUIDE** | 25-49% | Soft suggestions injected into context. *"Read before every Write/Edit."* Never blocks anything. |
+| **WARN** | 50-74% | Insistent warnings with increasing urgency. *"Pressure is high — slow down and verify."* Still never blocks normal tools. |
+| **BLOCK** | 75%+ | Blocks ONLY destructive operations: `rm -rf`, `git push --force`, `.env` file writes. Write, Edit, Bash, Agent — all still work. |
 | **SAFE_MODE** | Budget gone | Nothing runs until budget restored. |
 
-**Hysteresis** prevents level thrashing. **Multi-level jump** up for acute failures, **one-level-at-a-time** down for verified recovery.
+The key insight: **agents respond to guidance**. You don't need to block `Edit` to stop blind writes — you tell the agent to read first, and it does. Blocking normal tools just makes the agent less capable without making it safer.
 
 ---
 
@@ -183,7 +184,7 @@ Escalation → wait 5 actions → pressure dropped?
            (catch earlier)             (fewer false alarms)
 ```
 
-Adaptive step size. Bounded ±0.10 max shift. After ~15 interventions, SOMA converges to agent-specific thresholds.
+Adaptive step size. Bounded +/-0.10 max shift. After ~15 interventions, SOMA converges to agent-specific thresholds.
 
 ---
 
@@ -198,7 +199,7 @@ When a planning agent hallucinates requirements, the coding agent implements the
 ### What SOMA Gives Enterprise Teams
 
 <details>
-<summary><strong>Multi-Agent Pressure Propagation</strong> — when one agent spirals, downstream agents get restricted before they inherit the chaos</summary>
+<summary><strong>Multi-Agent Pressure Propagation</strong> — when one agent spirals, downstream agents get warned before they inherit the chaos</summary>
 
 ```python
 from soma import SOMAEngine
@@ -215,11 +216,11 @@ engine.graph.add_edge("coder", "reviewer", trust=0.6)
 
 - Pressure flows along trust-weighted edges (damping: 0.60)
 - Trust decays 2.5x faster than it recovers — trust is easy to lose, hard to earn
-- When your planner spirals, the coder gets restricted **before** the bad outputs arrive
+- When your planner spirals, the coder gets warned **before** the bad outputs arrive
 - No manual intervention needed — the graph handles it automatically
 
 **Without SOMA:** planner hallucinates → coder implements garbage → reviewer wastes time → you find out an hour later.
-**With SOMA:** planner's pressure rises → coder's effective pressure rises → coder gets restricted → pipeline pauses automatically.
+**With SOMA:** planner's pressure rises → coder's effective pressure rises → coder gets guided → pipeline self-corrects.
 
 </details>
 
@@ -285,9 +286,9 @@ A runaway agent hits its budget limit → SAFE_MODE → pipeline continues with 
 
 | Without SOMA | With SOMA |
 |:-------------|:----------|
-| Agent loops for 30 minutes before anyone notices | Loop detected at iteration 3, agent warned, blocked at iteration 5 |
+| Agent loops for 30 minutes before anyone notices | Loop detected at iteration 3, agent guided to change approach |
 | $500 API bill from a retry storm overnight | Budget SAFE_MODE after $25, agent stops automatically |
-| Planner hallucinates → entire pipeline builds garbage | Planner's pressure propagates, coder restricted before bad outputs arrive |
+| Planner hallucinates → entire pipeline builds garbage | Planner's pressure propagates, coder gets warned before bad outputs arrive |
 | Post-mortem: "the agent edited 47 files it shouldn't have" | Real-time: `"scope expanded to unrelated dirs — is this intentional?"` |
 | "Which agent caused the cascade failure?" | RCA: `"error cascade: 4 consecutive failures in coder (error_rate=40%)"` |
 
@@ -305,7 +306,7 @@ uv tool install soma-ai && soma setup-claude
 
 | Hook | When | What It Does |
 |:-----|:-----|:------------|
-| **PreToolUse** | Before tool execution | Blocks dangerous tools under pressure |
+| **PreToolUse** | Before tool execution | Blocks destructive operations under high pressure |
 | **PostToolUse** | After tool completes | Records action, validates code (py_compile + ruff), computes vitals |
 | **UserPromptSubmit** | Before agent reasons | Injects pressure, predictions, RCA, and quality diagnostics |
 | **Stop** | Session ends | Saves state, updates fingerprint, prints session summary |
@@ -313,7 +314,7 @@ uv tool install soma-ai && soma setup-claude
 ### Status Line (always visible)
 
 ```
-SOMA + healthy  3% · #42 · quality A
+SOMA + observe  3% · #42 · quality A
 ```
 
 ### Slash Commands
@@ -325,15 +326,24 @@ SOMA + healthy  3% · #42 · quality A
 | `/soma:config mode strict` | Low thresholds, verbose, human-in-loop |
 | `/soma:config mode relaxed` | Balanced monitoring (default) |
 | `/soma:config mode autonomous` | Minimal monitoring for trusted runs |
-| `/soma:control quarantine` | Force quarantine immediately |
-| `/soma:control release` | Release from quarantine |
 | `/soma:control reset` | Reset behavioral baseline |
 | `/soma:help` | Full command reference |
 
+### CLI Commands
+
+```bash
+soma setup-claude    # Install hooks + slash commands into Claude Code
+soma status          # Show current pressure, mode, quality
+soma reset           # Reset baselines to defaults
+soma start           # Start SOMA monitoring
+soma stop            # Stop SOMA monitoring
+soma uninstall-claude # Remove SOMA hooks from Claude Code
+```
+
 ### Operating Modes
 
-| Mode | Quarantine At | Approval Model | Best For |
-|:-----|:-------------|:--------------|:--------|
+| Mode | Block At | Approval Model | Best For |
+|:-----|:---------|:--------------|:--------|
 | **strict** | 60% | Human-in-the-loop | Production, sensitive codebases |
 | **relaxed** | 80% | Human-on-the-loop | Daily development (default) |
 | **autonomous** | 95% | No approvals | Trusted CI/CD pipelines |
@@ -350,7 +360,7 @@ Real observations from development sessions:
 - **Blind writes caught**: SOMA flagged when the agent edited files without reading them first — the agent stopped and read the file
 - **Scope drift detected**: Working on docs, the agent started touching CLI code — SOMA flagged it, agent refocused
 - **Bash loops prevented**: Agent retried a failing command — SOMA warned at attempt 2, the agent changed approach
-- **Zero false positives**: HEALTHY level maintained throughout normal work, no unnecessary restrictions
+- **Zero false positives**: OBSERVE mode maintained throughout normal work, no unnecessary warnings
 
 The feedback loop works. The agent is measurably more careful when SOMA is watching.
 
@@ -372,10 +382,10 @@ quality = true            # A-F quality grading
 tokens = 1_000_000
 cost_usd = 50.0
 
-[thresholds]              # pressure levels for escalation
-caution = 0.25
-degrade = 0.50
-quarantine = 0.75
+[thresholds]              # pressure levels for mode transitions
+guide = 0.25
+warn = 0.50
+block = 0.75
 
 [weights]                 # signal importance in pressure
 uncertainty = 2.0
@@ -425,7 +435,7 @@ test_engine.py         ✓ Core pipeline
 test_pressure.py       ✓ Z-score, sigmoid, aggregation
 test_vitals.py         ✓ All 5 signals
 test_baseline.py       ✓ EMA, cold-start
-test_ladder.py         ✓ Escalation, hysteresis
+test_guidance.py       ✓ Mode transitions, blocking
 test_learning.py       ✓ Threshold adaptation
 test_predictor.py      ✓ Trend, patterns
 test_quality.py        ✓ A-F grading
@@ -455,7 +465,7 @@ soma/
 ├── pressure.py        Pressure aggregation (weighted mean + max)
 ├── vitals.py          5 behavioral signal computations
 ├── baseline.py        EMA baselines with cold-start blending
-├── ladder.py          6-level escalation with hysteresis
+├── guidance.py        4-mode guidance system (OBSERVE → GUIDE → WARN → BLOCK)
 ├── learning.py        Self-tuning threshold adaptation
 ├── predictor.py       5-action-ahead pressure prediction
 ├── quality.py         A-F code quality grading
@@ -480,7 +490,7 @@ soma/
 | :mortar_board: | **[Research Paper](docs/PAPER.md)** | Problem statement, biological/control-theory inspiration, formal models, evaluation, related work, 8 references |
 | :triangular_ruler: | **[Technical Reference](docs/TECHNICAL.md)** | Every formula with source file:line references, all constants, formal properties (boundedness, monotonicity, convergence) |
 | :book: | **[User Guide](docs/guide.md)** | Setup, pressure model explained, baselines, learning, configuration, CLI commands, file paths |
-| :wrench: | **[API Reference](docs/api.md)** | Every class and method with code examples — SOMAEngine, Action, Level, Budget, Predictor, Quality, Fingerprint |
+| :wrench: | **[API Reference](docs/api.md)** | Every class and method with code examples — SOMAEngine, Action, Mode, Budget, Predictor, Quality, Fingerprint |
 | :robot: | **[Claude Code Layer](docs/claude-code-layer.md)** | How SOMA integrates with Claude Code — what the agent sees, 7 patterns, code validation, operating modes, Claude's own perspective |
 | :electric_plug: | **[Hook Reference](docs/hooks.md)** | All 4 Claude Code hooks — input/output format, configurable features, silence conditions, examples |
 | :world_map: | **[Roadmap](ROADMAP.md)** | 6 milestones through 2027 — Foundation (done), Agent Intelligence (done), Real-World Ready, Ecosystem, Intelligence, Platform |
@@ -502,7 +512,7 @@ MIT
 ---
 
 <p align="center">
-  <strong>Stop watching your agents fail. Start governing them.</strong>
+  <strong>Stop watching your agents fail. Start guiding them.</strong>
 </p>
 
 <p align="center">
