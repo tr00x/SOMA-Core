@@ -55,6 +55,31 @@ def _vitals_compact(vitals: dict, actions: int) -> str:
     return " ".join(signals[:2])
 
 
+def _metrics_display(vitals: dict, actions: int, pressure: float) -> str:
+    """Show actionable metrics when healthy, vital signals when stressed."""
+    if pressure >= 0.25:
+        return _vitals_compact(vitals, actions)
+
+    # Healthy — show actionable metrics
+    try:
+        from soma.hooks.common import get_task_tracker
+        tracker = get_task_tracker()
+        m = tracker.get_efficiency()
+        parts = []
+        if "context_efficiency" in m:
+            pct = int(m["context_efficiency"] * 100)
+            label = "high" if pct >= 70 else "mid" if pct >= 40 else "low"
+            parts.append(f"ctx:{label}")
+        if "focus" in m:
+            label = "focused" if m["focus"] >= 0.7 else "ok" if m["focus"] >= 0.4 else "drift"
+            parts.append(f"focus:{label}")
+        if parts:
+            return " ".join(parts)
+    except Exception:
+        pass
+    return _vitals_compact(vitals, actions)
+
+
 def _quality_badge() -> str:
     """Load quality grade if available."""
     try:
@@ -114,8 +139,8 @@ def main():
         # Build parts
         parts = [f"🧠 SOMA {emoji} {label} {bar} {pressure:>3.0%}"]
 
-        # Vitals
-        v_str = _vitals_compact(vitals, actions)
+        # Vitals or actionable metrics
+        v_str = _metrics_display(vitals, actions, pressure)
         if v_str:
             parts.append(v_str)
 

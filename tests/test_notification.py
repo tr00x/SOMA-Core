@@ -128,6 +128,52 @@ class TestPositiveFeedback:
         assert not any("✓" in t for t in tips)
 
 
+class TestActionableMetrics:
+    def test_efficiency_read_heavy(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(10):
+            tt.record("Read", f"/src/file{i}.py")
+        for i in range(5):
+            tt.record("Edit", f"/src/file{i}.py")
+        m = tt.get_efficiency()
+        assert m["context_efficiency"] == 1.0  # 10:5 = 2:1, capped at 1.0
+
+    def test_efficiency_write_heavy(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(2):
+            tt.record("Read", f"/src/file{i}.py")
+        for i in range(10):
+            tt.record("Edit", f"/src/file{i}.py")
+        m = tt.get_efficiency()
+        assert m["context_efficiency"] < 0.5  # 2:10 = 0.2 ratio
+
+    def test_success_rate(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(8):
+            tt.record("Bash", "", error=False)
+        for i in range(2):
+            tt.record("Bash", "", error=True)
+        m = tt.get_efficiency()
+        assert m["success_rate"] == 0.8
+
+    def test_focus_score(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(25):
+            tt.record("Read", f"/project/src/auth/file{i % 3}.py")
+        m = tt.get_efficiency()
+        assert m["focus"] >= 0.7  # All in same area = high focus
+
+    def test_empty_tracker(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        m = tt.get_efficiency()
+        assert m == {}
+
+
 class TestExistingPatterns:
     """Ensure existing patterns still work."""
 
