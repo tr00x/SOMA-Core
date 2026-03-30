@@ -7,6 +7,12 @@ import os
 from typing import Any
 
 try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("soma-ai")
+except Exception:
+    _VERSION = "0.4.0"
+
+try:
     from rich.console import Console
     from rich.text import Text
     _HAS_RICH = True
@@ -15,8 +21,13 @@ except ImportError:
 
 from soma.cli.config_loader import load_config, DEFAULT_CONFIG
 
-# Level display colours (rich markup style names)
-_LEVEL_COLOURS = {
+# Mode display colours (rich markup style names)
+_MODE_COLOURS = {
+    "OBSERVE": "green",
+    "GUIDE": "yellow",
+    "WARN": "dark_orange",
+    "BLOCK": "red",
+    # Backward compat
     "HEALTHY": "green",
     "CAUTION": "yellow",
     "DEGRADE": "dark_orange",
@@ -42,9 +53,6 @@ def print_status(config: dict[str, Any] | None = None) -> None:
 
     store_path: str = config.get("soma", {}).get(
         "store", DEFAULT_CONFIG["soma"]["store"]
-    )
-    version: str = config.get("soma", {}).get(
-        "version", DEFAULT_CONFIG["soma"]["version"]
     )
     budget_limits = config.get("budget", DEFAULT_CONFIG["budget"])
     token_limit = int(budget_limits.get("tokens", 100_000))
@@ -80,8 +88,8 @@ def print_status(config: dict[str, Any] | None = None) -> None:
         agents = [(a.get("id", f"Agent {i}"), a) for i, a in enumerate(agents_raw, 1)]
     n_agents = len(agents)
 
-    # Header
-    header = f"SOMA v{version} — {n_agents} agent{'s' if n_agents != 1 else ''} monitored"
+    # Header — version from package metadata
+    header = f"SOMA v{_VERSION} — {n_agents} agent{'s' if n_agents != 1 else ''} monitored"
     if _HAS_RICH:
         _print(Text(header, style="bold"))
     else:
@@ -90,7 +98,7 @@ def print_status(config: dict[str, Any] | None = None) -> None:
 
     # Agent rows
     for agent_id, agent in agents:
-        level_str = str(agent.get("level", "HEALTHY")).upper()
+        level_str = str(agent.get("level", "OBSERVE")).upper()
         pressure = float(agent.get("pressure", 0.0))
         vitals = agent.get("vitals", {})
         uncertainty = float(vitals.get("uncertainty", 0.0))
@@ -98,7 +106,7 @@ def print_status(config: dict[str, Any] | None = None) -> None:
         error_rate = float(vitals.get("error_rate", 0.0))
         action_count = int(agent.get("action_count", 0))
 
-        colour = _LEVEL_COLOURS.get(level_str, "white")
+        colour = _MODE_COLOURS.get(level_str, "white")
         row = (
             f"  {agent_id:<12}"
             f"  {level_str:<12}"
@@ -126,9 +134,10 @@ def print_status(config: dict[str, Any] | None = None) -> None:
 
     _print("")
 
-    # Budget line
+    # Budget line — read spent dict from state.json budget
     budget_state = state.get("budget", {})
-    tokens_spent = int(budget_state.get("tokens_spent", 0))
+    spent_dict = budget_state.get("spent", {})
+    tokens_spent = int(spent_dict.get("tokens", 0))
     budget_pct = int((tokens_spent / token_limit * 100)) if token_limit else 0
     budget_line = (
         f"  Budget: {budget_pct}%"
