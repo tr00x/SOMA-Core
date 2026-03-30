@@ -57,7 +57,7 @@ def _vitals_compact(vitals: dict, actions: int) -> str:
 
 def _metrics_display(vitals: dict, actions: int, pressure: float) -> str:
     """Show actionable metrics when healthy, vital signals when stressed."""
-    if pressure >= 0.25:
+    if pressure >= 0.25 or actions < 10:
         return _vitals_compact(vitals, actions)
 
     # Healthy — show actionable metrics

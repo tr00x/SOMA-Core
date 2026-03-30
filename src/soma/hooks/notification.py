@@ -351,9 +351,11 @@ def main():
         # ── Determine if we should output anything ──
         has_critical = any(p == 0 for p, _ in findings)
 
-        # In OBSERVE mode with low pressure, only show if critical findings
-        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.25 and not has_critical:
-            return
+        # In OBSERVE mode with low pressure, only show if critical or positive findings
+        has_positive = any("[✓]" in m for _, m in findings)
+        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.25:
+            if not has_critical and not has_positive:
+                return
 
         # ── Build output based on verbosity ──
         lines = []
