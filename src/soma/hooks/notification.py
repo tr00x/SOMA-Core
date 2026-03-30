@@ -290,12 +290,15 @@ def main():
                 except Exception:
                     pass
 
+        # In OBSERVE mode with very low pressure, skip expensive analysis entirely
+        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.10:
+            return
+
         # ── Collect all findings ──
         findings = _collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
 
         # ── Determine if we should output anything ──
         has_critical = any(p == 0 for p, _ in findings)
-        has_important = any(p <= 1 for p, _ in findings)
 
         # In OBSERVE mode with low pressure, only show if critical findings
         if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.25 and not has_critical:
