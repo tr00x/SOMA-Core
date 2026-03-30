@@ -7,8 +7,14 @@ from enum import Enum
 from typing import Any
 
 
-class Level(Enum):
-    """Escalation levels — ordered by severity."""
+class ResponseMode(Enum):
+    """Guidance response modes — ordered by severity."""
+    OBSERVE = 0   # p=0-25%: silent, metrics only
+    GUIDE = 1     # p=25-50%: soft suggestions
+    WARN = 2      # p=50-75%: insistent warnings
+    BLOCK = 3     # p=75-100%: block destructive ops only
+
+    # Legacy aliases — will be removed in 0.5.0
     HEALTHY = 0
     CAUTION = 1
     DEGRADE = 2
@@ -16,25 +22,29 @@ class Level(Enum):
     RESTART = 4
     SAFE_MODE = 5
 
-    def __lt__(self, other: Level) -> bool:
-        if not isinstance(other, Level):
+    def __lt__(self, other: ResponseMode) -> bool:
+        if not isinstance(other, ResponseMode):
             return NotImplemented
         return self.value < other.value
 
-    def __le__(self, other: Level) -> bool:
-        if not isinstance(other, Level):
+    def __le__(self, other: ResponseMode) -> bool:
+        if not isinstance(other, ResponseMode):
             return NotImplemented
         return self.value <= other.value
 
-    def __gt__(self, other: Level) -> bool:
-        if not isinstance(other, Level):
+    def __gt__(self, other: ResponseMode) -> bool:
+        if not isinstance(other, ResponseMode):
             return NotImplemented
         return self.value > other.value
 
-    def __ge__(self, other: Level) -> bool:
-        if not isinstance(other, Level):
+    def __ge__(self, other: ResponseMode) -> bool:
+        if not isinstance(other, ResponseMode):
             return NotImplemented
         return self.value >= other.value
+
+
+# Deprecated alias — will be removed in 0.5.0
+Level = ResponseMode
 
 
 class AutonomyMode(Enum):
