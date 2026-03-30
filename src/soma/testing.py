@@ -60,7 +60,7 @@ class Monitor:
 
         Call this after a warm-up phase so that ``max_level``, ``total_actions``,
         ``total_cost``, and ``history`` reflect only the actions recorded *after*
-        the checkpoint.  The underlying engine state (baselines, agent ladder) is
+        the checkpoint.  The underlying engine state (baselines, agent mode) is
         preserved, which is what makes warm-up useful.
         """
         self._history.clear()
