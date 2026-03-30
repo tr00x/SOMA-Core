@@ -104,14 +104,14 @@ class Monitor:
     # ------------------------------------------------------------------ #
 
     def assert_healthy(self) -> None:
-        """Raise AssertionError if the current (final) level is not HEALTHY.
+        """Raise AssertionError if the current (final) level is not OBSERVE.
 
         Uses ``current_level`` (most recent result) rather than ``max_level``
         so that transient cold-start escalation does not cause false failures.
         """
         if self.current_level != ResponseMode.OBSERVE:
             raise AssertionError(
-                f"Expected current_level HEALTHY but got {self.current_level.name}"
+                f"Expected current_level OBSERVE but got {self.current_level.name}"
                 f" (max_level={self.max_level.name})"
             )
 

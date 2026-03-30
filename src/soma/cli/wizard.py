@@ -16,22 +16,19 @@ SensitivityLevel = Literal["aggressive", "balanced", "relaxed"]
 
 SENSITIVITY_PRESETS: dict[str, dict[str, float]] = {
     "aggressive": {
-        "caution": 0.15,
-        "degrade": 0.35,
-        "quarantine": 0.55,
-        "restart": 0.75,
+        "guide": 0.15,
+        "warn": 0.35,
+        "block": 0.55,
     },
     "balanced": {
-        "caution": 0.25,
-        "degrade": 0.50,
-        "quarantine": 0.75,
-        "restart": 0.90,
+        "guide": 0.25,
+        "warn": 0.50,
+        "block": 0.75,
     },
     "relaxed": {
-        "caution": 0.35,
-        "degrade": 0.60,
-        "quarantine": 0.85,
-        "restart": 0.95,
+        "guide": 0.35,
+        "warn": 0.60,
+        "block": 0.85,
     },
 }
 
@@ -170,9 +167,9 @@ def _flow_ci() -> dict:
     console.print("\n[bold yellow]CI/CD Testing Configuration[/bold yellow]")
 
     max_level = _prompt_choice(
-        "Max level allowed (healthy/caution/degrade)?",
-        ["healthy", "caution", "degrade"],
-        "caution",
+        "Max level allowed (observe/guide/warn)?",
+        ["observe", "guide", "warn"],
+        "guide",
     )
     token_budget = _prompt_int("Token budget per test?", 10_000)
 
