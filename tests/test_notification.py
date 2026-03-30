@@ -1,177 +1,10 @@
-"""Tests for notification improvements — read context, severity, positive feedback."""
+"""Tests for notification — findings collection + formatting.
 
-from soma.hooks.notification import _analyze_patterns, _collect_findings
+Pattern analysis is tested in test_patterns.py.
+This file tests _collect_findings integration and output formatting.
+"""
 
-
-class TestReadContextAwareness:
-    def test_edit_after_read_same_file_no_warning(self):
-        """Editing a file that was recently Read should NOT warn."""
-        log = [
-            {"tool": "Read", "error": False, "file": "/project/src/auth.py", "ts": 1},
-            {"tool": "Read", "error": False, "file": "/project/src/models.py", "ts": 2},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth.py", "ts": 3},
-            {"tool": "Edit", "error": False, "file": "/project/src/models.py", "ts": 4},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth.py", "ts": 5},
-            {"tool": "Edit", "error": False, "file": "/project/src/models.py", "ts": 6},
-        ]
-        tips = _analyze_patterns(log)
-        assert not any("edit" in t.lower() and "without" in t.lower() for t in tips)
-        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
-
-    def test_edit_without_read_warns(self):
-        """Editing files never Read SHOULD warn."""
-        log = [
-            {"tool": "Edit", "error": False, "file": "/project/src/new.py", "ts": 1},
-            {"tool": "Edit", "error": False, "file": "/project/src/other.py", "ts": 2},
-            {"tool": "Edit", "error": False, "file": "/project/src/third.py", "ts": 3},
-        ]
-        tips = _analyze_patterns(log)
-        assert any("[do]" in t.lower() and "read" in t.lower() for t in tips)
-
-    def test_read_directory_covers_files(self):
-        """Reading files in a directory covers edits to other files in same dir."""
-        log = [
-            {"tool": "Read", "error": False, "file": "/project/src/auth/login.py", "ts": 1},
-            {"tool": "Read", "error": False, "file": "/project/src/auth/types.py", "ts": 2},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth/middleware.py", "ts": 3},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth/login.py", "ts": 4},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth/types.py", "ts": 5},
-        ]
-        tips = _analyze_patterns(log)
-        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
-
-    def test_write_new_file_no_warning(self):
-        """Write (creating new files) should never trigger 'edit without read'."""
-        log = [
-            {"tool": "Write", "error": False, "file": "/project/new_file.py", "ts": 1},
-            {"tool": "Write", "error": False, "file": "/project/another.py", "ts": 2},
-            {"tool": "Write", "error": False, "file": "/project/third.py", "ts": 3},
-        ]
-        tips = _analyze_patterns(log)
-        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
-
-class TestWorkflowSeverity:
-    def test_agent_spam_suppressed_in_planning(self):
-        """Agent spawns during planning workflows should not warn."""
-        log = [
-            {"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)
-        ]
-        tips = _analyze_patterns(log, workflow_mode="plan")
-        assert not any("agent" in t.lower() for t in tips)
-
-    def test_agent_spam_warns_in_default_mode(self):
-        """Agent spawns without workflow context should still warn."""
-        log = [
-            {"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)
-        ]
-        tips = _analyze_patterns(log, workflow_mode="")
-        assert any("agent" in t.lower() for t in tips)
-
-    def test_read_stall_suppressed_in_planning(self):
-        """Research paralysis pattern is expected during planning."""
-        log = [
-            {"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i}
-            for i in range(10)
-        ]
-        tips = _analyze_patterns(log, workflow_mode="plan")
-        assert not any("read" in t.lower() and "write" in t.lower() for t in tips)
-
-    def test_long_sequence_suppressed_in_execute(self):
-        """Long sequence without user check-in is expected during execution."""
-        log = [
-            {"tool": "Edit", "error": False, "file": f"/src/f{i}.py", "ts": i}
-            for i in range(35)
-        ]
-        tips = _analyze_patterns(log, workflow_mode="execute")
-        assert not any("user check-in" in t.lower() for t in tips)
-
-
-class TestPositiveFeedback:
-    def test_read_before_edit_streak(self):
-        """Consistent read-before-edit pattern gets positive feedback."""
-        log = []
-        for i in range(5):
-            log.append({"tool": "Read", "error": False, "file": f"/src/file{i}.py", "ts": i * 2})
-            log.append({"tool": "Edit", "error": False, "file": f"/src/file{i}.py", "ts": i * 2 + 1})
-        tips = _analyze_patterns(log)
-        assert any("read-before-edit" in t.lower() or "✓" in t for t in tips)
-
-    def test_no_positive_if_negative_present(self):
-        """Don't mix positive and negative — negative takes priority."""
-        log = []
-        for i in range(6):
-            log.append({"tool": "Read", "error": False, "file": f"/src/file{i}.py", "ts": i * 2})
-            log.append({"tool": "Edit", "error": False, "file": f"/src/file{i}.py", "ts": i * 2 + 1})
-        # Then 3 blind edits in a DIFFERENT directory (never read)
-        for i in range(3):
-            log.append({"tool": "Edit", "error": False, "file": f"/other/dir/new{i}.py", "ts": 20 + i})
-        tips = _analyze_patterns(log)
-        assert not any("✓" in t for t in tips)
-
-    def test_zero_error_streak(self):
-        """Streak with zero errors gets positive feedback (10+ actions)."""
-        log = [
-            {"tool": "Bash", "error": False, "file": "", "ts": i}
-            for i in range(12)
-        ]
-        tips = _analyze_patterns(log)
-        assert any("clean" in t.lower() or "✓" in t for t in tips)
-
-    def test_no_positive_when_errors_present(self):
-        """No positive feedback if there are errors."""
-        log = [{"tool": "Bash", "error": False, "file": "", "ts": i} for i in range(15)]
-        log.append({"tool": "Bash", "error": True, "file": "", "ts": 16})
-        log.append({"tool": "Bash", "error": True, "file": "", "ts": 17})
-        log.append({"tool": "Bash", "error": True, "file": "", "ts": 18})
-        tips = _analyze_patterns(log)
-        # Should have error warning, not positive feedback
-        assert not any("✓" in t for t in tips)
-
-
-class TestActionableMetrics:
-    def test_efficiency_read_heavy(self):
-        from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        for i in range(10):
-            tt.record("Read", f"/src/file{i}.py")
-        for i in range(5):
-            tt.record("Edit", f"/src/file{i}.py")
-        m = tt.get_efficiency()
-        assert m["context_efficiency"] == 1.0  # 10:5 = 2:1, capped at 1.0
-
-    def test_efficiency_write_heavy(self):
-        from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        for i in range(2):
-            tt.record("Read", f"/src/file{i}.py")
-        for i in range(10):
-            tt.record("Edit", f"/src/file{i}.py")
-        m = tt.get_efficiency()
-        assert m["context_efficiency"] < 0.5  # 2:10 = 0.2 ratio
-
-    def test_success_rate(self):
-        from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        for i in range(8):
-            tt.record("Bash", "", error=False)
-        for i in range(2):
-            tt.record("Bash", "", error=True)
-        m = tt.get_efficiency()
-        assert m["success_rate"] == 0.8
-
-    def test_focus_score(self):
-        from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        for i in range(25):
-            tt.record("Read", f"/project/src/auth/file{i % 3}.py")
-        m = tt.get_efficiency()
-        assert m["focus"] >= 0.7  # All in same area = high focus
-
-    def test_empty_tracker(self):
-        from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        m = tt.get_efficiency()
-        assert m == {}
+from soma.hooks.notification import _collect_findings
 
 
 class TestCollectFindings:
@@ -202,8 +35,18 @@ class TestCollectFindings:
         status = [m for _, m in findings if "WARN" in m or "BLOCK" in m]
         assert len(status) == 0
 
+    def test_patterns_integrated(self):
+        """Pattern results from core module appear in findings."""
+        log = [
+            {"tool": "Edit", "error": False, "file": f"/x/f{i}.py", "ts": i}
+            for i in range(5)
+        ]
+        findings = _collect_findings(log, {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
+        pattern_msgs = [m for _, m in findings if "[do]" in m]
+        assert len(pattern_msgs) >= 1  # blind edits detected
+
     def test_positive_pattern_in_findings(self):
-        """Positive feedback should appear in findings at low pressure."""
+        """Positive feedback from core module appears in findings."""
         log = []
         for i in range(5):
             log.append({"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i * 2})
@@ -212,18 +55,68 @@ class TestCollectFindings:
         positive = [m for _, m in findings if "✓" in m]
         assert len(positive) >= 1
 
+    def test_positive_format_uses_checkmark(self):
+        """Positive findings use [✓] prefix."""
+        log = []
+        for i in range(5):
+            log.append({"tool": "Read", "error": False, "file": f"/src/f{i}.py", "ts": i * 2})
+            log.append({"tool": "Edit", "error": False, "file": f"/src/f{i}.py", "ts": i * 2 + 1})
+        findings = _collect_findings(log, {}, 0.05, "OBSERVE", 50, self._MINIMAL_CONFIG)
+        positive = [m for _, m in findings if "✓" in m]
+        assert all(m.startswith("[✓]") for m in positive)
 
-class TestExistingPatterns:
-    """Ensure existing patterns still work."""
-
-    def test_grep_counts_as_read_context(self):
-        """Grep/Glob provide read context too."""
+    def test_negative_format_uses_do_prefix(self):
+        """Negative findings use [do] prefix."""
         log = [
-            {"tool": "Grep", "error": False, "file": "/project/src/auth.py", "ts": 1},
-            {"tool": "Glob", "error": False, "file": "/project/src/models.py", "ts": 2},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth.py", "ts": 3},
-            {"tool": "Edit", "error": False, "file": "/project/src/models.py", "ts": 4},
-            {"tool": "Edit", "error": False, "file": "/project/src/auth.py", "ts": 5},
+            {"tool": "Edit", "error": False, "file": f"/other/f{i}.py", "ts": i}
+            for i in range(5)
         ]
-        tips = _analyze_patterns(log)
-        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
+        findings = _collect_findings(log, {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
+        do_msgs = [m for _, m in findings if "[do]" in m]
+        assert len(do_msgs) >= 1
+
+
+class TestActionableMetrics:
+    def test_efficiency_read_heavy(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(10):
+            tt.record("Read", f"/src/file{i}.py")
+        for i in range(5):
+            tt.record("Edit", f"/src/file{i}.py")
+        m = tt.get_efficiency()
+        assert m["context_efficiency"] == 1.0
+
+    def test_efficiency_write_heavy(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(2):
+            tt.record("Read", f"/src/file{i}.py")
+        for i in range(10):
+            tt.record("Edit", f"/src/file{i}.py")
+        m = tt.get_efficiency()
+        assert m["context_efficiency"] < 0.5
+
+    def test_success_rate(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(8):
+            tt.record("Bash", "", error=False)
+        for i in range(2):
+            tt.record("Bash", "", error=True)
+        m = tt.get_efficiency()
+        assert m["success_rate"] == 0.8
+
+    def test_focus_score(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        for i in range(25):
+            tt.record("Read", f"/project/src/auth/file{i % 3}.py")
+        m = tt.get_efficiency()
+        assert m["focus"] >= 0.7
+
+    def test_empty_tracker(self):
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker()
+        m = tt.get_efficiency()
+        assert m == {}
