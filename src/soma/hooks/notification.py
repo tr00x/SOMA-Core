@@ -168,13 +168,13 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
             elif entry["tool"] in ("Edit", "Write") and entry.get("file", "") in read_files_set:
                 read_edit_pairs += 1
 
-        if read_edit_pairs >= 5:
+        if read_edit_pairs >= 3:
             tips.append(f"[✓] read-before-edit maintained ({read_edit_pairs} pairs)")
         # Check for zero-error streak
-        elif len(action_log) >= 15:
-            recent_errors = sum(1 for e in action_log[-15:] if e.get("error"))
+        elif len(action_log) >= 10:
+            recent_errors = sum(1 for e in action_log[-10:] if e.get("error"))
             if recent_errors == 0:
-                tips.append(f"[✓] clean streak — {min(len(action_log), 15)} actions, 0 errors")
+                tips.append(f"[✓] clean streak — {min(len(action_log), 10)} actions, 0 errors")
 
     return tips[:3]
 
@@ -320,8 +320,6 @@ def main():
         actions = snap["action_count"]
         vitals = snap.get("vitals", {})
 
-        # Show real pressure always — cold start suppression caused confusion
-
         hook_config = get_hook_config()
         verbosity = hook_config.get("verbosity", "normal")
 
@@ -329,8 +327,6 @@ def main():
         action_log = read_action_log()
 
         # ── Stale session detection ──
-        # If the last action is older than 30 minutes, this is a new session.
-        # Clean task tracker to prevent false scope drift from previous work.
         stale_timeout = hook_config.get("stale_timeout", 1800)
         if action_log:
             last_ts = action_log[-1].get("ts", 0)
@@ -341,31 +337,19 @@ def main():
                 except Exception:
                     pass
 
-        # In OBSERVE mode with very low pressure, skip expensive analysis entirely
-        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.10:
+        # ── Grace period: first 3 actions, stay silent (cold start) ──
+        if actions < 3:
             return
 
-        # ── Collect all findings ──
+        # ── Always collect findings — SOMA must be present, not silent ──
         findings = _collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
 
-        # ── Determine if we should output anything ──
-        has_critical = any(p == 0 for p, _ in findings)
-
-        # In OBSERVE mode with low pressure, only show if critical or positive findings
-        has_positive = any("[✓]" in m for _, m in findings)
-        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.25:
-            if not has_critical and not has_positive:
-                return
-
-        # ── Build output ──
+        # ── Build header ──
         lines = []
-
-        # ── Header: context-aware status line ──
         u = vitals.get("uncertainty", 0)
         d = vitals.get("drift", 0)
         e = vitals.get("error_rate", 0)
 
-        # Detect phase and quality for header
         phase_str = ""
         quality_str = ""
         try:
@@ -384,36 +368,45 @@ def main():
         except Exception:
             pass
 
-        if pressure < 0.25:
-            lines.append(f"SOMA: #{actions}{phase_str}{quality_str}")
-        else:
+        if pressure >= 0.25:
             lines.append(
                 f"SOMA: p={pressure:.0%} #{actions}{phase_str} "
                 f"[u={u:.2f} d={d:.2f} e={e:.2f}]"
             )
+        else:
+            lines.append(f"SOMA: #{actions}{phase_str}{quality_str}")
 
-        # ── Findings by verbosity ──
+        # ── Collect finding lines by verbosity ──
         findings.sort(key=lambda x: x[0])
+        finding_lines: list[str] = []
 
         if verbosity == "minimal":
             for p, msg in findings:
                 if p == 0:
-                    lines.append(msg)
+                    finding_lines.append(msg)
                     break
 
         elif verbosity == "normal":
             count = 0
             for p, msg in findings:
                 if p <= 1 and count < 3:
-                    lines.append(msg)
+                    finding_lines.append(msg)
                     count += 1
 
         else:  # verbose
             for p, msg in findings[:6]:
-                lines.append(msg)
+                finding_lines.append(msg)
 
-        if lines:
+        # ── Decide what to output ──
+        # Always show header + findings when there are findings.
+        # At low pressure with no findings: show header every 15 actions
+        # (periodic check-in so agent knows SOMA is present).
+        if finding_lines:
+            lines.extend(finding_lines)
             print("\n".join(lines))
+        elif actions % 15 == 0 and actions > 0:
+            # Periodic presence: just the header, no findings
+            print(lines[0])
 
     except Exception:
         pass  # Never crash
