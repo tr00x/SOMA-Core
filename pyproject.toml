@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-ai"
-version = "0.4.7"
+version = "0.4.8"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
