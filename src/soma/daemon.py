@@ -8,7 +8,6 @@ import sys
 
 from soma.engine import SOMAEngine
 from soma.inbox import process_inbox
-from soma.commands import process_commands
 
 
 def run_daemon(
@@ -38,17 +37,14 @@ def run_daemon(
         # 1. Process inbox (new actions from Claude Code hooks)
         actions_count = process_inbox(engine)
 
-        # 2. Process commands (from Paperclip plugin UI)
-        cmd_results = process_commands(engine)
-
-        # 3. Export state for plugin to read
+        # 2. Export state for plugin to read
         engine.export_state()
 
         # Log activity
-        if actions_count > 0 or cmd_results:
+        if actions_count > 0:
             agents = list(engine._agents.keys())
             max_p = max((engine.get_snapshot(a)["pressure"] for a in agents), default=0)
-            print(f"[SOMA] {actions_count} actions | {len(cmd_results)} cmds | {len(agents)} agents | max_p={max_p:.3f}")
+            print(f"[SOMA] {actions_count} actions | {len(agents)} agents | max_p={max_p:.3f}")
 
         time.sleep(poll_interval)
 
