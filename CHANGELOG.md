@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.12] — 2026-03-30
+
+Multi-agent core hardening: concurrent safety, agent lifecycle, learning validation.
+
+### Added
+- Atomic persistence with file locking (`fcntl` + temp file + `os.rename`) — safe for concurrent multi-agent writes
+- Agent TTL eviction — `engine.evict_stale_agents(ttl_seconds=3600)` removes dead agents from state
+- Shared engine support in `wrap()` — `soma.wrap(client, engine=shared_engine)` for multi-agent pipelines
+- Multi-agent stress tests: 5 concurrent agents, trust propagation, pipeline scenarios
+- Learning convergence validation: thresholds proven bounded, non-oscillating
+
+### Fixed
+- Persistence race condition: concurrent saves no longer corrupt state file
+- Lock held across full write cycle (mkstemp → fsync → rename)
+- Windows compatibility: `fcntl` import guarded, graceful fallback
+
 ## [0.4.11] — 2026-03-30
 
 Core polish sprint: false positive reduction, actionable feedback, layer-agnostic architecture, and visibility fixes across 11 micro-releases.
