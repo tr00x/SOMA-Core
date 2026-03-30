@@ -1,10 +1,16 @@
 """Persist and restore SOMAEngine state across process restarts."""
 
-import fcntl
 import json
 import os
 import tempfile
 from pathlib import Path
+
+try:
+    import fcntl
+
+    _HAS_FLOCK = True
+except ImportError:
+    _HAS_FLOCK = False
 from soma.engine import SOMAEngine
 from soma.baseline import Baseline
 from soma.budget import MultiBudget
@@ -42,26 +48,39 @@ def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(state, indent=2, default=str)
+    data = json.dumps(state, indent=2, default=str).encode("utf-8")
 
     # Atomic write: temp file -> fsync -> rename
-    # Use the same directory so rename is atomic (same filesystem).
+    # Use a shared lock file so all writers and readers coordinate.
+    lock_path = target.with_suffix(".lock")
     try:
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(target.parent), suffix=".tmp", prefix=".soma_state_"
-        )
+        lock_fh = open(lock_path, "w") if _HAS_FLOCK else None
         try:
-            # Acquire exclusive lock on the temp file
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            os.write(fd, data.encode("utf-8"))
-            os.fsync(fd)
+            if lock_fh is not None:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(target.parent), suffix=".tmp", prefix=".soma_state_"
+            )
+            closed = False
+            try:
+                os.write(fd, data)
+                os.fsync(fd)
+                os.close(fd)
+                closed = True
+                # Atomic rename (POSIX guarantees atomicity on same filesystem)
+                os.rename(tmp_path, str(target))
+            except BaseException:
+                if not closed:
+                    os.close(fd)
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
         finally:
-            os.close(fd)
-        # Atomic rename (POSIX guarantees atomicity on same filesystem)
-        os.rename(tmp_path, str(target))
+            if lock_fh is not None:
+                lock_fh.close()
     except OSError:
         # Fallback: direct write if atomic path fails
-        target.write_text(data)
+        target.write_text(data.decode("utf-8"))
 
 
 def load_engine_state(path: str | None = None) -> SOMAEngine | None:
@@ -78,12 +97,15 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         return None
 
     try:
-        with open(p) as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-            try:
-                state = json.load(f)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        lock_path = p.with_suffix(".lock")
+        lock_fh = open(lock_path, "w") if _HAS_FLOCK else None
+        try:
+            if lock_fh is not None:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_SH)
+            state = json.loads(p.read_text())
+        finally:
+            if lock_fh is not None:
+                lock_fh.close()
     except (json.JSONDecodeError, OSError):
         return None
 
