@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,7 +38,7 @@ class ActionResult:
 
 class _AgentState:
     __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
-                 "baseline_vector", "action_count")
+                 "baseline_vector", "action_count", "_last_active")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -47,6 +48,7 @@ class _AgentState:
         self.known_tools: list[str] = list(config.tools_allowed) if config.tools_allowed else []
         self.baseline_vector: list[float] | None = None
         self.action_count = 0
+        self._last_active: float = time.time()
 
 
 class SOMAEngine:
@@ -208,6 +210,18 @@ class SOMAEngine:
         engine._default_autonomy = default_autonomy
         return engine
 
+    def evict_stale_agents(self, ttl_seconds: float = 3600) -> list[str]:
+        """Remove agents inactive for longer than ttl_seconds. Returns evicted IDs."""
+        now = time.time()
+        to_evict = [
+            aid for aid, s in self._agents.items()
+            if aid != "default" and (now - s._last_active) > ttl_seconds
+        ]
+        for aid in to_evict:
+            del self._agents[aid]
+            self._graph._nodes.pop(aid, None)
+        return to_evict
+
     def record_action(self, agent_id: str, action: Action) -> ActionResult:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)
@@ -219,6 +233,7 @@ class SOMAEngine:
 
         s.ring_buffer.append(action)
         s.action_count += 1
+        s._last_active = time.time()
         actions = list(s.ring_buffer)
 
         # 1. Behavioral vitals
