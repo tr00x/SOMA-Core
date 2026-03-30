@@ -31,9 +31,10 @@ def main():
         tool_input = {}
 
     from soma.guidance import evaluate
-    from soma.hooks.common import read_action_log
+    from soma.hooks.common import read_action_log, get_guidance_thresholds
 
     action_log = read_action_log()
+    thresholds = get_guidance_thresholds()
 
     gsd_active = False
     try:
@@ -48,6 +49,7 @@ def main():
         tool_input=tool_input,
         action_log=action_log,
         gsd_active=gsd_active,
+        thresholds=thresholds,
     )
 
     if response.message:

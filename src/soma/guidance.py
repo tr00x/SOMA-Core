@@ -58,13 +58,20 @@ def is_sensitive_file(file_path: str) -> bool:
     return any(p.search(file_path) for p in SENSITIVE_FILE_PATTERNS)
 
 
-def pressure_to_mode(pressure: float) -> ResponseMode:
-    """Map pressure to response mode. No hysteresis needed."""
-    if pressure >= 0.75:
+DEFAULT_THRESHOLDS = {"guide": 0.25, "warn": 0.50, "block": 0.75}
+
+
+def pressure_to_mode(
+    pressure: float,
+    thresholds: dict[str, float] | None = None,
+) -> ResponseMode:
+    """Map pressure to response mode using configurable thresholds."""
+    t = thresholds or DEFAULT_THRESHOLDS
+    if pressure >= t.get("block", 0.75):
         return ResponseMode.BLOCK
-    if pressure >= 0.50:
+    if pressure >= t.get("warn", 0.50):
         return ResponseMode.WARN
-    if pressure >= 0.25:
+    if pressure >= t.get("guide", 0.25):
         return ResponseMode.GUIDE
     return ResponseMode.OBSERVE
 
@@ -128,9 +135,10 @@ def evaluate(
     tool_input: dict,
     action_log: list[dict],
     gsd_active: bool = False,
+    thresholds: dict[str, float] | None = None,
 ) -> GuidanceResponse:
     """Central guidance decision."""
-    mode = pressure_to_mode(pressure)
+    mode = pressure_to_mode(pressure, thresholds)
 
     if mode == ResponseMode.OBSERVE:
         return GuidanceResponse(mode=mode, allow=True)

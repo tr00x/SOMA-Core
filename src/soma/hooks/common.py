@@ -52,6 +52,19 @@ def get_hook_config() -> dict:
         return dict(DEFAULT_HOOK_CONFIG)
 
 
+def get_guidance_thresholds() -> dict[str, float] | None:
+    """Load guidance thresholds from soma.toml config."""
+    try:
+        from soma.cli.config_loader import load_config
+        config = load_config()
+        thresholds = config.get("thresholds")
+        if thresholds and any(k in thresholds for k in ("guide", "warn", "block")):
+            return thresholds
+    except Exception:
+        pass
+    return None
+
+
 def read_action_log() -> list[dict]:
     """Read recent action log for pattern analysis."""
     try:
