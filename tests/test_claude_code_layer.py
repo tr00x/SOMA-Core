@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from soma.engine import SOMAEngine
-from soma.types import Action, Level
+from soma.types import Action, ResponseMode
 from soma.persistence import save_engine_state, load_engine_state
 from soma.hooks.common import (
     get_engine, save_state, read_stdin,
@@ -293,38 +293,38 @@ class TestPersistenceWithConfig:
         assert data["custom_weights"]["error_rate"] == 2.5
         assert data["custom_thresholds"]["quarantine"] == 0.8
 
-    def test_load_does_not_force_level(self, tmp_path):
-        """Restored level must not use force_level — it should allow
-        pressure-based re-evaluation after reload (no latch)."""
+    def test_load_restores_mode(self, tmp_path):
+        """Restored mode should reflect what was saved."""
         engine = SOMAEngine(budget={"tokens": 100000})
         engine.register_agent("test")
-        engine._agents["test"].ladder.force_level(Level.QUARANTINE)
+        engine._agents["test"].mode = ResponseMode.BLOCK
 
         path = tmp_path / "state.json"
         save_engine_state(engine, str(path))
         restored = load_engine_state(str(path))
 
         agent_state = restored._agents["test"]
-        # Level should be restored
-        assert agent_state.ladder.current == Level.QUARANTINE
-        # But _forced should be None — no latch
-        assert agent_state.ladder._forced is None
+        # Mode should be restored
+        assert agent_state.mode == ResponseMode.BLOCK
 
-    def test_restored_level_allows_re_evaluation(self, tmp_path):
-        """After reload, pressure drop should be able to de-escalate the level."""
+    def test_restored_mode_re_evaluated_on_next_action(self, tmp_path):
+        """After reload, recording a low-pressure action should change mode."""
         engine = SOMAEngine(budget={"tokens": 100000})
         engine.register_agent("test")
 
-        # Manually set to CAUTION (not force)
-        engine._agents["test"].ladder._current = Level.CAUTION
+        # Manually set to GUIDE
+        engine._agents["test"].mode = ResponseMode.GUIDE
 
         path = tmp_path / "state.json"
         save_engine_state(engine, str(path))
         restored = load_engine_state(str(path))
 
-        # Evaluate with zero pressure — should de-escalate
-        new_level = restored._agents["test"].ladder.evaluate(0.0, 1.0)
-        assert new_level == Level.HEALTHY
+        # Record a normal action — pressure should be low, mode should go to OBSERVE
+        for _ in range(15):
+            r = restored.record_action("test", Action(
+                tool_name="search", output_text="ok " * 20, token_count=50,
+            ))
+        assert r.mode == ResponseMode.OBSERVE
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -359,7 +359,7 @@ class TestCommon:
         engine, agent_id = get_engine()
         assert engine is not None
         assert agent_id == "claude-code"  # pinned in test fixture
-        assert engine.get_level("claude-code") == Level.HEALTHY
+        assert engine.get_level("claude-code") == ResponseMode.OBSERVE
 
     def test_get_engine_has_claude_code_config(self, soma_dir):
         engine, _ = get_engine()
@@ -402,31 +402,43 @@ class TestCommon:
 # ──────────────────────────────────────────────────────────────────
 
 class TestPreToolUse:
-    def test_healthy_agent_passes(self, soma_dir):
+    def test_low_pressure_agent_passes(self, soma_dir):
         from soma.hooks.pre_tool_use import main
-        # Should not raise or exit
+        # Fresh engine, pressure=0 — should not raise or exit
         main()
 
-    def test_quarantined_agent_blocks(self, soma_dir):
+    def test_high_pressure_blocks_destructive_bash(self, soma_dir, monkeypatch):
+        """At high pressure, destructive bash commands should be blocked."""
         from soma.hooks.pre_tool_use import main
 
         engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
+        # Set high pressure on the graph
+        engine._graph.set_internal_pressure("claude-code", 0.85)
+        engine._graph.propagate()
         save_state(engine)
 
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf /"},
+        })))
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 2
 
-    def test_critical_agent_does_not_block(self, soma_dir):
-        """Only QUARANTINE and above block — DEGRADE should pass."""
+    def test_high_pressure_allows_safe_bash(self, soma_dir, monkeypatch):
+        """At high pressure, non-destructive bash should still be allowed."""
         from soma.hooks.pre_tool_use import main
 
         engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.DEGRADE)
+        engine._graph.set_internal_pressure("claude-code", 0.85)
+        engine._graph.propagate()
         save_state(engine)
 
-        # Should not raise
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls -la"},
+        })))
+        # Should not raise — non-destructive
         main()
 
     def test_returns_none_when_no_engine(self, soma_dir, monkeypatch):
@@ -435,137 +447,84 @@ class TestPreToolUse:
         result = pre_tool_use.main()
         assert result is None
 
-    def test_caution_allows_read(self, soma_dir):
-        """CAUTION should not block Read tools."""
+    def test_low_pressure_allows_all_tools(self, soma_dir, monkeypatch):
+        """At low pressure (OBSERVE mode), all tools pass silently."""
         from soma.hooks.pre_tool_use import main
 
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.CAUTION)
-        save_state(engine)
+        # Fresh engine has zero pressure
+        for tool in ["Bash", "Edit", "Write", "Read", "Agent"]:
+            monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": tool})))
+            main()  # Should not raise
 
-        # Should not raise
-        main()
-
-    def test_caution_blocks_mutation_without_read(self, soma_dir, monkeypatch):
-        """CAUTION should block Edit when no recent Read in action log."""
-        from soma.hooks.pre_tool_use import main
-        from soma.hooks.common import ACTION_LOG_PATH
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.CAUTION)
-        save_state(engine)
-
-        # Empty action log — no recent Reads
-        ACTION_LOG_PATH.write_text("[]")
-
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Edit"})))
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 2
-
-    def test_caution_allows_mutation_after_read(self, soma_dir, monkeypatch, capsys):
-        """CAUTION should allow Edit when a recent Read exists in action log."""
-        from soma.hooks.pre_tool_use import main
-        from soma.hooks.common import ACTION_LOG_PATH
-        import time
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.CAUTION)
-        save_state(engine)
-
-        # Action log with a recent Read
-        log = [{"tool": "Read", "error": False, "file": "test.py", "ts": time.time()}]
-        ACTION_LOG_PATH.write_text(json.dumps(log))
-
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Edit"})))
-        main()
-        captured = capsys.readouterr()
-        assert "allowing Edit" in captured.err
-
-    def test_degrade_blocks_bash(self, soma_dir, monkeypatch):
-        """DEGRADE should block Bash entirely."""
-        from soma.hooks.pre_tool_use import main
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.DEGRADE)
-        save_state(engine)
-
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Bash"})))
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 2
-
-    def test_degrade_allows_edit(self, soma_dir, monkeypatch):
-        """DEGRADE should still allow Edit (not as risky as Bash)."""
-        from soma.hooks.pre_tool_use import main
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.DEGRADE)
-        save_state(engine)
-
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Edit"})))
-        main()  # Should not raise
-
-    def test_degrade_blocks_agent(self, soma_dir, monkeypatch):
-        """DEGRADE should block Agent tool (spawning subagents is high-risk)."""
-        from soma.hooks.pre_tool_use import main
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.DEGRADE)
-        save_state(engine)
-
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Agent"})))
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 2
-
-    def test_healthy_is_silent(self, soma_dir, capsys):
-        """HEALTHY level should produce no output at all."""
+    def test_observe_is_silent(self, soma_dir, capsys):
+        """OBSERVE mode (low pressure) should produce no output at all."""
         from soma.hooks.pre_tool_use import main
 
         main()
         captured = capsys.readouterr()
         assert captured.err == ""
 
-    def test_safe_tools_allowed_during_quarantine(self, soma_dir, monkeypatch):
-        """Read-only tools must NEVER be blocked, even in QUARANTINE."""
-        from soma.hooks.pre_tool_use import main, SAFE_TOOLS
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
-        save_state(engine)
-
-        for tool in ["Read", "Glob", "Grep"]:
-            assert tool in SAFE_TOOLS
-            monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": tool})))
-            # Should NOT raise SystemExit
-            main()
-
-    def test_unsafe_tools_blocked_during_quarantine(self, soma_dir, monkeypatch):
-        """Bash, Write, Edit should still be blocked in QUARANTINE."""
-        from soma.hooks.pre_tool_use import main, SAFE_TOOLS
-
-        engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
-        save_state(engine)
-
-        for tool in ["Bash", "Write", "Edit", "Agent"]:
-            assert tool not in SAFE_TOOLS
-            monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": tool})))
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-            assert exc_info.value.code == 2
-
-    def test_safe_tools_not_blocked_during_restart(self, soma_dir, monkeypatch):
-        """Safe tools pass even at RESTART level (highest blockable)."""
+    def test_high_pressure_allows_read_tools(self, soma_dir, monkeypatch):
+        """Read-only tools must NEVER be blocked, even at very high pressure."""
         from soma.hooks.pre_tool_use import main
 
         engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.RESTART)
+        engine._graph.set_internal_pressure("claude-code", 0.95)
+        engine._graph.propagate()
         save_state(engine)
 
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": "Read"})))
-        main()  # Should not raise
+        for tool in ["Read", "Glob", "Grep"]:
+            monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"tool_name": tool})))
+            # Should NOT raise SystemExit — not destructive
+            main()
+
+    def test_high_pressure_blocks_sensitive_file_write(self, soma_dir, monkeypatch):
+        """At high pressure, writing to sensitive files should be blocked."""
+        from soma.hooks.pre_tool_use import main
+
+        engine, _ = get_engine()
+        engine._graph.set_internal_pressure("claude-code", 0.85)
+        engine._graph.propagate()
+        save_state(engine)
+
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Write",
+            "tool_input": {"file_path": "/home/user/.env.production"},
+        })))
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 2
+
+    def test_moderate_pressure_never_blocks(self, soma_dir, monkeypatch):
+        """At moderate pressure (GUIDE/WARN), nothing is blocked."""
+        from soma.hooks.pre_tool_use import main
+
+        engine, _ = get_engine()
+        engine._graph.set_internal_pressure("claude-code", 0.60)
+        engine._graph.propagate()
+        save_state(engine)
+
+        # Even bash should pass at WARN level
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf /tmp/junk"},
+        })))
+        main()  # Should not raise — only BLOCK mode blocks destructive ops
+
+    def test_high_pressure_allows_non_destructive_write(self, soma_dir, monkeypatch):
+        """At high pressure, writing to normal files should still be allowed."""
+        from soma.hooks.pre_tool_use import main
+
+        engine, _ = get_engine()
+        engine._graph.set_internal_pressure("claude-code", 0.85)
+        engine._graph.propagate()
+        save_state(engine)
+
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Write",
+            "tool_input": {"file_path": "/Users/test/project/src/main.py"},
+        })))
+        main()  # Should not raise — normal file, not sensitive
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -682,7 +641,7 @@ class TestStop:
 
         captured = capsys.readouterr()
         assert "SOMA session end" in captured.err
-        assert "HEALTHY" in captured.err
+        assert "OBSERVE" in captured.err
 
     def test_returns_none_when_no_engine(self, soma_dir, monkeypatch):
         from soma.hooks import stop
@@ -717,7 +676,7 @@ class TestStatusline:
         main()
         out = capsys.readouterr().out.strip()
         assert "SOMA" in out
-        assert "healthy" in out
+        assert "observe" in out
 
     def test_shows_action_count(self, soma_dir, capsys):
         from soma.hooks.statusline import main
@@ -730,7 +689,7 @@ class TestStatusline:
         main()
         out = capsys.readouterr().out.strip()
         assert "#" in out
-        assert "healthy" in out or "caution" in out
+        assert "observe" in out or "guide" in out
 
     def test_shows_waiting_when_no_state(self, soma_dir, capsys):
         from soma.hooks.statusline import main
@@ -748,16 +707,16 @@ class TestStatusline:
         out = capsys.readouterr().out.strip()
         assert "SOMA" in out
 
-    def test_shows_correct_symbol_for_level(self, soma_dir, capsys):
-        from soma.hooks.statusline import main, LEVEL_STYLE
+    def test_shows_correct_symbol_for_mode(self, soma_dir, capsys):
+        from soma.hooks.statusline import main, MODE_STYLE
 
         engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
+        engine._agents["claude-code"].mode = ResponseMode.BLOCK
         save_state(engine)
 
         main()
         out = capsys.readouterr().out.strip()
-        emoji, label = LEVEL_STYLE["QUARANTINE"]
+        emoji, label = MODE_STYLE["BLOCK"]
         assert emoji in out
         assert label in out
 
@@ -964,7 +923,7 @@ class TestFullSession:
         engine, _ = get_engine()
         snap = engine.get_snapshot("claude-code")
         assert snap["action_count"] == 50
-        assert snap["level"] == Level.HEALTHY  # Should stay healthy with CC thresholds
+        assert snap["level"] == ResponseMode.OBSERVE  # Should stay healthy with CC thresholds
 
         # 4. Stop — save final state
         stop_main()
@@ -1014,15 +973,20 @@ class TestFullSession:
         snap = engine.get_snapshot("claude-code")
         assert snap["action_count"] == 15
 
-    def test_quarantine_blocks_tools(self, soma_dir, monkeypatch):
-        """If agent reaches QUARANTINE, PreToolUse should block."""
+    def test_high_pressure_blocks_destructive_tools(self, soma_dir, monkeypatch):
+        """At high pressure, destructive operations should be blocked."""
         from soma.hooks.pre_tool_use import main as pre_main
 
-        # Force quarantine
+        # Set high pressure
         engine, _ = get_engine()
-        engine._agents["claude-code"].ladder.force_level(Level.QUARANTINE)
+        engine._graph.set_internal_pressure("claude-code", 0.90)
+        engine._graph.propagate()
         save_state(engine)
 
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "git push --force origin main"},
+        })))
         with pytest.raises(SystemExit) as exc_info:
             pre_main()
         assert exc_info.value.code == 2
@@ -1434,7 +1398,7 @@ class TestRCA:
 
     def test_healthy_returns_none(self):
         from soma.rca import diagnose
-        result = diagnose([], {}, 0.05, "HEALTHY", 10)
+        result = diagnose([], {}, 0.05, "OBSERVE", 10)
         assert result is None
 
     def test_loop_detection(self):
@@ -1443,7 +1407,7 @@ class TestRCA:
         for _ in range(4):
             log.append({"tool": "Edit", "error": False, "file": "/x/config.py"})
             log.append({"tool": "Bash", "error": False, "file": ""})
-        result = diagnose(log, {"drift": 0.3}, 0.30, "CAUTION", 20)
+        result = diagnose(log, {"drift": 0.3}, 0.30, "GUIDE", 20)
         assert result is not None
         assert "loop" in result
         assert "Edit→Bash" in result
@@ -1456,7 +1420,7 @@ class TestRCA:
             {"tool": "Bash", "error": True, "file": ""},
             {"tool": "Bash", "error": True, "file": ""},
         ]
-        result = diagnose(log, {"error_rate": 0.40}, 0.35, "CAUTION", 15)
+        result = diagnose(log, {"error_rate": 0.40}, 0.35, "GUIDE", 15)
         assert result is not None
         assert "error cascade" in result
         assert "3 consecutive" in result
@@ -1468,7 +1432,7 @@ class TestRCA:
             {"tool": "Edit", "error": False, "file": "/a/bar.py"},
             {"tool": "Write", "error": False, "file": "/a/baz.py"},
         ]
-        result = diagnose(log, {"drift": 0.2}, 0.25, "CAUTION", 10)
+        result = diagnose(log, {"drift": 0.2}, 0.25, "GUIDE", 10)
         assert result is not None
         assert "blind mutation" in result
 
@@ -1477,14 +1441,14 @@ class TestRCA:
         # Mix of read-like tools (not a pure loop, but no writes)
         tools = ["Read", "Grep", "Glob", "Read", "Grep", "Read", "Glob", "Read"]
         log = [{"tool": t, "error": False, "file": f"{i}.py"} for i, t in enumerate(tools)]
-        result = diagnose(log, {"drift": 0.15}, 0.20, "HEALTHY", 30)
+        result = diagnose(log, {"drift": 0.15}, 0.20, "OBSERVE", 30)
         assert result is not None
         assert "stall" in result
 
     def test_drift_explanation(self):
         from soma.rca import diagnose
         log = [{"tool": "Read", "error": False, "file": ""}]
-        result = diagnose(log, {"drift": 0.4, "uncertainty": 0.3, "error_rate": 0.0}, 0.30, "CAUTION", 20)
+        result = diagnose(log, {"drift": 0.4, "uncertainty": 0.3, "error_rate": 0.0}, 0.30, "GUIDE", 20)
         assert result is not None
         assert "drift" in result
 
@@ -1497,7 +1461,7 @@ class TestRCA:
             {"tool": "Write", "error": True, "file": "/a/y.py"},
             {"tool": "Write", "error": True, "file": "/a/z.py"},
         ]
-        result = diagnose(log, {"error_rate": 0.5, "drift": 0.3}, 0.40, "CAUTION", 20)
+        result = diagnose(log, {"error_rate": 0.5, "drift": 0.3}, 0.40, "GUIDE", 20)
         assert result is not None
         # Error cascade should win (higher severity)
         assert "error" in result

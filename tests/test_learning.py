@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from soma.learning import LearningEngine, _Record
-from soma.types import InterventionOutcome, Level
+from soma.types import InterventionOutcome, ResponseMode
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,8 @@ SIGNALS = {"error_rate": 0.8, "uncertainty": 0.6}
 def _record_and_drain(
     engine: LearningEngine,
     agent_id: str,
-    old: Level,
-    new: Level,
+    old: ResponseMode,
+    new: ResponseMode,
     pressure_at: float,
     signals: dict,
     current_pressure: float,
@@ -49,13 +49,13 @@ def _record_and_drain(
 
 def test_record_creates_pending_entry():
     engine = make_engine()
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     pending = engine.pending("a1")
     assert len(pending) == 1
     r = pending[0]
     assert r.agent_id == "a1"
-    assert r.old_level is Level.HEALTHY
-    assert r.new_level is Level.CAUTION
+    assert r.old_level is ResponseMode.OBSERVE
+    assert r.new_level is ResponseMode.GUIDE
     assert r.pressure == pytest.approx(0.30)
     assert r.actions_elapsed == 0
 
@@ -71,7 +71,7 @@ def test_pending_returns_empty_for_unknown_agent():
 
 def test_evaluate_pending_when_window_not_reached():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     # Only 3 actions — below window of 5
     result = engine.evaluate("a1", current_pressure=0.10, actions_since=3)
     assert result is InterventionOutcome.PENDING
@@ -91,23 +91,23 @@ def test_evaluate_pending_with_no_record():
 
 def test_evaluate_success_when_pressure_drops():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     result = engine.evaluate("a1", current_pressure=0.30, actions_since=10)
     assert result is InterventionOutcome.SUCCESS
 
 
 def test_success_clears_pending():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     engine.evaluate("a1", current_pressure=0.30, actions_since=10)
     assert engine.pending("a1") == []
 
 
 def test_success_does_not_adjust_threshold():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     engine.evaluate("a1", current_pressure=0.30, actions_since=10)
-    assert engine.get_threshold_adjustment(Level.CAUTION, Level.DEGRADE) == pytest.approx(0.0)
+    assert engine.get_threshold_adjustment(ResponseMode.GUIDE, ResponseMode.WARN) == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -116,14 +116,14 @@ def test_success_does_not_adjust_threshold():
 
 def test_evaluate_failure_when_pressure_stays():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     result = engine.evaluate("a1", current_pressure=0.65, actions_since=10)
     assert result is InterventionOutcome.FAILURE
 
 
 def test_failure_clears_pending():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     engine.evaluate("a1", current_pressure=0.65, actions_since=10)
     assert engine.pending("a1") == []
 
@@ -136,10 +136,10 @@ def test_threshold_not_raised_before_min_interventions():
     """2 failures with min_interventions=3 should produce no threshold change."""
     engine = make_engine(evaluation_window=5, min_interventions=3, threshold_adj_step=0.02)
     for _ in range(2):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    assert engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION) == pytest.approx(0.0)
+    assert engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE) == pytest.approx(0.0)
 
 
 def test_threshold_rises_after_min_interventions():
@@ -150,10 +150,10 @@ def test_threshold_rises_after_min_interventions():
     """
     engine = make_engine(evaluation_window=5, min_interventions=3, threshold_adj_step=0.02)
     for _ in range(3):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj > 0.02  # Adaptive step is larger than base step
     assert adj <= 0.10  # But bounded
 
@@ -162,10 +162,10 @@ def test_threshold_rises_after_four_failures():
     """4 failures should apply two adaptive steps (failures 3 and 4)."""
     engine = make_engine(evaluation_window=5, min_interventions=3, threshold_adj_step=0.02)
     for _ in range(4):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj > 0.04  # Two adaptive steps
     assert adj <= 0.10  # Bounded
 
@@ -183,10 +183,10 @@ def test_threshold_bounded_at_max_shift():
         max_threshold_shift=0.10,
     )
     for _ in range(20):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj <= 0.10 + 1e-9  # must not exceed max
 
 
@@ -199,10 +199,10 @@ def test_threshold_bounded_does_not_exceed_max_exactly():
     )
     # 5 failures × 0.03 step would = 0.15 without cap
     for _ in range(5):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=5)
 
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj == pytest.approx(0.10)
 
 
@@ -215,7 +215,7 @@ def test_weight_lowered_after_min_interventions():
         evaluation_window=5, min_interventions=3, weight_adj_step=0.05
     )
     for _ in range(3):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
     # One step of -0.05 applied
@@ -238,7 +238,7 @@ def test_weight_bounded_by_min_weight():
     # the steps (floor enforcement is at the consumer level), OR that the
     # engine respects the floor. Per spec the test verifies adj >= -1.8.
     for _ in range(100):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, {"sig": 2.0})
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, {"sig": 2.0})
         engine.evaluate("a1", current_pressure=0.40, actions_since=5)
 
     # The effective adjustment must not push the weight below min_weight (0.2).
@@ -251,7 +251,7 @@ def test_weight_bounded_by_min_weight():
 def test_weight_not_changed_before_min_interventions():
     engine = make_engine(evaluation_window=5, min_interventions=3)
     for _ in range(2):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=10)
 
     assert engine.get_weight_adjustment("error_rate") == pytest.approx(0.0)
@@ -268,31 +268,31 @@ def test_unknown_signal_weight_adjustment_is_zero():
 
 def test_reset_clears_pending():
     engine = make_engine()
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.reset()
     assert engine.pending("a1") == []
 
 
 def test_reset_clears_adjustments():
     engine = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.40, actions_since=5)
     engine.reset()
-    assert engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION) == pytest.approx(0.0)
+    assert engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE) == pytest.approx(0.0)
     assert engine.get_weight_adjustment("error_rate") == pytest.approx(0.0)
 
 
 def test_reset_clears_history():
     engine = make_engine(evaluation_window=1, min_interventions=1)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.40, actions_since=5)
     engine.reset()
     # After reset, further failures should not fire (failure_counts cleared)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.40, actions_since=5)
     # Only 1 failure post-reset with min_interventions=1 → threshold should be raised
     # (verifies failure_counts were reset, not preserved)
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj > 0  # Threshold was raised (adaptive step)
 
 
@@ -323,28 +323,28 @@ def test_to_dict_contains_state_keys():
 
 def test_to_dict_reflects_adjustments():
     engine = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, {"sig": 1.0})
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, {"sig": 1.0})
     engine.evaluate("a1", current_pressure=0.40, actions_since=5)
 
     d = engine.to_dict()
-    assert "HEALTHY->CAUTION" in d["threshold_adjustments"]
-    assert d["threshold_adjustments"]["HEALTHY->CAUTION"] > 0  # Adaptive step
+    assert "OBSERVE->GUIDE" in d["threshold_adjustments"]
+    assert d["threshold_adjustments"]["OBSERVE->GUIDE"] > 0  # Adaptive step
     assert "sig" in d["weight_adjustments"]
 
 
 def test_to_dict_pending_included():
     engine = make_engine(evaluation_window=10)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     d = engine.to_dict()
     assert "a1" in d["pending"]
     assert len(d["pending"]["a1"]) == 1
-    assert d["pending"]["a1"][0]["old_level"] == "HEALTHY"
-    assert d["pending"]["a1"][0]["new_level"] == "CAUTION"
+    assert d["pending"]["a1"][0]["old_level"] == "OBSERVE"
+    assert d["pending"]["a1"][0]["new_level"] == "GUIDE"
 
 
 def test_to_dict_history_included_after_resolution():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.CAUTION, Level.DEGRADE, 0.60, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.GUIDE, ResponseMode.WARN, 0.60, SIGNALS)
     engine.evaluate("a1", current_pressure=0.30, actions_since=10)
     d = engine.to_dict()
     assert "a1" in d["history"]
@@ -357,8 +357,8 @@ def test_to_dict_history_included_after_resolution():
 
 def test_different_agents_are_independent():
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
-    engine.record_intervention("a2", Level.HEALTHY, Level.DEGRADE, 0.50, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
+    engine.record_intervention("a2", ResponseMode.OBSERVE, ResponseMode.WARN, 0.50, SIGNALS)
 
     assert len(engine.pending("a1")) == 1
     assert len(engine.pending("a2")) == 1
@@ -377,7 +377,7 @@ def test_different_agents_are_independent():
 def test_window_accumulates_across_calls():
     """actions_since is cumulative — two calls of 3 each reach window=5."""
     engine = make_engine(evaluation_window=5)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
 
     result1 = engine.evaluate("a1", current_pressure=0.10, actions_since=3)
     assert result1 is InterventionOutcome.PENDING
@@ -395,10 +395,10 @@ def test_success_lowers_threshold():
     engine = make_engine(evaluation_window=1, min_interventions=3, threshold_adj_step=0.02)
     # 5 successes (pressure drops after intervention)
     for _ in range(5):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.10, actions_since=5)
 
-    adj = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
     assert adj < 0  # Threshold lowered
 
 
@@ -408,7 +408,7 @@ def test_success_recovers_signal_weights():
 
     # 3 failures → weight drops
     for _ in range(3):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.40, actions_since=5)
 
     weight_after_failures = engine.get_weight_adjustment("uncertainty")
@@ -416,7 +416,7 @@ def test_success_recovers_signal_weights():
 
     # 5 successes → weight recovers partially
     for _ in range(5):
-        engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+        engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
         engine.evaluate("a1", current_pressure=0.10, actions_since=5)
 
     weight_after_recovery = engine.get_weight_adjustment("uncertainty")
@@ -428,19 +428,19 @@ def test_adaptive_step_increases_with_streak():
     engine = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
 
     # First mix some successes and failures
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.10, actions_since=5)  # success
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
-    adj_mixed = engine.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj_mixed = engine.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
 
     # Now pure failures
     engine2 = make_engine(evaluation_window=1, min_interventions=1, threshold_adj_step=0.02)
-    engine2.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine2.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine2.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
-    engine2.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine2.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine2.evaluate("a1", current_pressure=0.40, actions_since=5)  # failure
-    adj_pure = engine2.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION)
+    adj_pure = engine2.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
 
     # Pure failures should produce a larger adjustment (adaptive step)
     assert adj_pure >= adj_mixed
@@ -449,12 +449,12 @@ def test_adaptive_step_increases_with_streak():
 def test_success_counts_serialized():
     """Success counts should survive serialization."""
     engine = make_engine(evaluation_window=1, min_interventions=1)
-    engine.record_intervention("a1", Level.HEALTHY, Level.CAUTION, 0.30, SIGNALS)
+    engine.record_intervention("a1", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.30, SIGNALS)
     engine.evaluate("a1", current_pressure=0.10, actions_since=5)
 
     d = engine.to_dict()
     assert "success_counts" in d
-    assert "HEALTHY->CAUTION" in d["success_counts"]
+    assert "OBSERVE->GUIDE" in d["success_counts"]
 
     restored = LearningEngine.from_dict(d)
-    assert restored._success_counts[(Level.HEALTHY, Level.CAUTION)] == 1
+    assert restored._success_counts[(ResponseMode.OBSERVE, ResponseMode.GUIDE)] == 1

@@ -140,10 +140,10 @@ def test_replay_cli_empty_session(tmp_path):
 
 def test_replay_cli_level_names_present(tmp_path):
     """At least one valid level name should appear in the table output."""
-    from soma.types import Level
+    from soma.types import ResponseMode
     session_file = _make_session(tmp_path, {"Agent 1": _normal_actions(5)})
     output = _capture_replay(session_file)
-    assert any(level.name in output for level in Level), (
+    assert any(mode.name in output for mode in ResponseMode if mode.value <= 3), (
         f"Expected at least one level name in output; got:\n{output}"
     )
 

@@ -16,17 +16,15 @@ from textual.timer import Timer
 
 from soma.recorder import SessionRecorder, RecordedAction
 from soma.engine import SOMAEngine
-from soma.types import Level
+from soma.types import ResponseMode
 
 # ── Color helpers ────────────────────────────────────────────────
 
-LEVEL_COLORS = {
-    Level.HEALTHY:    "#22c55e",
-    Level.CAUTION:    "#eab308",
-    Level.DEGRADE:    "#f97316",
-    Level.QUARANTINE: "#ef4444",
-    Level.RESTART:    "#a855f7",
-    Level.SAFE_MODE:  "#ffffff",
+MODE_COLORS = {
+    ResponseMode.OBSERVE:  "#22c55e",
+    ResponseMode.GUIDE:    "#eab308",
+    ResponseMode.WARN:     "#f97316",
+    ResponseMode.BLOCK:    "#ef4444",
 }
 
 
@@ -166,7 +164,7 @@ class ReplayTab(TabPane):
 
         ra = self._steps[idx]
         result = self._engine.record_action(ra.agent_id, ra.action)
-        color = LEVEL_COLORS.get(result.level, "white")
+        color = MODE_COLORS.get(result.mode, "white")
         snap = self._engine.get_snapshot(ra.agent_id)
         self._log_state(
             f"[dim]{idx+1}/{len(self._steps)}[/]  "

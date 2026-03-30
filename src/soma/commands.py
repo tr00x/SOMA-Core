@@ -72,7 +72,7 @@ def cleanup_old_results(max_age_seconds: float = 300):
 
 def process_commands(engine) -> list[dict[str, Any]]:
     """Process all pending commands against a SOMAEngine. Returns results."""
-    from soma.types import Level
+    from soma.types import ResponseMode
 
     results = []
     for cmd in read_pending():
@@ -86,9 +86,9 @@ def process_commands(engine) -> list[dict[str, Any]]:
             if action == "force_level":
                 agent_id = params["agent"]
                 level_name = params["level"]
-                level = Level[level_name]
+                level = ResponseMode[level_name]
                 if agent_id in engine._agents:
-                    engine._agents[agent_id].ladder.force_level(level)
+                    engine._agents[agent_id].mode = level
                     result = {"ok": True, "agent": agent_id, "level": level_name}
                 else:
                     result = {"ok": False, "error": f"Agent {agent_id} not found"}
@@ -125,11 +125,11 @@ def process_commands(engine) -> list[dict[str, Any]]:
                     }}
 
             elif action == "set_thresholds":
-                # Update ladder thresholds for all agents
+                # Update custom thresholds on the engine
                 thresholds = params.get("thresholds", {})
-                for agent_id, s in engine._agents.items():
-                    if hasattr(s.ladder, '_thresholds'):
-                        s.ladder._thresholds.update(thresholds)
+                if engine._custom_thresholds is None:
+                    engine._custom_thresholds = {}
+                engine._custom_thresholds.update(thresholds)
                 result = {"ok": True, "thresholds": thresholds}
 
             elif action == "set_budget_limits":

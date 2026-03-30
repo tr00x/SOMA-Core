@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import soma
 from soma.wrap import wrap, WrappedClient, SomaBlocked, SomaBudgetExhausted
-from soma.types import Level
+from soma.types import ResponseMode
 
 
 # ── Mock API clients ────────────────────────────────────────────
@@ -73,9 +73,9 @@ class TestWrap:
     def test_soma_level_starts_healthy(self):
         client = MockAnthropicClient()
         wrapped = soma.wrap(client, auto_export=False)
-        # Level may not be HEALTHY on first call due to cold start,
-        # but it should be a valid Level
-        assert isinstance(wrapped.soma_level, Level)
+        # Level may not be OBSERVE on first call due to cold start,
+        # but it should be a valid ResponseMode
+        assert isinstance(wrapped.soma_level, ResponseMode)
 
     def test_soma_pressure_is_float(self):
         client = MockAnthropicClient()
@@ -83,15 +83,15 @@ class TestWrap:
         wrapped.messages.create(model="test", max_tokens=100, messages=[])
         assert isinstance(wrapped.soma_pressure, float)
 
-    def test_blocks_at_quarantine(self):
+    def test_blocks_at_block_mode(self):
         client = MockAnthropicClient()
         wrapped = soma.wrap(client, budget={"tokens": 10000}, auto_export=False,
-                           block_at=Level.QUARANTINE)
-        # Force level to QUARANTINE
-        wrapped.engine._agents["default"].ladder.force_level(Level.QUARANTINE)
+                           block_at=ResponseMode.BLOCK)
+        # Force mode to BLOCK
+        wrapped.engine._agents["default"].mode = ResponseMode.BLOCK
         with pytest.raises(SomaBlocked) as exc_info:
             wrapped.messages.create(model="test", max_tokens=100, messages=[])
-        assert exc_info.value.level == Level.QUARANTINE
+        assert exc_info.value.level == ResponseMode.BLOCK
 
     def test_blocks_on_budget_exhaustion(self):
         client = MockAnthropicClient()
@@ -144,9 +144,9 @@ class TestWrap:
 
     def test_block_at_custom_level(self):
         client = MockAnthropicClient()
-        # Block at CAUTION (very aggressive)
-        wrapped = soma.wrap(client, auto_export=False, block_at=Level.CAUTION)
-        wrapped.engine._agents["default"].ladder.force_level(Level.CAUTION)
+        # Block at GUIDE (very aggressive)
+        wrapped = soma.wrap(client, auto_export=False, block_at=ResponseMode.GUIDE)
+        wrapped.engine._agents["default"].mode = ResponseMode.GUIDE
         with pytest.raises(SomaBlocked):
             wrapped.messages.create(model="test", max_tokens=100, messages=[])
 
@@ -250,7 +250,7 @@ class TestWrap:
             cost=0.0,
         )
         fake_result = ActionResult(
-            level=Level.CAUTION,
+            mode=ResponseMode.GUIDE,
             pressure=0.5,
             vitals=fake_vitals,
             context_action="truncate_50_block_tools",

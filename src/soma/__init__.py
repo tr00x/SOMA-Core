@@ -3,7 +3,7 @@
 __version__ = "0.3.0"
 
 from soma.types import (
-    Action, Level, AutonomyMode, DriftMode,
+    Action, Level, ResponseMode, AutonomyMode, DriftMode,
     VitalsSnapshot, AgentConfig, InterventionOutcome,
 )
 from soma.engine import SOMAEngine, ActionResult
@@ -35,7 +35,7 @@ def quickstart(budget=None, agents=None):
 
 
 __all__ = [
-    "SOMAEngine", "Action", "ActionResult", "Level",
+    "SOMAEngine", "Action", "ActionResult", "Level", "ResponseMode",
     "AutonomyMode", "DriftMode", "VitalsSnapshot", "AgentConfig",
     "InterventionOutcome", "MultiBudget", "EventBus",
     "SessionRecorder", "replay_session",

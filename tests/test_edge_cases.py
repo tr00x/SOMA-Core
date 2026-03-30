@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from soma.engine import SOMAEngine
-from soma.types import Action, Level
+from soma.types import Action, ResponseMode
 from soma.recorder import SessionRecorder
 from soma.replay import replay_session
 from soma.learning import LearningEngine
@@ -61,7 +61,7 @@ def test_100_agents_no_crash():
 
     assert len(results) == 100
     for r in results:
-        assert isinstance(r.level, Level)
+        assert isinstance(r.mode, ResponseMode)
         assert 0.0 <= r.pressure <= 1.0
 
 
@@ -69,14 +69,22 @@ def test_100_agents_no_crash():
 # 2. Engine with 0 budget
 # ---------------------------------------------------------------------------
 
-def test_zero_budget_immediately_safe_mode():
-    """budget={"tokens": 0} → engine should reach SAFE_MODE immediately."""
-    e = SOMAEngine(budget={"tokens": 0})
+def test_depleted_budget_raises_pressure():
+    """Spending well past budget limit → pressure should rise significantly."""
+    e = SOMAEngine(budget={"tokens": 100})
     e.register_agent("a")
 
-    # Budget health is already 0 before the first action; first record triggers SAFE_MODE.
-    r = e.record_action("a", Action(tool_name="bash", output_text="hello", token_count=0))
-    assert r.level == Level.SAFE_MODE
+    # Spend well past the budget (each action costs 100 tokens, budget is 100)
+    # After grace period, burn rate pressure should cause escalation.
+    for _ in range(15):
+        r = e.record_action("a", Action(tool_name="bash", output_text="hello", token_count=100))
+    # Budget is 15x exhausted — engine should be above OBSERVE
+    assert r.mode >= ResponseMode.GUIDE, (
+        f"Expected at least GUIDE after depleting budget, got {r.mode}"
+    )
+    assert r.pressure > 0.2, (
+        f"Expected elevated pressure after depleting budget, got {r.pressure:.3f}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +99,7 @@ def test_empty_action_does_not_crash():
         "a",
         Action(tool_name="", output_text="", token_count=0),
     )
-    assert isinstance(r.level, Level)
+    assert isinstance(r.mode, ResponseMode)
     assert isinstance(r.pressure, float)
 
 
@@ -107,25 +115,25 @@ def test_very_long_output_text():
         "a",
         Action(tool_name="bash", output_text="x" * 100_000, token_count=100),
     )
-    assert isinstance(r.level, Level)
+    assert isinstance(r.mode, ResponseMode)
     assert isinstance(r.vitals.uncertainty, float)
 
 
 # ---------------------------------------------------------------------------
-# 5. Rapid escalation / de-escalation — hysteresis prevents oscillation
+# 5. Rapid mode changes — pressure-based system prevents oscillation
 # ---------------------------------------------------------------------------
 
-def test_hysteresis_prevents_rapid_oscillation():
-    """Alternating error / normal actions — level should not flip every step."""
+def test_mode_stability_under_alternating_actions():
+    """Alternating error / normal actions — mode should not flip every step."""
     e = SOMAEngine(budget={"tokens": 1_000_000})
     e.register_agent("a")
 
-    levels: list[Level] = []
+    modes: list[ResponseMode] = []
 
     # Warm up with enough errors to escalate first.
     for _ in range(10):
         r = e.record_action("a", _error_action())
-        levels.append(r.level)
+        modes.append(r.mode)
 
     # Now alternate: normal then error, 20 rounds.
     for i in range(20):
@@ -133,19 +141,18 @@ def test_hysteresis_prevents_rapid_oscillation():
             r = e.record_action("a", _normal_action(i))
         else:
             r = e.record_action("a", _error_action())
-        levels.append(r.level)
+        modes.append(r.mode)
 
     # Count total direction changes.
     flips = sum(
         1
-        for a, b in zip(levels, levels[1:])
+        for a, b in zip(modes, modes[1:])
         if a != b
     )
 
-    # With hysteresis, flips should be much fewer than the number of alternations.
-    # Allow up to 10 transitions out of 29 steps — hysteresis damps oscillation.
+    # With EMA-based pressure, flips should be much fewer than the number of alternations.
     assert flips <= 10, (
-        f"Too many level flips ({flips}); hysteresis is not working as expected"
+        f"Too many mode flips ({flips}); pressure smoothing is not working as expected"
     )
 
 
@@ -169,9 +176,9 @@ def test_graph_cycle_no_infinite_loop():
         e.record_action("b", _normal_action())
         e.record_action("c", _normal_action())
 
-    # All levels must still be valid Level enum values.
+    # All levels must still be valid ResponseMode enum values.
     for agent_id in ("a", "b", "c"):
-        assert isinstance(e.get_level(agent_id), Level)
+        assert isinstance(e.get_level(agent_id), ResponseMode)
 
 
 # ---------------------------------------------------------------------------
@@ -191,30 +198,30 @@ def test_single_agent_no_edges_propagation_noop():
 
 
 # ---------------------------------------------------------------------------
-# 8. Budget replenish mid-session — recovery from SAFE_MODE
+# 8. Budget replenish mid-session — recovery from BLOCK
 # ---------------------------------------------------------------------------
 
-def test_budget_replenish_recovers_from_safe_mode():
-    """Exhaust budget → SAFE_MODE; replenish → recover."""
-    e = SOMAEngine(budget={"tokens": 300})
+def test_budget_replenish_recovers_pressure():
+    """Exhaust budget → elevated pressure; replenish → pressure drops."""
+    e = SOMAEngine(budget={"tokens": 100})
     e.register_agent("a")
 
-    # Exhaust the budget.
-    for _ in range(4):
-        e.record_action("a", Action(tool_name="bash", output_text="x", token_count=100))
-
-    r = e.record_action("a", Action(tool_name="bash", output_text="x", token_count=0))
-    assert r.level == Level.SAFE_MODE, (
-        f"Expected SAFE_MODE after exhausting budget, got {r.level}"
+    # Exhaust the budget with enough actions to pass grace period.
+    for _ in range(15):
+        r = e.record_action("a", Action(tool_name="bash", output_text="x", token_count=100))
+    pressure_before = r.pressure
+    assert pressure_before > 0.2, (
+        f"Expected elevated pressure after budget depletion, got {pressure_before}"
     )
 
-    # Replenish budget well above the SAFE_MODE exit threshold (10%).
-    e.budget.replenish("tokens", 300)  # fully restore
+    # Replenish budget.
+    e.budget.replenish("tokens", 10000)  # generously restore
 
-    # After replenishment the next action should exit SAFE_MODE.
-    r = e.record_action("a", Action(tool_name="bash", output_text="ok", token_count=1))
-    assert r.level != Level.SAFE_MODE, (
-        f"Expected engine to exit SAFE_MODE after replenishment, got {r.level}"
+    # After replenishment, continued normal actions should lower pressure.
+    for _ in range(10):
+        r = e.record_action("a", Action(tool_name="search", output_text="ok " * 20, token_count=10))
+    assert r.pressure < pressure_before, (
+        f"Expected pressure to drop after replenishment: before={pressure_before:.3f}, after={r.pressure:.3f}"
     )
 
 
@@ -228,11 +235,11 @@ def test_learning_reset_clean_slate():
 
     # Inject some pending records.
     le.record_intervention(
-        "agent-x", Level.HEALTHY, Level.CAUTION, 0.3,
+        "agent-x", ResponseMode.OBSERVE, ResponseMode.GUIDE, 0.3,
         {"uncertainty": 0.3, "error_rate": 0.4},
     )
     le.record_intervention(
-        "agent-x", Level.CAUTION, Level.DEGRADE, 0.6,
+        "agent-x", ResponseMode.GUIDE, ResponseMode.WARN, 0.6,
         {"uncertainty": 0.5, "drift": 0.2},
     )
 
@@ -241,7 +248,7 @@ def test_learning_reset_clean_slate():
     le.reset()
 
     assert len(le.pending("agent-x")) == 0
-    assert le.get_threshold_adjustment(Level.HEALTHY, Level.CAUTION) == 0.0
+    assert le.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE) == 0.0
     assert le.get_weight_adjustment("uncertainty") == 0.0
 
 
@@ -307,19 +314,23 @@ def test_replay_with_edges():
 
     assert len(results) == actions_per_agent * 2
     for r in results:
-        assert isinstance(r.level, Level)
+        assert isinstance(r.mode, ResponseMode)
         assert 0.0 <= r.pressure <= 1.0
 
 
 # ---------------------------------------------------------------------------
-# 12. Monitor assert_below with all Level values
+# 12. Monitor assert_below with all ResponseMode values
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("threshold", list(Level))
+@pytest.mark.parametrize("threshold", list(ResponseMode))
 def test_monitor_assert_below_all_levels(threshold):
-    """assert_below(threshold) semantics hold for every Level value."""
+    """assert_below(threshold) semantics hold for every ResponseMode value."""
+    # Skip legacy aliases that have value > 3
+    if threshold.value > 3:
+        pytest.skip("Legacy alias — not a real mode")
+
     with Monitor(budget={"tokens": 100_000}) as mon:
-        # Record a single clean action — engine stays at HEALTHY.
+        # Record a single clean action — engine stays at OBSERVE.
         mon.record(
             "agent1",
             Action(tool_name="search", output_text="ok result", token_count=50),
@@ -342,10 +353,10 @@ def test_monitor_assert_below_all_levels(threshold):
 
 
 # ---------------------------------------------------------------------------
-# 14. All agents in QUARANTINE — graph does not cascade infinitely
+# 14. All agents in BLOCK — graph does not cascade infinitely
 # ---------------------------------------------------------------------------
 
-def test_all_agents_quarantine_no_infinite_cascade():
+def test_all_agents_block_no_infinite_cascade():
     """Flood all agents with errors; propagate() must terminate without recursion."""
     n_agents = 5
     e = SOMAEngine(budget={"tokens": 10_000_000})
@@ -362,10 +373,10 @@ def test_all_agents_quarantine_no_infinite_cascade():
         for aid in agent_ids:
             e.record_action(aid, _error_action())
 
-    # All agents should have reached at least CAUTION without hanging or crashing.
+    # All agents should have reached at least GUIDE without hanging or crashing.
     for aid in agent_ids:
         level = e.get_level(aid)
-        assert isinstance(level, Level)
-        assert level >= Level.CAUTION, (
+        assert isinstance(level, ResponseMode)
+        assert level >= ResponseMode.GUIDE, (
             f"Agent {aid} did not escalate: {level}"
         )

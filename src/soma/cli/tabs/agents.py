@@ -12,32 +12,28 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Static, DataTable, RichLog, TabPane
 from textual.reactive import reactive
 
-from soma.types import Level
+from soma.types import ResponseMode
 
 # ── Color helpers ────────────────────────────────────────────────
 
-LEVEL_COLORS = {
-    Level.HEALTHY:    "#22c55e",
-    Level.CAUTION:    "#eab308",
-    Level.DEGRADE:    "#f97316",
-    Level.QUARANTINE: "#ef4444",
-    Level.RESTART:    "#a855f7",
-    Level.SAFE_MODE:  "#ffffff",
+MODE_COLORS = {
+    ResponseMode.OBSERVE:  "#22c55e",
+    ResponseMode.GUIDE:    "#eab308",
+    ResponseMode.WARN:     "#f97316",
+    ResponseMode.BLOCK:    "#ef4444",
 }
 
-LEVEL_LABEL = {
-    Level.HEALTHY:    "OK",
-    Level.CAUTION:    "WATCH",
-    Level.DEGRADE:    "BAD",
-    Level.QUARANTINE: "STOP",
-    Level.RESTART:    "RESET",
-    Level.SAFE_MODE:  "EMERGENCY",
+MODE_LABELS = {
+    ResponseMode.OBSERVE:  "OK",
+    ResponseMode.GUIDE:    "GUIDE",
+    ResponseMode.WARN:     "WARN",
+    ResponseMode.BLOCK:    "BLOCK",
 }
 
 
-def _level_markup(level: Level) -> str:
-    color = LEVEL_COLORS.get(level, "white")
-    label = LEVEL_LABEL.get(level, level.name)
+def _level_markup(level: ResponseMode) -> str:
+    color = MODE_COLORS.get(level, "white")
+    label = MODE_LABELS.get(level, level.name)
     return f"[{color}]{label}[/]"
 
 
@@ -48,7 +44,7 @@ class AgentRow:
 
     def __init__(self, agent_id: str) -> None:
         self.agent_id = agent_id
-        self.level = Level.HEALTHY
+        self.level = ResponseMode.OBSERVE
         self.pressure: float = 0.0
         self.action_count: int = 0
         self.recent_actions: list[str] = []  # last 10 human-readable action strings
@@ -144,7 +140,7 @@ class AgentsTab(TabPane):
     def update_agent(
         self,
         agent_id: str,
-        level: Level,
+        level: ResponseMode,
         pressure: float,
         action_count: int,
         action_desc: str = "",
@@ -190,8 +186,8 @@ class AgentsTab(TabPane):
             return
         try:
             title = self.query_one("#detail-title", Static)
-            color = LEVEL_COLORS.get(row.level, "white")
-            label = LEVEL_LABEL.get(row.level, row.level.name)
+            color = MODE_COLORS.get(row.level, "white")
+            label = MODE_LABELS.get(row.level, row.level.name)
             title.update(
                 f"[bold]{agent_id}[/bold]  [{color}]{label}[/]  "
                 f"[dim]p={row.pressure:.3f}  #{row.action_count}[/]"
@@ -223,7 +219,7 @@ class AgentsTab(TabPane):
             table = self.query_one("#agents-table", DataTable)
             table.add_row(
                 new_id,
-                _level_markup(Level.HEALTHY),
+                _level_markup(ResponseMode.OBSERVE),
                 "0.000",
                 "0",
                 key=new_id,
@@ -237,12 +233,12 @@ class AgentsTab(TabPane):
         if target is None:
             return
         row = self._rows[target]
-        row.level = Level.QUARANTINE
+        row.level = ResponseMode.BLOCK
         row.push_action("[#ef4444]KILLED — sending errors[/]")
         self._refresh_detail(target)
         try:
             table = self.query_one("#agents-table", DataTable)
-            table.update_cell(target, "level", _level_markup(Level.QUARANTINE))
+            table.update_cell(target, "level", _level_markup(ResponseMode.BLOCK))
         except Exception:
             pass
 
@@ -251,13 +247,13 @@ class AgentsTab(TabPane):
         if target is None:
             return
         row = self._rows[target]
-        row.level = Level.HEALTHY
+        row.level = ResponseMode.OBSERVE
         row.pressure = 0.0
         row.push_action("[#22c55e]HEALED — back to normal[/]")
         self._refresh_detail(target)
         try:
             table = self.query_one("#agents-table", DataTable)
-            table.update_cell(target, "level", _level_markup(Level.HEALTHY))
+            table.update_cell(target, "level", _level_markup(ResponseMode.OBSERVE))
             table.update_cell(target, "pressure", "0.000")
         except Exception:
             pass
