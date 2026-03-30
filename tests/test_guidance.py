@@ -129,3 +129,21 @@ class TestEvaluate:
                      action_log=[], gsd_active=True)
         assert r.mode == ResponseMode.GUIDE
         assert r.allow is True
+
+
+class TestConfigurableThresholds:
+    def test_custom_thresholds(self):
+        thresholds = {"guide": 0.40, "warn": 0.60, "block": 0.80}
+        assert pressure_to_mode(0.35, thresholds) == ResponseMode.OBSERVE
+        assert pressure_to_mode(0.45, thresholds) == ResponseMode.GUIDE
+        assert pressure_to_mode(0.65, thresholds) == ResponseMode.WARN
+        assert pressure_to_mode(0.85, thresholds) == ResponseMode.BLOCK
+
+    def test_default_thresholds(self):
+        assert pressure_to_mode(0.20) == ResponseMode.OBSERVE
+        assert pressure_to_mode(0.30) == ResponseMode.GUIDE
+
+    def test_evaluate_with_thresholds(self):
+        thresholds = {"guide": 0.40, "warn": 0.60, "block": 0.80}
+        r = evaluate(0.35, "Write", {}, [], thresholds=thresholds)
+        assert r.mode == ResponseMode.OBSERVE  # 35% is below custom guide=40%

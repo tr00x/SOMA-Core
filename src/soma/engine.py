@@ -171,7 +171,7 @@ class SOMAEngine:
         """Human approves pending escalation. Re-evaluates and applies."""
         s = self._agents[agent_id]
         snap = self.get_snapshot(agent_id)
-        s.mode = pressure_to_mode(snap["pressure"])
+        s.mode = pressure_to_mode(snap["pressure"], self._custom_thresholds)
         return s.mode
 
     @classmethod
@@ -354,7 +354,7 @@ class SOMAEngine:
 
         # 10. Mode (replaces old Ladder evaluation)
         old_mode = s.mode
-        new_mode = pressure_to_mode(effective)
+        new_mode = pressure_to_mode(effective, self._custom_thresholds)
         s.mode = new_mode
 
         # 11. Events + Learning
