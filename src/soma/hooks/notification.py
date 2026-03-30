@@ -195,11 +195,11 @@ def _collect_findings(
     findings: list[tuple[int, str]] = []
 
     # Level status (priority 0 at elevated levels)
-    if level_name in ("WARN", "DEGRADE"):
+    if level_name == "WARN":
         findings.append((0,
             "[status] WARN — pressure elevated. Slow down, verify each step"
         ))
-    elif level_name in ("BLOCK", "QUARANTINE", "RESTART", "SAFE_MODE"):
+    elif level_name == "BLOCK":
         findings.append((0,
             "[status] BLOCK — destructive operations blocked. "
             "Normal Write/Edit/Bash/Agent still allowed"
@@ -292,7 +292,7 @@ def _collect_findings(
         from soma.rca import diagnose
         rca = diagnose(action_log, vitals, pressure, level_name, actions)
         if rca:
-            priority = 1 if level_name != "HEALTHY" else 2
+            priority = 1 if level_name != "OBSERVE" else 2
             findings.append((priority, f"[why] {rca}"))
     except Exception:
         pass
@@ -362,17 +362,20 @@ def main():
         u = vitals.get("uncertainty", 0)
         d = vitals.get("drift", 0)
         e = vitals.get("error_rate", 0)
-        if pressure < 0.25:
+        if pressure < 0.25 and actions >= 10:
             try:
                 from soma.hooks.common import get_task_tracker
                 tracker = get_task_tracker()
                 m = tracker.get_efficiency()
-                ctx_pct = int(m.get("context_efficiency", 0) * 100)
-                focus_val = m.get("focus", 1.0)
-                focus_label = "focused" if focus_val >= 0.7 else "drifting" if focus_val < 0.4 else "ok"
-                lines.append(f"SOMA: #{actions} ctx={ctx_pct}% focus={focus_label}")
+                if m and "context_efficiency" in m:
+                    ctx_pct = int(m["context_efficiency"] * 100)
+                    focus_val = m.get("focus", 1.0)
+                    focus_label = "focused" if focus_val >= 0.7 else "drifting" if focus_val < 0.4 else "ok"
+                    lines.append(f"SOMA: #{actions} ctx={ctx_pct}% focus={focus_label}")
+                else:
+                    lines.append(f"SOMA: p={pressure:.0%} #{actions}")
             except Exception:
-                lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
+                lines.append(f"SOMA: p={pressure:.0%} #{actions}")
         else:
             lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
 

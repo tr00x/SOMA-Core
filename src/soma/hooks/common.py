@@ -72,7 +72,10 @@ def detect_workflow_mode() -> str:
     import os
     cwd = os.environ.get("CLAUDE_WORKING_DIRECTORY", "")
     if not cwd:
-        return ""
+        try:
+            cwd = os.getcwd()
+        except Exception:
+            return ""
     planning_dir = os.path.join(cwd, ".planning")
     if not os.path.isdir(planning_dir):
         return ""
