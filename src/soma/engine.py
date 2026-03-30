@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from soma.types import Action, Level, AutonomyMode, VitalsSnapshot, AgentConfig, DriftMode
+from soma.types import Action, Level, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig, DriftMode
 from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
@@ -16,29 +16,34 @@ from soma.vitals import (
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
 from soma.budget import MultiBudget
-from soma.ladder import Ladder
+from soma.guidance import pressure_to_mode
 from soma.graph import PressureGraph
 from soma.learning import LearningEngine
 from soma.events import EventBus
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ActionResult:
-    level: Level
+    mode: ResponseMode
     pressure: float
     vitals: VitalsSnapshot
     context_action: str = "pass"
 
+    @property
+    def level(self) -> ResponseMode:
+        """Backward-compatible alias for mode."""
+        return self.mode
+
 
 class _AgentState:
-    __slots__ = ("config", "ring_buffer", "baseline", "ladder", "known_tools",
+    __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
                  "baseline_vector", "action_count")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
         self.ring_buffer: RingBuffer[Action] = RingBuffer(capacity=10)
         self.baseline = Baseline()
-        self.ladder = Ladder()
+        self.mode: ResponseMode = ResponseMode.OBSERVE
         self.known_tools: list[str] = list(config.tools_allowed) if config.tools_allowed else []
         self.baseline_vector: list[float] | None = None
         self.action_count = 0
@@ -96,7 +101,7 @@ class SOMAEngine:
     def get_level(self, agent_id: str) -> Level:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)
-        return self._agents[agent_id].ladder.current
+        return self._agents[agent_id].mode
 
     def get_snapshot(self, agent_id: str) -> dict[str, Any]:
         if agent_id not in self._agents:
@@ -104,7 +109,8 @@ class SOMAEngine:
         s = self._agents[agent_id]
         pressure = self._graph.get_effective_pressure(agent_id)
         return {
-            "level": s.ladder.current,
+            "level": s.mode,
+            "mode": s.mode,
             "pressure": pressure,
             "vitals": {
                 "uncertainty": s.baseline.get("uncertainty"),
@@ -143,7 +149,7 @@ class SOMAEngine:
                 continue
             pressure = self._graph.get_effective_pressure(agent_id)
             state["agents"][agent_id] = {
-                "level": s.ladder.current.name,
+                "level": s.mode.name,
                 "pressure": pressure,
                 "vitals": {
                     "uncertainty": s.baseline.get("uncertainty"),
@@ -165,8 +171,8 @@ class SOMAEngine:
         """Human approves pending escalation. Re-evaluates and applies."""
         s = self._agents[agent_id]
         snap = self.get_snapshot(agent_id)
-        new_level = s.ladder.evaluate(snap["pressure"], self._budget.health())
-        return new_level
+        s.mode = pressure_to_mode(snap["pressure"])
+        return s.mode
 
     @classmethod
     def from_config(cls, config: dict | None = None) -> "SOMAEngine":
@@ -346,65 +352,35 @@ class SOMAEngine:
         else:
             self._graph.recover_trust(agent_id, uncertainty)
 
-        # 10. Ladder
-        old_level = s.ladder.current
-        # Build threshold_adjustments dict keyed by "OLD->NEW" for all escalation transitions
-        _non_safe_levels = [lv for lv in Level if lv is not Level.SAFE_MODE]
-        threshold_adjustments = {
-            f"{old_lv.name}->{new_lv.name}": self._learning.get_threshold_adjustment(old_lv, new_lv)
-            for old_lv in _non_safe_levels
-            for new_lv in _non_safe_levels
-        }
-        new_level = s.ladder.evaluate_with_adjustments(
-            effective, self._budget.health(), threshold_adjustments,
-            custom_thresholds=self._custom_thresholds,
-        )
-
-        # Check autonomy mode
-        if new_level != old_level and new_level.value > old_level.value:
-            config = s.config
-            if s.ladder.requires_approval(new_level, config.autonomy):
-                # HUMAN_IN_THE_LOOP: emit approval event, don't escalate yet
-                self._events.emit("approval_needed", {
-                    "agent_id": agent_id,
-                    "current_level": old_level,
-                    "proposed_level": new_level,
-                    "pressure": effective,
-                    "autonomy": config.autonomy.value,
-                })
-                # Stay at current level until approved
-                new_level = old_level
-                s.ladder.force_level(old_level)
+        # 10. Mode (replaces old Ladder evaluation)
+        old_mode = s.mode
+        new_mode = pressure_to_mode(effective)
+        s.mode = new_mode
 
         # 11. Events + Learning
-        if new_level != old_level:
+        if new_mode != old_mode:
             self._events.emit("level_changed", {
                 "agent_id": agent_id,
-                "old_level": old_level,
-                "new_level": new_level,
+                "old_level": old_mode,
+                "new_level": new_mode,
                 "pressure": effective,
             })
             self._learning.record_intervention(
-                agent_id, old_level, new_level, effective, signal_pressures,
+                agent_id, old_mode, new_mode, effective, signal_pressures,
             )
 
         self._learning.evaluate(agent_id, effective, actions_since=1)
 
-        # Determine context action based on current level
         context_action = "pass"
-        if new_level == Level.CAUTION:
-            context_action = "truncate_20"
-        elif new_level == Level.DEGRADE:
-            context_action = "truncate_50_block_tools"
-        elif new_level == Level.QUARANTINE:
-            context_action = "quarantine"
-        elif new_level == Level.RESTART:
-            context_action = "restart"
-        elif new_level == Level.SAFE_MODE:
-            context_action = "safe_mode"
+        if new_mode == ResponseMode.GUIDE:
+            context_action = "guide"
+        elif new_mode == ResponseMode.WARN:
+            context_action = "warn"
+        elif new_mode == ResponseMode.BLOCK:
+            context_action = "block_destructive"
 
         result = ActionResult(
-            level=new_level,
+            mode=new_mode,
             pressure=effective,
             vitals=VitalsSnapshot(
                 uncertainty=uncertainty, drift=drift, drift_mode=drift_mode,
