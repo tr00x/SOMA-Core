@@ -30,7 +30,7 @@ def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
             "action_count": s.action_count,
             "known_tools": s.known_tools,
             "baseline_vector": s.baseline_vector,
-            "level": s.ladder.current.name,
+            "level": s.mode.name,
         }
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -84,13 +84,12 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         s.known_tools = agent_state.get("known_tools", [])
         s.baseline_vector = agent_state.get("baseline_vector")
 
-        # Restore level (set _current directly, not force_level —
-        # force_level latches and prevents pressure-based re-evaluation)
-        from soma.types import Level
-        level_name = agent_state.get("level", "HEALTHY")
+        # Restore mode
+        from soma.types import ResponseMode
+        level_name = agent_state.get("level", "OBSERVE")
         try:
-            s.ladder._current = Level[level_name]
+            s.mode = ResponseMode[level_name]
         except (KeyError, ValueError):
-            pass
+            s.mode = ResponseMode.OBSERVE
 
     return engine
