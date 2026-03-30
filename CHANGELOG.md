@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.8] — 2026-03-30
+
+### Added
+- `TaskTracker.get_efficiency()` — context_efficiency, success_rate, focus metrics
+- Status line shows `ctx:high focus:focused` when healthy instead of raw vitals
+- Notification shows `SOMA: #N ctx=73% focus=focused` at low pressure
+
 ## [0.4.7] — 2026-03-30
 
 ### Added
