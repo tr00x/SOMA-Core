@@ -326,10 +326,10 @@ def _cmd_mode(args: argparse.Namespace) -> None:
         print()
         for name, preset in MODE_PRESETS.items():
             autonomy = preset["agents"]["claude-code"]["autonomy"]
-            warn_threshold = preset["thresholds"]["quarantine"]
+            block_threshold = preset["thresholds"]["block"]
             verbosity = preset["hooks"]["verbosity"]
             marker = " <--" if name == current else ""
-            print(f"  {name:<12} autonomy={autonomy}, pressure_limit={warn_threshold:.0%}, verbosity={verbosity}{marker}")
+            print(f"  {name:<12} autonomy={autonomy}, block={block_threshold:.0%}, verbosity={verbosity}{marker}")
         print()
         print("  Usage: soma mode <strict|relaxed|autonomous>")
         return
@@ -343,10 +343,87 @@ def _cmd_mode(args: argparse.Namespace) -> None:
 
     preset = MODE_PRESETS[mode_name]
     autonomy = preset["agents"]["claude-code"]["autonomy"]
-    warn_threshold = preset["thresholds"]["quarantine"]
+    block_threshold = preset["thresholds"]["block"]
     print(f"  Autonomy: {autonomy}")
-    print(f"  Pressure limit: {warn_threshold:.0%}")
+    print(f"  Block threshold: {block_threshold:.0%}")
     print(f"  Verbosity: {preset['hooks']['verbosity']}")
+
+
+def _cmd_doctor(_args: argparse.Namespace) -> None:
+    """Check SOMA installation health."""
+    import shutil
+
+    issues = []
+    ok = []
+
+    # 1. Check soma-hook is available
+    soma_hook = shutil.which("soma-hook")
+    if soma_hook:
+        ok.append(f"soma-hook found: {soma_hook}")
+    else:
+        issues.append("soma-hook not in PATH — run: pip install soma-ai")
+
+    # 2. Check settings.json hooks
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+        hooks = settings.get("hooks", {})
+        expected = ["PreToolUse", "PostToolUse", "Stop", "UserPromptSubmit"]
+        for hook_type in expected:
+            hook_list = hooks.get(hook_type, [])
+            has_soma = any(
+                "soma" in str(h.get("command", ""))
+                for entry in hook_list
+                for h in entry.get("hooks", [])
+            )
+            if has_soma:
+                ok.append(f"{hook_type} hook: installed")
+            else:
+                issues.append(f"{hook_type} hook: MISSING — run: soma setup-claude")
+
+        # Check statusLine
+        sl = settings.get("statusLine", {})
+        if isinstance(sl, dict) and "soma" in sl.get("command", ""):
+            ok.append("Status line: installed")
+        else:
+            issues.append("Status line: MISSING — run: soma setup-claude")
+    else:
+        issues.append("~/.claude/settings.json not found")
+
+    # 3. Check ~/.soma/ state
+    soma_dir = Path.home() / ".soma"
+    if soma_dir.exists():
+        engine_state = soma_dir / "engine_state.json"
+        if engine_state.exists():
+            ok.append(f"Engine state: {engine_state}")
+        else:
+            issues.append("Engine state missing — run: soma reset")
+    else:
+        issues.append("~/.soma/ directory missing — run: soma setup-claude")
+
+    # 4. Check version consistency
+    try:
+        from importlib.metadata import version as pkg_version
+        installed = pkg_version("soma-ai")
+        ok.append(f"Version: {installed}")
+    except Exception:
+        issues.append("soma-ai package not found")
+
+    # Print results
+    print()
+    if ok:
+        for item in ok:
+            print(f"  ✓ {item}")
+    if issues:
+        print()
+        for item in issues:
+            print(f"  ✗ {item}")
+        print()
+        print(f"  {len(issues)} issue(s) found.")
+    else:
+        print()
+        print("  All good. SOMA is healthy.")
+    print()
 
 
 def _cmd_tui() -> None:
@@ -397,6 +474,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "System:\n"
             "  soma setup-claude               Set up SOMA for Claude Code projects\n"
             "  soma uninstall-claude            Remove SOMA from Claude Code\n"
+            "  soma doctor                     Check installation health\n"
             "  soma version                    Print version and exit\n"
         ),
     )
@@ -432,8 +510,8 @@ def _build_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="View or modify soma.toml configuration")
     config_subs = config_parser.add_subparsers(dest="config_command")
     config_subs.add_parser("show", help="Print current soma.toml")
-    cs = config_subs.add_parser("set", help="Set a configuration value (e.g. thresholds.caution 0.20)")
-    cs.add_argument("key", help="Dotted key path (e.g. thresholds.caution)")
+    cs = config_subs.add_parser("set", help="Set a configuration value (e.g. thresholds.guide 0.20)")
+    cs.add_argument("key", help="Dotted key path (e.g. thresholds.guide)")
     cs.add_argument("value", help="New value")
 
     # ---- Mode ----
@@ -447,6 +525,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ---- System ----
     subparsers.add_parser("version", help="Print the SOMA version and exit")
+    subparsers.add_parser("doctor", help="Check SOMA installation health")
 
     return parser
 
@@ -485,6 +564,7 @@ def main() -> None:
             "soma.cli.setup_claude", fromlist=["run_setup_claude"]
         ).run_setup_claude(),
         "version": _cmd_version,
+        "doctor": _cmd_doctor,
     }
 
     handler = dispatch.get(args.command)
