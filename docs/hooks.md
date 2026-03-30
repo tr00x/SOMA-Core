@@ -16,19 +16,19 @@ All hooks are installed by `soma setup-claude` into `~/.claude/settings.json`.
 ## PreToolUse
 
 **When**: Before every tool call.
-**Purpose**: Block dangerous tools when pressure is high.
+**Purpose**: Evaluate guidance mode and block destructive ops at high pressure.
 **Exit code**: 0 = allow, 2 = block.
 
-| Level | Behavior |
-|-------|----------|
-| HEALTHY | All tools allowed (silent) |
-| CAUTION | Write/Edit blocked unless Read done in last 3 actions |
-| DEGRADE | Bash and Agent blocked entirely |
-| QUARANTINE+ | Only Read, Glob, Grep, Skill, Task*, AskUserQuestion allowed |
+| Mode | Behavior |
+|------|----------|
+| OBSERVE (0–25%) | All tools allowed (silent) |
+| GUIDE (25–50%) | Soft suggestions when patterns detected. Never blocks. |
+| WARN (50–75%) | Warnings with alternatives. Never blocks. |
+| BLOCK (75–100%) | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes) |
 
-**Never blocked** (at any level): Read, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, ToolSearch, AskUserQuestion.
+**Never blocked** (at any mode): Read, Glob, Grep, Write, Edit, Bash, Agent, Skill, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, ToolSearch, AskUserQuestion. Write/Edit/Bash/Agent are always allowed — only genuinely destructive invocations are stopped.
 
-When blocking, prints to stderr: `SOMA CAUTION (p=42%) blocked 'Edit': Read bar.py first — no Read in last 3 actions`
+When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p=82%)`
 
 ## PostToolUse
 
@@ -47,7 +47,7 @@ When blocking, prints to stderr: `SOMA CAUTION (p=42%) blocked 'Edit': Read bar.
    - JS: node --check syntax
 6. Track quality (syntax errors, lint issues, bash failures)
 7. Report to stderr:
-   - Level transitions: `SOMA: HEALTHY -> CAUTION (p=42%) — error cascade: 3 consecutive Bash failures`
+   - Mode transitions: `SOMA: OBSERVE -> GUIDE (p=28%) — error cascade: 3 consecutive Bash failures`
    - Pressure spikes: `SOMA: pressure +15% (error_rate=0.30) after Bash`
    - Error rate: `SOMA: error_rate=40% after Bash failure`
    - Predictions: `SOMA: predicted escalation in ~5 actions (p=55%, error_streak)`
@@ -72,7 +72,7 @@ Each can be toggled in soma.toml `[hooks]`:
 ### Output to stdout (becomes agent context)
 
 Findings are prioritized:
-- **Priority 0** (critical): Level warnings, quality grade D/F
+- **Priority 0** (critical): Mode warnings (WARN/BLOCK), quality grade D/F
 - **Priority 1** (important): Predictions, patterns, scope drift, RCA
 - **Priority 2** (informational): Fingerprint divergence
 
@@ -95,14 +95,14 @@ Analyzes last 10 actions for:
 ### Example outputs
 
 ```
-SOMA: p=42% #15 [u=0.20 d=0.15 e=0.10]
+SOMA: p=32% #15 [u=0.20 d=0.15 e=0.10] mode=guide
+[suggest] 3 consecutive Bash failures — stop retrying, check assumptions
 [predict] escalation in ~5 actions (error_streak) — slow down
-[pattern] 3 consecutive Bash failures — stop retrying, check assumptions
 ```
 
 ```
-SOMA: p=65% #30 [u=0.30 d=0.40 e=0.25]
-[status] DEGRADED — Bash/Agent blocked
+SOMA: p=65% #30 [u=0.30 d=0.40 e=0.25] mode=warn
+[warning] pressure at 65% — slow down and verify
 [quality] grade=D (2 syntax errors, 3/8 bash commands failed)
 [why] error cascade: 5 consecutive Bash failures (error_rate=35%)
 ```
@@ -110,8 +110,7 @@ SOMA: p=65% #30 [u=0.30 d=0.40 e=0.25]
 ### Silence conditions
 
 Outputs nothing when:
-- HEALTHY level
-- Pressure < 15%
+- OBSERVE mode (pressure < 25%)
 - No critical or important findings
 
 ## Stop
@@ -127,7 +126,7 @@ Outputs nothing when:
 4. Print session summary to stderr:
 
 ```
-SOMA session end: HEALTHY (p=12%, #45)
+SOMA session end: observe (p=12%, #45)
   errors: 3/20
   top tools: Read=12, Edit=8, Bash=6
   quality: A (95%)
@@ -137,7 +136,7 @@ SOMA session end: HEALTHY (p=12%, #45)
 
 **Not a Claude Code hook** — runs as `soma-statusline` for the UI status bar.
 
-Output: `SOMA ● HEALTHY ░░░░░░░░░░ 3% | u=0.04 d=0.12 e=0.00 | #42`
+Output: `SOMA + observe 3% · #42 · quality A`
 
 ## Installation
 
