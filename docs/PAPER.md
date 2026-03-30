@@ -145,6 +145,18 @@ Per-action computation is O(k·n) where k is the number of signals (5) and n is 
 
 State is O(a·(k+t)) where a is the number of agents, k is the number of signals (each with EMA state), and t is the number of known tools. For typical deployments (1-10 agents, 5-20 tools), total state is <10KB.
 
+### 3.4 Layer-Agnostic Architecture
+
+SOMA separates behavioral intelligence from layer-specific formatting through three core modules:
+
+- **`patterns.py`**: Pattern analysis engine. Detects behavioral anti-patterns (blind edits, retry storms, scope drift, error cascades) from the action log and returns structured `PatternResult` objects with severity scores and directive suggestions. This module contains no formatting logic — it produces data, not messages.
+
+- **`findings.py`**: Findings collector. Aggregates pattern results, RCA output, quality grades, and positive feedback into a prioritized list of `Finding` objects. Each finding carries a category, severity, and plain-text description. The collector applies workflow-aware suppression (e.g., scope drift is noise during a planned multi-directory refactor).
+
+- **`context.py`**: Session context provider. Detects the current workflow mode (plan, discuss, execute, implement) by reading external state files, computes context efficiency and focus metrics via `SessionContext`, and exposes `get_session_context()` for any layer to query.
+
+These modules contain SOMA's analytical intelligence. Layer-specific code (e.g., the Claude Code hooks in `notification.py`) becomes a thin formatter that imports core modules, calls their public APIs, and renders the results into the format expected by the host environment. This design means new layers (Cursor, Windsurf, or custom integrations) get full behavioral intelligence by importing `soma.patterns`, `soma.findings`, and `soma.context` — no duplication of detection logic required.
+
 ---
 
 ## 4. The Pressure Model
@@ -287,7 +299,7 @@ The 2.5:1 ratio of decay to recovery rate reflects the behavioral economics find
 
 ### 8.1 Motivation
 
-Reactive monitoring — escalating *after* pressure crosses a threshold — introduces inherent latency. If an agent is trending toward QUARANTINE, the operator (human or system) benefits from knowing *before* it arrives.
+Reactive monitoring — escalating *after* pressure crosses a threshold — introduces inherent latency. If an agent is trending toward BLOCK mode, the operator (human or system) benefits from knowing *before* it arrives.
 
 ### 8.2 Method
 
@@ -462,7 +474,7 @@ If the planner enters a confusion loop (high uncertainty, rising errors), pressu
 
 ### 13.3 CI/CD Agent Pipelines
 
-Autonomous CI/CD agents that run on every commit benefit from SOMA's budget management and quality tracking. A `soma.toml` configuration sets token/cost limits, and SAFE_MODE triggers automatically when the budget is exhausted — preventing a runaway agent from generating a $500 bill because it entered a retry loop during an API outage.
+Autonomous CI/CD agents that run on every commit benefit from SOMA's budget management and quality tracking. A `soma.toml` configuration sets token/cost limits, and BLOCK mode triggers automatically when the budget is exhausted — preventing a runaway agent from generating a $500 bill because it entered a retry loop during an API outage.
 
 ### 13.4 Agent-to-Agent Delegation
 

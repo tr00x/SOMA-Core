@@ -12,6 +12,10 @@ Not because we want lock-in. Because agents without oversight are dangerous, exp
 
 ---
 
+## Current Version: 0.4.11
+
+---
+
 ## Milestone 1: Foundation ✓
 
 *Shipped March 28, 2026*
@@ -74,6 +78,28 @@ SOMA shifts from progressive blocking (6 levels) to a guidance model (4 modes). 
 
 ---
 
+## Milestone 1.8: Core Polish ✓
+
+*Shipped March 2026 — v0.4.1–0.4.11*
+
+Hardening the guidance system for real-world use. False positive reduction, actionable feedback, layer-agnostic architecture.
+
+| Deliverable | Status |
+|:------------|:-------|
+| **Configurable thresholds** — guide/warn/block keys, soma.toml migration | Done |
+| **False positive reduction** — cwd-relative drift, read-context awareness | Done |
+| **`soma doctor`** — installation health check | Done |
+| **CI/ruff** — GitHub Actions lint pipeline | Done |
+| **Read-context awareness** — checks last 30 actions for prior reads | Done |
+| **Workflow severity** — suppress noise during plan/discuss/execute phases | Done |
+| **Positive feedback** — read-before-edit and clean streak recognition | Done |
+| **Actionable metrics** — context efficiency, focus, phase-aware status | Done |
+| **Directive prompts** — `[do] Read before editing` not just pattern names | Done |
+| **Layer-agnostic architecture** — patterns.py, findings.py, context.py | Done |
+| **Visibility fix** — findings shown regardless of pressure level | Done |
+
+---
+
 ## Milestone 2: Real-World Ready
 
 *Target: April 2026*
@@ -83,7 +109,7 @@ Make SOMA work seamlessly in production. No rough edges. Install, configure, for
 | Deliverable | Priority | Status |
 |:------------|:---------|:-------|
 | **PyPI publish** — `pip install soma-ai` works globally | Critical | Done |
-| **GitHub Actions CI** — tests on every push/PR | Critical | |
+| **GitHub Actions CI** — tests + lint on every push/PR | Critical | Done |
 | **Async client support** — `soma.wrap(AsyncAnthropic())` | High | |
 | **Progress tracking** — detect stuck agents, not just confused | High | |
 | **GIF/demo recording** — for README and social | High | |
@@ -122,10 +148,7 @@ SOMA stops being reactive and starts being predictive.
 |:------------|:------------|
 | **Anomaly prediction** | Predict escalation 5–10 actions before it happens from historical patterns |
 | **Automatic threshold tuning** | ML-optimized thresholds per agent, per task type |
-| **Root cause analysis** | Explain WHY in plain English: "Agent stuck in search→edit→search loop since action #42" |
-| **Agent fingerprinting** | Learn each agent's "normal" profile, detect corruption |
 | **Task-aware monitoring** | Know WHAT the agent is doing, not just HOW — drift from goal, not just from stats |
-| **Quality scoring** | Rate output quality, not just behavioral signals — did the code compile? tests pass? |
 
 ---
 

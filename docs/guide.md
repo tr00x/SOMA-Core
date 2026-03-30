@@ -22,6 +22,8 @@ You type a command
   -> Session ends: Stop saves state, updates fingerprint
 ```
 
+SOMA is always present after 3 actions. The notification module is a thin formatter -- all intelligence lives in the core modules (`patterns.py`, `findings.py`, `context.py`).
+
 ## The pressure model
 
 SOMA monitors 5 behavioral signals:
@@ -44,10 +46,10 @@ Pressure maps to response modes:
 
 | Mode | Pressure Range | What happens |
 |------|---------------|-------------|
-| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
-| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
-| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
-| BLOCK | 75–100% | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes). |
+| OBSERVE | 0-25% | Silent. Metrics collected, no intervention. |
+| GUIDE | 25-50% | Soft suggestions when patterns detected. Never blocks. |
+| WARN | 50-75% | Insistent warnings with alternatives. Never blocks. |
+| BLOCK | 75-100% | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes). |
 
 Write, Edit, Bash, and Agent are **never blocked**. Only genuinely destructive operations are stopped, and only at 75%+ pressure.
 
@@ -88,15 +90,36 @@ Instead of "drift=0.40", SOMA says:
 
 ### Task tracking
 
-SOMA infers what phase you're in (research/implement/test/debug) and tracks which files/directories you're focused on. If you drift to unrelated areas, it flags scope drift.
+SOMA infers what phase you're in (research/implement/test/debug) and tracks which files/directories you're focused on. If you drift to unrelated areas, it flags scope drift. The task tracker accepts a `cwd` parameter and `get_efficiency()` returns `context_efficiency`, `success_rate`, and `focus` metrics.
 
 ### Quality scoring
 
 Every Write/Edit gets syntax-checked (Python: py_compile, JS: node --check) and linted (Python: ruff). Session quality is graded A-F based on syntax errors, lint issues, and bash failure rate.
 
+### Pattern analysis
+
+Core pattern detection (`soma.patterns`) analyzes the last 10 actions for:
+- Edits without prior Reads (blind edits)
+- Consecutive Bash failures
+- High error rate (>30%)
+- File thrashing (same file edited 3+ times)
+- Agent spam (3+ agent spawns)
+- Research stall (7+ reads, 0 writes)
+- No user check-in (15+ mutations without asking)
+- Positive patterns: read-before-edit maintained, clean streaks
+
+Patterns are workflow-aware: agent spam and research stall are suppressed during plan/discuss phases; scope drift and no-checkin are suppressed during execute/plan.
+
+### Session context
+
+`soma.context` detects the working environment:
+- GSD workflow mode (plan, execute, discuss, fast)
+- Working directory from `CLAUDE_WORKING_DIRECTORY` env var
+- Session action count and pressure level
+
 ## Configuration
 
-All settings live in `soma.toml`:
+All settings live in `soma.toml`. Old config keys (e.g. `caution`, `degrade`, `quarantine`) auto-migrate on load.
 
 ```toml
 [hooks]
@@ -132,6 +155,7 @@ token_usage = 0.6
 soma                  # TUI dashboard (live monitoring)
 soma status           # Quick text summary
 soma setup-claude     # Install hooks into Claude Code
+soma doctor           # Check SOMA installation health (hooks, config, state)
 soma agents           # List all monitored agents
 soma replay <file>    # Replay a recorded session
 soma init             # Create soma.toml interactively

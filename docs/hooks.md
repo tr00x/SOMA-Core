@@ -21,12 +21,12 @@ All hooks are installed by `soma setup-claude` into `~/.claude/settings.json`.
 
 | Mode | Behavior |
 |------|----------|
-| OBSERVE (0–25%) | All tools allowed (silent) |
-| GUIDE (25–50%) | Soft suggestions when patterns detected. Never blocks. |
-| WARN (50–75%) | Warnings with alternatives. Never blocks. |
-| BLOCK (75–100%) | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes) |
+| OBSERVE (0-25%) | All tools allowed (silent) |
+| GUIDE (25-50%) | Soft suggestions when patterns detected. Never blocks. |
+| WARN (50-75%) | Warnings with alternatives. Never blocks. |
+| BLOCK (75-100%) | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes) |
 
-**Never blocked** (at any mode): Read, Glob, Grep, Write, Edit, Bash, Agent, Skill, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, ToolSearch, AskUserQuestion. Write/Edit/Bash/Agent are always allowed — only genuinely destructive invocations are stopped.
+**Never blocked** (at any mode): Read, Glob, Grep, Write, Edit, Bash, Agent, Skill, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, ToolSearch, AskUserQuestion. Write/Edit/Bash/Agent are always allowed -- only genuinely destructive invocations are stopped.
 
 When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p=82%)`
 
@@ -47,7 +47,7 @@ When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p
    - JS: node --check syntax
 6. Track quality (syntax errors, lint issues, bash failures)
 7. Report to stderr:
-   - Mode transitions: `SOMA: OBSERVE -> GUIDE (p=28%) — error cascade: 3 consecutive Bash failures`
+   - Mode transitions: `SOMA: OBSERVE -> GUIDE (p=28%) -- error cascade: 3 consecutive Bash failures`
    - Pressure spikes: `SOMA: pressure +15% (error_rate=0.30) after Bash`
    - Error rate: `SOMA: error_rate=40% after Bash failure`
    - Predictions: `SOMA: predicted escalation in ~5 actions (p=55%, error_streak)`
@@ -57,24 +57,28 @@ When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p
 ### Configurable features
 
 Each can be toggled in soma.toml `[hooks]`:
-- `validate_python` — syntax check
-- `validate_js` — JS syntax check
-- `lint_python` — ruff lint
-- `predict` — anomaly prediction
-- `quality` — quality tracking
-- `task_tracking` — task context
+- `validate_python` -- syntax check
+- `validate_js` -- JS syntax check
+- `lint_python` -- ruff lint
+- `predict` -- anomaly prediction
+- `quality` -- quality tracking
+- `task_tracking` -- task context
 
 ## UserPromptSubmit (Notification)
 
 **When**: Before agent starts reasoning on a new prompt.
 **Purpose**: Inject actionable SOMA feedback into agent context.
 
+The notification module (`soma.notification` or equivalent) is a thin formatter. All intelligence lives in core modules: `soma.patterns.analyze()` for pattern detection, `soma.findings.collect()` for gathering all insights, and `soma.context` for session awareness.
+
 ### Output to stdout (becomes agent context)
 
-Findings are prioritized:
+SOMA is always present after 3 actions. Findings are prioritized:
 - **Priority 0** (critical): Mode warnings (WARN/BLOCK), quality grade D/F
 - **Priority 1** (important): Predictions, patterns, scope drift, RCA
-- **Priority 2** (informational): Fingerprint divergence
+- **Priority 2** (informational): Fingerprint divergence, positive patterns
+
+Notifications use the `[do]` prefix for actionable items and `[+]` for positive observations. The current phase appears in the header.
 
 ### Verbosity levels
 
@@ -86,32 +90,43 @@ Findings are prioritized:
 
 ### Pattern detection
 
-Analyzes last 10 actions for:
-- Writes without Reads (blind mutation)
+Powered by `soma.patterns.analyze()`. Analyzes last 10 actions for:
+- Edits without prior Reads (blind edits)
 - Consecutive Bash failures
 - High error rate (>30%)
 - File thrashing (same file edited 3+ times)
+- Agent spam (3+ agent spawns)
+- Research stall (7+ reads, 0 writes)
+- No user check-in (15+ mutations without asking)
+- Positive patterns: read-before-edit, clean streaks
+
+Patterns are workflow-aware (suppressed when irrelevant to current GSD phase).
 
 ### Example outputs
 
 ```
-SOMA: p=32% #15 [u=0.20 d=0.15 e=0.10] mode=guide
-[suggest] 3 consecutive Bash failures — stop retrying, check assumptions
-[predict] escalation in ~5 actions (error_streak) — slow down
+SOMA guide p=32% #15 implement
+[do] Stop retrying -- 3 Bash failures in a row
+[do] escalation in ~5 actions (error_streak) -- stop retrying, try something different
 ```
 
 ```
-SOMA: p=65% #30 [u=0.30 d=0.40 e=0.25] mode=warn
-[warning] pressure at 65% — slow down and verify
-[quality] grade=D (2 syntax errors, 3/8 bash commands failed)
-[why] error cascade: 5 consecutive Bash failures (error_rate=35%)
+SOMA warn p=65% #30 debug
+[do] Slow down. Read->Think->Act, not Act->Fix->Retry
+[do] grade=D (2 syntax errors, 3/8 bash commands failed)
+[do] error cascade: 5 consecutive Bash failures (error_rate=35%)
+```
+
+```
+SOMA observe p=8% #22 implement
+[+] read-before-edit maintained (4 pairs)
 ```
 
 ### Silence conditions
 
 Outputs nothing when:
-- OBSERVE mode (pressure < 25%)
-- No critical or important findings
+- Fewer than 3 actions recorded
+- OBSERVE mode with no critical or important findings
 
 ## Stop
 
@@ -134,7 +149,7 @@ SOMA session end: observe (p=12%, #45)
 
 ## Statusline
 
-**Not a Claude Code hook** — runs as `soma-statusline` for the UI status bar.
+**Not a Claude Code hook** -- runs as `soma-statusline` for the UI status bar.
 
 Output: `SOMA + observe 3% · #42 · quality A`
 
