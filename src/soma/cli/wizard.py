@@ -267,8 +267,8 @@ def run_wizard() -> None:
         tomli_w.dump(config, fh)
 
     console.print(
-        f"\n[bold green]soma.toml created![/bold green] "
-        f"Run [bold cyan]`soma`[/bold cyan] to open the dashboard."
+        "\n[bold green]soma.toml created![/bold green] "
+        "Run [bold cyan]`soma`[/bold cyan] to open the dashboard."
     )
 
     # Print integration snippet

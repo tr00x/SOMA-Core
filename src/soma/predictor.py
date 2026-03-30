@@ -10,7 +10,7 @@ pressure in N actions exceeds the next escalation threshold.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

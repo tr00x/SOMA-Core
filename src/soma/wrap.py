@@ -18,7 +18,7 @@ import time
 import functools
 from typing import Any
 
-from soma.engine import SOMAEngine, ActionResult
+from soma.engine import SOMAEngine
 from soma.types import Action, Level, ResponseMode
 from soma.recorder import SessionRecorder
 

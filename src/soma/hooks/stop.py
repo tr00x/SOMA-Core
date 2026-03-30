@@ -10,8 +10,8 @@ from __future__ import annotations
 import sys
 
 from soma.hooks.common import (
-    get_engine, save_state, ACTION_LOG_PATH, PREDICTOR_PATH, TASK_TRACKER_PATH, QUALITY_PATH,
-    SESSION_ID_PATH, get_fingerprint_engine, save_fingerprint_engine, read_action_log,
+    get_engine, save_state, read_action_log,
+    get_fingerprint_engine, save_fingerprint_engine,
     _get_session_agent_id, get_quality_tracker,
 )
 
@@ -46,7 +46,6 @@ def main():
         pressure = snap['pressure']
 
         # Read action log for session stats
-        from soma.hooks.common import read_action_log
         log = read_action_log()
         errors = sum(1 for e in log if e.get("error"))
         tools_used = {}

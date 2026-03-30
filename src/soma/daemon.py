@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 import signal
-import sys
 
 from soma.engine import SOMAEngine
 from soma.inbox import process_inbox
@@ -28,9 +27,9 @@ def run_daemon(
     signal.signal(signal.SIGTERM, handle_signal)
 
     print(f"SOMA daemon started — polling every {poll_interval}s")
-    print(f"  Inbox: ~/.soma/inbox/")
-    print(f"  Commands: ~/.soma/commands/")
-    print(f"  State: ~/.soma/state.json")
+    print("  Inbox: ~/.soma/inbox/")
+    print("  Commands: ~/.soma/commands/")
+    print("  State: ~/.soma/state.json")
     print()
 
     while running:
