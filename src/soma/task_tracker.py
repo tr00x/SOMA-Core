@@ -43,12 +43,24 @@ class TaskTracker:
     - Whether the agent is drifting away from its initial focus
     """
 
-    def __init__(self, drift_window: int = 10) -> None:
+    def __init__(self, drift_window: int = 10, cwd: str = "") -> None:
         self.drift_window = drift_window
+        self.cwd = cwd
         self._all_files: list[str] = []
         self._all_tools: list[str] = []
         self._all_errors: list[bool] = []
         self._initial_focus: set[str] | None = None  # Set after first N actions
+
+    def _extract_relative_dir(self, file_path: str) -> str:
+        """Extract directory relative to cwd. If outside cwd, prefix with '!'."""
+        if self.cwd and file_path.startswith(self.cwd):
+            rel = file_path[len(self.cwd):].lstrip("/")
+            parts = rel.split("/")
+            return parts[0] if len(parts) > 1 else ""
+        elif self.cwd:
+            # Outside project — mark as external
+            return "!" + _extract_dir(file_path)
+        return _extract_dir(file_path)
 
     def record(self, tool: str, file_path: str = "", error: bool = False) -> None:
         """Record an action."""
@@ -59,7 +71,7 @@ class TaskTracker:
 
         # Set initial focus after 5 file-touching actions
         if self._initial_focus is None:
-            files_with_dirs = [_extract_dir(f) for f in self._all_files if f]
+            files_with_dirs = [self._extract_relative_dir(f) for f in self._all_files if f]
             if len(files_with_dirs) >= 5:
                 self._initial_focus = set(files_with_dirs[:5])
 
@@ -128,7 +140,7 @@ class TaskTracker:
         recent_files = self._all_files[-self.drift_window:]
         dir_counts: dict[str, int] = {}
         for f in recent_files:
-            d = _extract_dir(f)
+            d = self._extract_relative_dir(f)
             if d:
                 dir_counts[d] = dir_counts.get(d, 0) + 1
 
@@ -139,33 +151,50 @@ class TaskTracker:
         """Compute how much the agent has drifted from its initial focus.
 
         Returns (drift_score, explanation).
+        When cwd is set, moving between directories within the project is
+        penalized much less than leaving the project entirely.
         """
         if self._initial_focus is None or len(self._all_files) < 20:
             return 0.0, ""
 
         recent_dirs = set(
-            _extract_dir(f) for f in self._all_files[-self.drift_window:] if f
+            self._extract_relative_dir(f) for f in self._all_files[-self.drift_window:] if f
         )
 
         if not recent_dirs:
             return 0.0, ""
 
         overlap = recent_dirs & self._initial_focus
-        drift = 1.0 - len(overlap) / len(recent_dirs)
+        new_dirs = recent_dirs - self._initial_focus
+
+        if not new_dirs:
+            return 0.0, ""
+
+        # When cwd is set, distinguish in-project dirs from external dirs
+        if self.cwd:
+            external = {d for d in new_dirs if d.startswith("!")}
+            internal = new_dirs - external
+
+            # External dirs get full drift, internal dirs get 0.2x weight
+            external_drift = len(external) / len(recent_dirs)
+            internal_drift = len(internal) / len(recent_dirs) * 0.2
+            drift = external_drift + internal_drift
+        else:
+            drift = 1.0 - len(overlap) / len(recent_dirs)
 
         if drift < 0.5:
             return drift, ""
 
-        # Explain what changed
-        new_dirs = recent_dirs - self._initial_focus
         if new_dirs:
-            return drift, f"scope expanded to {', '.join(sorted(new_dirs)[:3])}"
+            display_dirs = sorted(d.lstrip("!") for d in new_dirs)
+            return drift, f"scope expanded to {', '.join(display_dirs[:3])}"
 
         return drift, "working in different area than initial focus"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "drift_window": self.drift_window,
+            "cwd": self.cwd,
             "all_files": self._all_files[-50:],  # Keep last 50
             "all_tools": self._all_tools[-50:],
             "all_errors": self._all_errors[-50:],
@@ -174,7 +203,7 @@ class TaskTracker:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskTracker":
-        obj = cls(drift_window=data.get("drift_window", 10))
+        obj = cls(drift_window=data.get("drift_window", 10), cwd=data.get("cwd", ""))
         obj._all_files = data.get("all_files", [])
         obj._all_tools = data.get("all_tools", [])
         obj._all_errors = data.get("all_errors", [])
