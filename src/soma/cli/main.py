@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -15,23 +14,12 @@ try:
     from importlib.metadata import version as _pkg_version
     _VERSION = _pkg_version("soma-ai")
 except Exception:
-    _VERSION = "0.3.1"
+    _VERSION = "0.4.0"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _write_command(action: str, params: dict) -> None:
-    cmd_dir = Path.home() / ".soma" / "commands"
-    cmd_dir.mkdir(parents=True, exist_ok=True)
-    ts = int(time.time() * 1000)
-    cmd_file = cmd_dir / f"{ts}.json"
-    cmd_file.write_text(
-        json.dumps({"action": action, "params": params, "id": str(ts)})
-    )
-    print(f"  Command sent: {action}")
-
 
 def _load_state() -> dict[str, Any] | None:
     state_path = Path.home() / ".soma" / "state.json"
@@ -97,20 +85,180 @@ def _cmd_agents(_args: argparse.Namespace) -> None:
         print(f"  {agent_id:<20} {level:<12} p={pressure:.2f}  actions={action_count}")
 
 
-def _cmd_quarantine(args: argparse.Namespace) -> None:
-    _write_command("force_level", {"agent_id": args.agent_id, "level": "QUARANTINE"})
-
-
-def _cmd_release(args: argparse.Namespace) -> None:
-    _write_command("force_level", {"agent_id": args.agent_id, "level": "HEALTHY"})
-
-
 def _cmd_reset(args: argparse.Namespace) -> None:
-    _write_command("reset_baseline", {"agent_id": args.agent_id})
+    """Reset an agent's baseline directly."""
+    agent_id = getattr(args, 'agent_id', None) or "claude-code"
+
+    engine_path = Path.home() / ".soma" / "engine_state.json"
+    if not engine_path.exists():
+        print("  No SOMA state found.")
+        return
+
+    try:
+        from soma.persistence import load_engine_state, save_engine_state
+        from soma.baseline import Baseline
+        from soma.types import ResponseMode
+
+        engine = load_engine_state(str(engine_path))
+        if engine is None:
+            print("  Could not load engine state.")
+            return
+
+        if agent_id not in engine._agents:
+            print(f"  Agent '{agent_id}' not found.")
+            return
+
+        agent = engine._agents[agent_id]
+        agent.baseline = Baseline()
+        agent.baseline_vector = None
+        agent.mode = ResponseMode.OBSERVE
+        agent.action_count = 0
+        save_engine_state(engine, str(engine_path))
+
+        # Also export for dashboard
+        state_path = Path.home() / ".soma" / "state.json"
+        engine.export_state(str(state_path))
+
+        # Clean session files
+        for f in ["action_log.json", "predictor.json", "quality.json", "task_tracker.json"]:
+            p = Path.home() / ".soma" / f
+            p.unlink(missing_ok=True)
+
+        print(f"  Agent '{agent_id}' reset. Baseline cleared, pressure zeroed.")
+    except Exception as e:
+        print(f"  Error: {e}")
 
 
-def _cmd_approve(args: argparse.Namespace) -> None:
-    _write_command("approve_escalation", {"agent_id": args.agent_id})
+def _cmd_stop(_args: argparse.Namespace) -> None:
+    """Disable SOMA hooks in Claude Code settings.json."""
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if not settings_path.exists():
+        print("  No Claude Code settings found.")
+        return
+
+    settings = json.loads(settings_path.read_text())
+    changed = False
+
+    # Remove SOMA hooks
+    for hook_type in list(settings.get("hooks", {}).keys()):
+        hook_list = settings["hooks"][hook_type]
+        filtered = [
+            entry for entry in hook_list
+            if not any("soma" in str(h.get("command", "")) for h in entry.get("hooks", []))
+        ]
+        if len(filtered) != len(hook_list):
+            settings["hooks"][hook_type] = filtered
+            changed = True
+        # Remove empty hook lists
+        if not settings["hooks"][hook_type]:
+            del settings["hooks"][hook_type]
+
+    # Remove empty hooks dict
+    if "hooks" in settings and not settings["hooks"]:
+        del settings["hooks"]
+
+    # Remove SOMA statusLine
+    if "statusLine" in settings:
+        cmd = settings["statusLine"].get("command", "") if isinstance(settings["statusLine"], dict) else ""
+        if "soma" in cmd:
+            del settings["statusLine"]
+            changed = True
+
+    if changed:
+        settings_path.write_text(json.dumps(settings, indent=2))
+        print("  SOMA hooks disabled. Run `soma start` to re-enable.")
+    else:
+        print("  No SOMA hooks found in settings.")
+
+
+def _cmd_start(_args: argparse.Namespace) -> None:
+    """Re-enable SOMA hooks in Claude Code settings.json."""
+    from soma.cli.setup_claude import _find_soma_hook_command, _find_statusline_command, _install_hooks, _install_statusline
+    settings_path = Path.home() / ".claude" / "settings.json"
+    hook_cmd = _find_soma_hook_command()
+    sl_cmd = _find_statusline_command()
+
+    hooks_changed = _install_hooks(settings_path, hook_cmd)
+    sl_changed = _install_statusline(settings_path, sl_cmd)
+
+    if hooks_changed or sl_changed:
+        print("  SOMA hooks enabled.")
+    else:
+        print("  SOMA hooks already active.")
+
+
+def _cmd_uninstall_claude(args: argparse.Namespace) -> None:
+    """Remove SOMA from Claude Code completely."""
+    print()
+    print("  Uninstalling SOMA from Claude Code...")
+    print()
+
+    # 1. Remove hooks (same as stop)
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+        changed = False
+
+        for hook_type in list(settings.get("hooks", {}).keys()):
+            hook_list = settings["hooks"][hook_type]
+            filtered = [
+                entry for entry in hook_list
+                if not any("soma" in str(h.get("command", "")) for h in entry.get("hooks", []))
+            ]
+            if len(filtered) != len(hook_list):
+                settings["hooks"][hook_type] = filtered
+                changed = True
+            if not settings["hooks"].get(hook_type):
+                settings["hooks"].pop(hook_type, None)
+
+        if "hooks" in settings and not settings["hooks"]:
+            del settings["hooks"]
+
+        if "statusLine" in settings:
+            cmd = settings["statusLine"].get("command", "") if isinstance(settings["statusLine"], dict) else ""
+            if "soma" in cmd:
+                del settings["statusLine"]
+                changed = True
+
+        if changed:
+            settings_path.write_text(json.dumps(settings, indent=2))
+            print("  + Removed hooks from Claude Code settings")
+        else:
+            print("  No hooks found.")
+
+    # 2. Clean ~/.soma/ state
+    soma_dir = Path.home() / ".soma"
+    if soma_dir.exists():
+        if getattr(args, 'keep_state', False):
+            print("  Keeping ~/.soma/ state (--keep-state)")
+        else:
+            import shutil
+            shutil.rmtree(soma_dir)
+            print("  + Removed ~/.soma/ state directory")
+
+    # 3. Remove SOMA section from CLAUDE.md (non-destructive)
+    claude_md = Path("CLAUDE.md")
+    if claude_md.exists():
+        content = claude_md.read_text()
+        if "## SOMA Monitoring" in content:
+            # Remove the SOMA section
+            lines = content.split("\n")
+            new_lines = []
+            skip = False
+            for line in lines:
+                if line.strip() == "## SOMA Monitoring":
+                    skip = True
+                    continue
+                if skip and line.startswith("## "):
+                    skip = False
+                if not skip:
+                    new_lines.append(line)
+            claude_md.write_text("\n".join(new_lines))
+            print("  + Removed SOMA section from CLAUDE.md")
+
+    print()
+    print("  SOMA uninstalled. Run `soma setup-claude` to reinstall.")
+    print()
 
 
 def _cmd_config(args: argparse.Namespace) -> None:
@@ -178,10 +326,10 @@ def _cmd_mode(args: argparse.Namespace) -> None:
         print()
         for name, preset in MODE_PRESETS.items():
             autonomy = preset["agents"]["claude-code"]["autonomy"]
-            quarantine = preset["thresholds"]["quarantine"]
+            warn_threshold = preset["thresholds"]["quarantine"]
             verbosity = preset["hooks"]["verbosity"]
             marker = " <--" if name == current else ""
-            print(f"  {name:<12} autonomy={autonomy}, quarantine={quarantine:.0%}, verbosity={verbosity}{marker}")
+            print(f"  {name:<12} autonomy={autonomy}, pressure_limit={warn_threshold:.0%}, verbosity={verbosity}{marker}")
         print()
         print("  Usage: soma mode <strict|relaxed|autonomous>")
         return
@@ -195,33 +343,10 @@ def _cmd_mode(args: argparse.Namespace) -> None:
 
     preset = MODE_PRESETS[mode_name]
     autonomy = preset["agents"]["claude-code"]["autonomy"]
-    quarantine = preset["thresholds"]["quarantine"]
+    warn_threshold = preset["thresholds"]["quarantine"]
     print(f"  Autonomy: {autonomy}")
-    print(f"  Quarantine threshold: {quarantine:.0%}")
+    print(f"  Pressure limit: {warn_threshold:.0%}")
     print(f"  Verbosity: {preset['hooks']['verbosity']}")
-
-
-def _cmd_export(args: argparse.Namespace) -> None:
-    import json as _json
-
-    state = _load_state()
-    if state is None:
-        print("No active session — nothing to export.")
-        return
-
-    out_path = Path(args.path) if args.path else Path("soma_export.json")
-    out_path.write_text(_json.dumps(state, indent=2))
-    print(f"  Session exported to {out_path}")
-
-
-def _cmd_daemon(_args: argparse.Namespace) -> None:
-    print("SOMA daemon running. Ctrl+C to stop.")
-    try:
-        from soma.daemon import run_daemon
-        run_daemon()
-    except ImportError:
-        print("soma.daemon not available.")
-        sys.exit(1)
 
 
 def _cmd_tui() -> None:
@@ -248,7 +373,7 @@ def _cmd_tui() -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="soma",
-        description="SOMA — Behavioral monitoring and directive control for AI agents",
+        description="SOMA — Behavioral monitoring and guidance for AI agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Agent monitoring:\n"
@@ -256,24 +381,22 @@ def _build_parser() -> argparse.ArgumentParser:
             "  soma status                     Show current monitoring status\n"
             "\n"
             "Agent control:\n"
-            "  soma quarantine <agent-id>      Force agent to QUARANTINE\n"
-            "  soma release <agent-id>         Release agent from quarantine\n"
-            "  soma reset <agent-id>           Reset agent baseline\n"
-            "  soma approve <agent-id>         Approve pending escalation\n"
+            "  soma reset [agent-id]           Reset agent baseline (default: claude-code)\n"
+            "  soma stop                       Disable SOMA hooks in Claude Code\n"
+            "  soma start                      Re-enable SOMA hooks in Claude Code\n"
             "\n"
             "Configuration:\n"
             "  soma config show                Print current soma.toml\n"
             "  soma config set <key> <value>   Update a config value\n"
-            "  soma mode [name]                   Switch operating mode\n"
+            "  soma mode [name]                Switch operating mode\n"
             "  soma init                       Run the interactive setup wizard\n"
             "\n"
             "Session:\n"
-            "  soma export [--path FILE]       Export session to JSON\n"
             "  soma replay <file>              Replay a recorded session file\n"
             "\n"
             "System:\n"
-            "  soma daemon                     Run SOMA daemon in foreground\n"
             "  soma setup-claude               Set up SOMA for Claude Code projects\n"
+            "  soma uninstall-claude            Remove SOMA from Claude Code\n"
             "  soma version                    Print version and exit\n"
         ),
     )
@@ -294,17 +417,16 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("status", help="Show current agent monitoring status")
 
     # ---- Agent control ----
-    q = subparsers.add_parser("quarantine", help="Force an agent to QUARANTINE level")
-    q.add_argument("agent_id", metavar="agent-id", help="Agent ID to quarantine")
-
-    r = subparsers.add_parser("release", help="Release an agent from quarantine (set to HEALTHY)")
-    r.add_argument("agent_id", metavar="agent-id", help="Agent ID to release")
-
     rst = subparsers.add_parser("reset", help="Reset an agent's pressure baseline")
-    rst.add_argument("agent_id", metavar="agent-id", help="Agent ID to reset")
+    rst.add_argument("agent_id", metavar="agent-id", nargs="?", default="claude-code",
+                     help="Agent ID to reset (default: claude-code)")
 
-    ap = subparsers.add_parser("approve", help="Approve a pending escalation for an agent")
-    ap.add_argument("agent_id", metavar="agent-id", help="Agent ID to approve")
+    subparsers.add_parser("stop", help="Disable SOMA hooks in Claude Code settings")
+    subparsers.add_parser("start", help="Re-enable SOMA hooks in Claude Code settings")
+
+    uninstall_p = subparsers.add_parser("uninstall-claude", help="Remove SOMA from Claude Code completely")
+    uninstall_p.add_argument("--keep-state", action="store_true", dest="keep_state",
+                             help="Keep ~/.soma/ state directory")
 
     # ---- Config ----
     config_parser = subparsers.add_parser("config", help="View or modify soma.toml configuration")
@@ -320,17 +442,10 @@ def _build_parser() -> argparse.ArgumentParser:
                              help="Mode: strict, relaxed, or autonomous")
 
     # ---- Session ----
-    export_p = subparsers.add_parser("export", help="Export current session state to JSON")
-    export_p.add_argument(
-        "--path", metavar="FILE", default=None,
-        help="Output file path (default: soma_export.json)",
-    )
-
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded session file")
     replay_parser.add_argument("file", help="Path to the session recording file (JSON)")
 
     # ---- System ----
-    subparsers.add_parser("daemon", help="Run SOMA daemon in foreground (Ctrl+C to stop)")
     subparsers.add_parser("version", help="Print the SOMA version and exit")
 
     return parser
@@ -360,14 +475,12 @@ def main() -> None:
         "init": _cmd_init,
         "status": _cmd_status,
         "agents": _cmd_agents,
-        "quarantine": _cmd_quarantine,
-        "release": _cmd_release,
         "reset": _cmd_reset,
-        "approve": _cmd_approve,
+        "stop": _cmd_stop,
+        "start": _cmd_start,
+        "uninstall-claude": _cmd_uninstall_claude,
         "mode": _cmd_mode,
-        "export": _cmd_export,
         "replay": _cmd_replay,
-        "daemon": _cmd_daemon,
         "setup-claude": lambda _: __import__(
             "soma.cli.setup_claude", fromlist=["run_setup_claude"]
         ).run_setup_claude(),
