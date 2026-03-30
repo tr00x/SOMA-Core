@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.9] — 2026-03-30
+
+### Changed
+- **Directive prompt injections**: `[do] Read before editing` replaces `[pattern] 3 blind edits` — agent sees what to DO, not just what went wrong
+- **Phase-aware header**: `SOMA: #42 [implement] ctx=73% focused` shows current work phase
+- **WARN/BLOCK messages** include specific recovery guidance
+- Positive `[✓]` feedback now visible at low pressure (was suppressed by early return)
+
+### Fixed
+- `_collect_findings` used stale level names (DEGRADE/QUARANTINE) — WARN findings never shown
+- RCA priority checked "HEALTHY" instead of "OBSERVE"
+- Notification `ctx=0%` on cold start — now requires 10+ actions
+- `detect_workflow_mode` fallback to `os.getcwd()` when env var missing
+- Statusline metrics guard: requires 10+ actions
+
+### Added
+- Tests for `_collect_findings` with current level names
+- Engine threshold propagation tests
+- Config migration end-to-end tests (load_config → engine)
+
 ## [0.4.8] — 2026-03-30
 
 ### Added
