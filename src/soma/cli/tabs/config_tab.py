@@ -121,10 +121,9 @@ class ConfigTab(TabPane):
                 # ── Thresholds ───────────────────────────────
                 yield Static("[bold]Thresholds[/bold]", classes="config-section-title")
                 for key, default in [
-                    ("caution",    0.25),
-                    ("degrade",    0.50),
-                    ("quarantine", 0.75),
-                    ("restart",    0.90),
+                    ("guide",  0.25),
+                    ("warn",   0.50),
+                    ("block",  0.75),
                 ]:
                     with Horizontal(classes="config-row"):
                         yield Static(f"thresholds.{key}:", classes="config-label")
@@ -229,7 +228,7 @@ class ConfigTab(TabPane):
 
     def _read_thresholds_from_inputs(self) -> dict[str, float]:
         th: dict[str, float] = {}
-        for key in ("caution", "degrade", "quarantine", "restart"):
+        for key in ("guide", "warn", "block"):
             try:
                 val = float(self.query_one(f"#th-{key}", Input).value)
                 th[key] = val
@@ -264,7 +263,7 @@ class ConfigTab(TabPane):
 
         # Thresholds
         th: dict[str, float] = {}
-        for key in ("caution", "degrade", "quarantine", "restart"):
+        for key in ("guide", "warn", "block"):
             try:
                 th[key] = float(self.query_one(f"#th-{key}", Input).value)
             except Exception:

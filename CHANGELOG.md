@@ -15,6 +15,10 @@ Multi-agent core hardening: concurrent safety, agent lifecycle, learning validat
 - Persistence race condition: concurrent saves no longer corrupt state file
 - Lock held across full write cycle (mkstemp → fsync → rename)
 - Windows compatibility: `fcntl` import guarded, graceful fallback
+- `evict_stale_agents` now cleans graph edges (was leaking `_edges`/`_out_edges`)
+- `ResponseMode.RESTART`/`SAFE_MODE` mapped to `BLOCK` (was 4/5, caused comparison bugs)
+- Stale level names in wizard presets, config tab, testing.py, rca.py
+- `wrap.py` docstring referenced `Level.HEALTHY` → `ResponseMode.OBSERVE`
 
 ## [0.4.11] — 2026-03-30
 

@@ -123,7 +123,7 @@ class WrappedClient:
                     keep = max(1, int(len(messages) * 0.50))
                     kwargs["messages"] = messages[-keep:]
                     # Can't block tools via API, but we truncate more aggressively
-                elif self._pending_context_action in ("quarantine", "restart", "safe_mode"):
+                elif self._pending_context_action in ("block_destructive", "quarantine", "restart", "safe_mode"):
                     # Keep only system message if present
                     kwargs["messages"] = [m for m in messages if m.get("role") == "system"][:1] or messages[-1:]
                 self._pending_context_action = "pass"

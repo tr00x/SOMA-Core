@@ -14,13 +14,13 @@ class ResponseMode(Enum):
     WARN = 2      # p=50-75%: insistent warnings
     BLOCK = 3     # p=75-100%: block destructive ops only
 
-    # Legacy aliases — will be removed in 0.5.0
-    HEALTHY = 0
-    CAUTION = 1
-    DEGRADE = 2
-    QUARANTINE = 3
-    RESTART = 4
-    SAFE_MODE = 5
+    # Legacy aliases — map old names to new values. Remove in 0.5.0.
+    HEALTHY = 0       # → OBSERVE
+    CAUTION = 1       # → GUIDE
+    DEGRADE = 2       # → WARN
+    QUARANTINE = 3    # → BLOCK
+    RESTART = 3       # → BLOCK (restart removed, map to highest)
+    SAFE_MODE = 3     # → BLOCK (safe_mode removed, map to highest)
 
     def __lt__(self, other: ResponseMode) -> bool:
         if not isinstance(other, ResponseMode):

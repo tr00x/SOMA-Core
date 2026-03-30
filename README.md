@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/v/soma-ai?style=for-the-badge&color=blue&label=PyPI" alt="PyPI" /></a>&nbsp;
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/pyversions/soma-ai?style=for-the-badge" alt="Python" /></a>&nbsp;
   <a href="https://github.com/tr00x/SOMA-Core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tr00x/SOMA-Core?style=for-the-badge" alt="License" /></a>&nbsp;
-  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-565%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
+  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-568%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -427,7 +427,7 @@ No neural networks. No black boxes. Every formula is documented and tested.
 <tr>
 <td>
 
-**565 tests. 0 failures. 0.70 seconds.**
+**568 tests. 0 failures. 0.70 seconds.**
 
 Every formula, threshold, edge case, and integration path is covered.
 
