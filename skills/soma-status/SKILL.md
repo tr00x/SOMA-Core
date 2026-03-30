@@ -19,7 +19,7 @@ Show the current SOMA monitoring status with actionable insights.
 3. Present the status in this format:
 
 **SOMA Status:**
-- **Level:** {level} | **Pressure:** {pressure}%
+- **Mode:** {mode} | **Pressure:** {pressure}%
 - **Actions:** {action_count} this session
 - **Quality:** grade {grade} {issues if any}
 - **Budget:** {health}% remaining
@@ -35,7 +35,7 @@ Show the current SOMA monitoring status with actionable insights.
    - If pressure > 30%: explain what's driving it (highest vital) and suggest action
    - If quality grade < C: list the issues and what to fix
    - If budget < 50%: warn about remaining budget
-   - If level is CAUTION+: explain what SOMA will do at next threshold
+   - If mode is GUIDE+: explain what SOMA will do at next threshold
    - If everything is clean: say "All systems nominal" and move on
 
 5. If the user hasn't used SOMA before (no state file), explain briefly:
