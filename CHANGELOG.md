@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.10] — 2026-03-30
+
+### Fixed
+- **SOMA was invisible** — silent mode at p<10% and suppression at p<25% meant agent never saw SOMA output
+- Grace period reduced to 3 actions (was: full silence below 10% pressure)
+- Findings always collected and shown when present, regardless of pressure
+- Periodic header every 15 actions when no findings — agent knows SOMA is present
+- Positive feedback thresholds lowered: 3 read-edit pairs (was 5), 10 clean actions (was 15)
+
 ## [0.4.9] — 2026-03-30
 
 ### Changed
