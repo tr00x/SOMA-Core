@@ -21,12 +21,13 @@ Present this reference:
 |---------|-------------|
 | `/soma:status` | Live monitoring status — pressure, quality, vitals, budget |
 | `/soma:config` | Settings — modes, thresholds, budget, validation toggles |
-| `/soma:config mode strict` | Strict mode — low thresholds, all validation, verbose |
+| `/soma:config mode strict` | Strict mode — tight thresholds, all validation, verbose |
 | `/soma:config mode relaxed` | Relaxed mode (default) — balanced monitoring |
 | `/soma:config mode autonomous` | Autonomous — minimal monitoring for trusted runs |
-| `/soma:control quarantine` | Force agent to quarantine (blocks tool calls) |
-| `/soma:control release` | Release agent from quarantine |
+| `/soma:control stop` | Pause SOMA monitoring |
+| `/soma:control start` | Resume SOMA monitoring |
 | `/soma:control reset` | Reset behavioral baseline |
+| `/soma:control uninstall-claude` | Remove SOMA hooks from Claude Code |
 | `/soma:help` | This help page |
 
 ### Terminal Commands
@@ -38,7 +39,10 @@ Present this reference:
 | `soma mode <name>` | Switch operating mode |
 | `soma agents` | List monitored agents |
 | `soma config show` | Print current soma.toml |
-| `soma export` | Export session state to JSON |
+| `soma stop` | Pause monitoring |
+| `soma start` | Resume monitoring |
+| `soma reset [agent-id]` | Reset behavioral baseline |
+| `soma uninstall-claude` | Remove Claude Code hooks |
 
 ### How SOMA Works
 
@@ -50,9 +54,11 @@ SOMA monitors every tool call Claude makes. It tracks 5 signals:
 - **Cost** — token/dollar spend rate
 - **Token usage** — cumulative consumption
 
-These combine into a **pressure** score (0-100%). As pressure rises, SOMA escalates through levels:
+These combine into a **pressure** score (0-100%). As pressure rises, SOMA transitions through modes:
 
-**HEALTHY** (0-24%) -> **CAUTION** (25%) -> **DEGRADE** (50%) -> **QUARANTINE** (75%) -> **RESTART** (90%)
+**OBSERVE** (0-24%) -> **GUIDE** (25%) -> **WARN** (50%) -> **BLOCK** (75%)
+
+Write, Edit, Bash, and Agent tools are never blocked. Only destructive operations (rm -rf, git push --force, .env access) are blocked at BLOCK level (75%+).
 
 The status line at the bottom of Claude Code shows pressure in real time.
 
