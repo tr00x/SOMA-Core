@@ -275,8 +275,19 @@ def main():
         verbosity = hook_config.get("verbosity", "normal")
 
         # ── Load action log ──
-        # Stop hook cleans up between sessions, no stale detection needed here
         action_log = read_action_log()
+
+        # ── Stale session detection ──
+        # If the last action is older than 30 minutes, this is a new session.
+        # Clean task tracker to prevent false scope drift from previous work.
+        if action_log:
+            last_ts = action_log[-1].get("ts", 0)
+            if last_ts and (time.time() - last_ts) > 1800:
+                try:
+                    from soma.hooks.common import TASK_TRACKER_PATH
+                    TASK_TRACKER_PATH.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
         # ── Collect all findings ──
         findings = _collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
@@ -285,7 +296,8 @@ def main():
         has_critical = any(p == 0 for p, _ in findings)
         has_important = any(p <= 1 for p, _ in findings)
 
-        if level_name in ("OBSERVE", "HEALTHY", "GUIDE", "CAUTION") and pressure < 0.15 and not has_critical and not has_important:
+        # In OBSERVE mode with low pressure, only show if critical findings
+        if level_name in ("OBSERVE", "HEALTHY") and pressure < 0.25 and not has_critical:
             return
 
         # ── Build output based on verbosity ──
