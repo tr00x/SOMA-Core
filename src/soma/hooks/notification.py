@@ -62,8 +62,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
     if blind_edits >= 3:
         files_hint = f" ({', '.join(dict.fromkeys(blind_files[:3]))})" if blind_files else ""
         tips.append(
-            f"[pattern] {blind_edits} blind edits{files_hint} — "
-            f"Read the target file first to understand current state"
+            f"[do] Read before editing{files_hint} — "
+            f"you made {blind_edits} edits to files you haven't read"
         )
 
     # Pattern 2: Consecutive Bash failures
@@ -79,9 +79,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
             continue
     if consecutive_bash_errors >= 2:
         tips.append(
-            f"[pattern] {consecutive_bash_errors} consecutive Bash failures — "
-            f"STOP retrying. Read the error output, check your assumptions, "
-            f"try a different approach"
+            f"[do] Stop retrying — {consecutive_bash_errors} Bash failures in a row. "
+            f"Read the error, check assumptions, try a different approach"
         )
 
     # Pattern 3: High error rate
@@ -97,8 +96,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
                     error_tools[t] = error_tools.get(t, 0) + 1
             worst_tool = max(error_tools, key=error_tools.get) if error_tools else "?"
             tips.append(
-                f"[pattern] {error_count}/{len(recent)} recent actions failed "
-                f"(mostly {worst_tool}) — pause and rethink your approach"
+                f"[do] Pause and rethink — {error_count}/{len(recent)} actions failed "
+                f"(mostly {worst_tool}). Change approach, don't repeat"
             )
 
     # Pattern 4: Thrashing same file
@@ -115,8 +114,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
                 fname, count = thrashed[0]
                 short = fname.rsplit("/", 1)[-1] if "/" in fname else fname
                 tips.append(
-                    f"[pattern] edited {short} {count}x — "
-                    f"Read the file, plan ALL changes, then make ONE edit"
+                    f"[do] Collect changes for {short} — "
+                    f"you've edited it {count}x. Read it, plan all changes, one edit"
                 )
 
     # Pattern 5: Agent/subagent spam — lots of Agent calls without progress
@@ -125,8 +124,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
         agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
         if agent_calls >= 3:
             tips.append(
-                f"[pattern] {agent_calls} Agent calls in {len(recent)} actions — "
-                f"are subagents producing results? Consider doing it directly"
+                f"[do] Check agent results — {agent_calls} spawned in {len(recent)} actions. "
+                f"Are they producing? Consider doing it directly"
             )
 
     # Pattern 6: Read-only stall (research paralysis)
@@ -138,8 +137,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
             writes = sum(1 for e in recent if e["tool"] in ("Write", "Edit"))
             if reads >= 7 and writes == 0:
                 tips.append(
-                    f"[pattern] {reads} reads, 0 writes in last {len(recent)} actions — "
-                    f"you may be stuck researching. Start implementing or ask the user"
+                    f"[do] Start implementing — {reads} reads, 0 writes. "
+                    f"You have enough context. Write code or ask the user"
                 )
 
     # Pattern 7: Long sequence without user interaction
@@ -152,8 +151,8 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
             edits = sum(1 for e in last_30 if e["tool"] in ("Write", "Edit", "Bash"))
             if user_interactions == 0 and edits >= 15:
                 tips.append(
-                    f"[pattern] {edits} mutations in 30 actions with no user check-in — "
-                    f"verify you're still on track before continuing"
+                    f"[do] Check in with user — {edits} mutations without asking. "
+                    f"Verify you're on track before continuing"
                 )
 
     # ── Positive feedback (only if no negative tips) ──
@@ -197,12 +196,13 @@ def _collect_findings(
     # Level status (priority 0 at elevated levels)
     if level_name == "WARN":
         findings.append((0,
-            "[status] WARN — pressure elevated. Slow down, verify each step"
+            f"[⚡ WARN p={pressure:.0%}] Slow down. Verify each step before proceeding. "
+            f"Read→Think→Act, not Act→Fix→Retry"
         ))
     elif level_name == "BLOCK":
         findings.append((0,
-            "[status] BLOCK — destructive operations blocked. "
-            "Normal Write/Edit/Bash/Agent still allowed"
+            f"[🚨 BLOCK p={pressure:.0%}] Destructive ops blocked (rm -rf, git push -f, .env writes). "
+            f"Normal Read/Write/Edit/Bash/Agent still allowed"
         ))
 
     # Quality (priority 0 if bad)
@@ -268,8 +268,8 @@ def _collect_findings(
             ctx = tracker.get_context()
             if ctx.scope_drift >= 0.7 and ctx.drift_explanation:
                 findings.append((1,
-                    f"[scope] {ctx.drift_explanation} — "
-                    f"is this intentional? If not, refocus on the original task"
+                    f"[do] Refocus — {ctx.drift_explanation}. "
+                    f"Finish current task before expanding scope"
                 ))
             elif ctx.scope_drift >= 0.5 and ctx.drift_explanation:
                 findings.append((2, f"[scope] {ctx.drift_explanation}"))
@@ -357,42 +357,51 @@ def main():
             if not has_critical and not has_positive:
                 return
 
-        # ── Build output based on verbosity ──
+        # ── Build output ──
         lines = []
 
-        # Status line — actionable metrics when healthy, raw vitals when stressed
+        # ── Header: context-aware status line ──
         u = vitals.get("uncertainty", 0)
         d = vitals.get("drift", 0)
         e = vitals.get("error_rate", 0)
-        if pressure < 0.25 and actions >= 10:
-            try:
-                from soma.hooks.common import get_task_tracker
-                tracker = get_task_tracker()
+
+        # Detect phase and quality for header
+        phase_str = ""
+        quality_str = ""
+        try:
+            from soma.hooks.common import get_task_tracker
+            tracker = get_task_tracker()
+            ctx = tracker.get_context()
+            if ctx.phase != "unknown":
+                phase_str = f" [{ctx.phase}]"
+            if actions >= 10:
                 m = tracker.get_efficiency()
                 if m and "context_efficiency" in m:
                     ctx_pct = int(m["context_efficiency"] * 100)
                     focus_val = m.get("focus", 1.0)
                     focus_label = "focused" if focus_val >= 0.7 else "drifting" if focus_val < 0.4 else "ok"
-                    lines.append(f"SOMA: #{actions} ctx={ctx_pct}% focus={focus_label}")
-                else:
-                    lines.append(f"SOMA: p={pressure:.0%} #{actions}")
-            except Exception:
-                lines.append(f"SOMA: p={pressure:.0%} #{actions}")
-        else:
-            lines.append(f"SOMA: p={pressure:.0%} #{actions} [u={u:.2f} d={d:.2f} e={e:.2f}]")
+                    quality_str = f" ctx={ctx_pct}% {focus_label}"
+        except Exception:
+            pass
 
-        # Sort findings by priority
+        if pressure < 0.25:
+            lines.append(f"SOMA: #{actions}{phase_str}{quality_str}")
+        else:
+            lines.append(
+                f"SOMA: p={pressure:.0%} #{actions}{phase_str} "
+                f"[u={u:.2f} d={d:.2f} e={e:.2f}]"
+            )
+
+        # ── Findings by verbosity ──
         findings.sort(key=lambda x: x[0])
 
         if verbosity == "minimal":
-            # Only critical findings (1 extra line max)
             for p, msg in findings:
                 if p == 0:
                     lines.append(msg)
-                    break  # Only 1
+                    break
 
         elif verbosity == "normal":
-            # Critical + top 2 important (3 extra lines max)
             count = 0
             for p, msg in findings:
                 if p <= 1 and count < 3:
@@ -400,7 +409,6 @@ def main():
                     count += 1
 
         else:  # verbose
-            # Everything (up to 6 extra lines)
             for p, msg in findings[:6]:
                 lines.append(msg)
 

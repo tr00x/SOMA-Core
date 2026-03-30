@@ -16,7 +16,7 @@ class TestReadContextAwareness:
         ]
         tips = _analyze_patterns(log)
         assert not any("edit" in t.lower() and "without" in t.lower() for t in tips)
-        assert not any("blind" in t.lower() for t in tips)
+        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
 
     def test_edit_without_read_warns(self):
         """Editing files never Read SHOULD warn."""
@@ -26,7 +26,7 @@ class TestReadContextAwareness:
             {"tool": "Edit", "error": False, "file": "/project/src/third.py", "ts": 3},
         ]
         tips = _analyze_patterns(log)
-        assert any("blind" in t.lower() or ("edit" in t.lower() and "without" in t.lower()) for t in tips)
+        assert any("[do]" in t.lower() and "read" in t.lower() for t in tips)
 
     def test_read_directory_covers_files(self):
         """Reading files in a directory covers edits to other files in same dir."""
@@ -38,7 +38,7 @@ class TestReadContextAwareness:
             {"tool": "Edit", "error": False, "file": "/project/src/auth/types.py", "ts": 5},
         ]
         tips = _analyze_patterns(log)
-        assert not any("blind" in t.lower() for t in tips)
+        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
 
     def test_write_new_file_no_warning(self):
         """Write (creating new files) should never trigger 'edit without read'."""
@@ -48,7 +48,7 @@ class TestReadContextAwareness:
             {"tool": "Write", "error": False, "file": "/project/third.py", "ts": 3},
         ]
         tips = _analyze_patterns(log)
-        assert not any("blind" in t.lower() for t in tips)
+        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)
 
 class TestWorkflowSeverity:
     def test_agent_spam_suppressed_in_planning(self):
@@ -184,24 +184,22 @@ class TestCollectFindings:
 
     def test_warn_level_produces_status_finding(self):
         findings = _collect_findings([], {}, 0.55, "WARN", 50, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "[status]" in m]
+        status = [m for _, m in findings if "WARN" in m]
         assert len(status) == 1
-        assert "WARN" in status[0]
 
     def test_block_level_produces_status_finding(self):
         findings = _collect_findings([], {}, 0.80, "BLOCK", 100, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "[status]" in m]
+        status = [m for _, m in findings if "BLOCK" in m]
         assert len(status) == 1
-        assert "BLOCK" in status[0]
 
     def test_observe_no_status_finding(self):
         findings = _collect_findings([], {}, 0.10, "OBSERVE", 20, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "[status]" in m]
+        status = [m for _, m in findings if "WARN" in m or "BLOCK" in m]
         assert len(status) == 0
 
     def test_guide_no_status_finding(self):
         findings = _collect_findings([], {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "[status]" in m]
+        status = [m for _, m in findings if "WARN" in m or "BLOCK" in m]
         assert len(status) == 0
 
     def test_positive_pattern_in_findings(self):
@@ -228,4 +226,4 @@ class TestExistingPatterns:
             {"tool": "Edit", "error": False, "file": "/project/src/auth.py", "ts": 5},
         ]
         tips = _analyze_patterns(log)
-        assert not any("blind" in t.lower() for t in tips)
+        assert not any("[do]" in t.lower() and "read before" in t.lower() for t in tips)

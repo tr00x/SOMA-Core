@@ -1100,7 +1100,7 @@ class TestPatternAnalysis:
         ]
         tips = _analyze_patterns(log)
         assert len(tips) >= 1
-        assert "blind edit" in tips[0].lower()
+        assert "[do]" in tips[0].lower()
 
     def test_writes_without_read_no_false_positive(self):
         from soma.hooks.notification import _analyze_patterns
@@ -1121,14 +1121,14 @@ class TestPatternAnalysis:
             {"tool": "Bash", "error": True, "file": "", "ts": 3},
         ]
         tips = _analyze_patterns(log)
-        assert any("Bash failures" in t for t in tips)
+        assert any("[do]" in t and "retrying" in t.lower() for t in tips)
 
     def test_high_error_rate(self):
         from soma.hooks.notification import _analyze_patterns
         log = [{"tool": "Read", "error": False, "file": "", "ts": i} for i in range(3)]
         log += [{"tool": "Bash", "error": True, "file": "", "ts": i + 3} for i in range(4)]
         tips = _analyze_patterns(log)
-        assert any("recent actions failed" in t for t in tips)
+        assert any("[do]" in t and "rethink" in t.lower() for t in tips)
 
     def test_file_thrashing(self):
         from soma.hooks.notification import _analyze_patterns
