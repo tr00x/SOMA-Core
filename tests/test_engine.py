@@ -94,6 +94,31 @@ class TestSOMAEngine:
         # Without edge, b should not be affected
         assert e.get_level("b") == ResponseMode.OBSERVE
 
+    def test_custom_thresholds_affect_mode(self):
+        """Engine with very high thresholds keeps OBSERVE longer."""
+        e = SOMAEngine(
+            budget={"tokens": 100000},
+            custom_thresholds={"guide": 0.90, "warn": 0.95, "block": 0.99},
+        )
+        e.register_agent("test")
+        # Push some errors through grace period
+        for i in range(20):
+            e.record_action("test", Action(
+                tool_name="bash", output_text="error", error=True,
+                token_count=100, cost=0.01, duration_sec=1.0, retried=True,
+            ))
+        snap = e.get_snapshot("test")
+        # With default thresholds (0.25/0.50/0.75) this would be WARN/BLOCK.
+        # With 0.90/0.95/0.99, should still be below WARN.
+        assert snap["mode"] in (ResponseMode.OBSERVE, ResponseMode.GUIDE)
+
+    def test_none_thresholds_use_defaults(self):
+        """Engine with no custom thresholds doesn't crash."""
+        e = SOMAEngine(budget={"tokens": 10000}, custom_thresholds=None)
+        e.register_agent("test")
+        snap = e.get_snapshot("test")
+        assert snap["mode"] == ResponseMode.OBSERVE
+
     def test_action_result_is_frozen(self):
         e = SOMAEngine(budget={"tokens": 10000})
         e.register_agent("a")
