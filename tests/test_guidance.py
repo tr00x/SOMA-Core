@@ -147,3 +147,19 @@ class TestConfigurableThresholds:
         thresholds = {"guide": 0.40, "warn": 0.60, "block": 0.80}
         r = evaluate(0.35, "Write", {}, [], thresholds=thresholds)
         assert r.mode == ResponseMode.OBSERVE  # 35% is below custom guide=40%
+
+
+class TestGsdActive:
+    def test_gsd_active_no_warn_on_agents(self):
+        """When GSD is active, agent spawns don't generate suggestions."""
+        action_log = [{"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)]
+        r = evaluate(0.30, "Agent", {}, action_log, gsd_active=True)
+        assert r.mode == ResponseMode.GUIDE
+        assert not any("agents spawned" in s for s in r.suggestions)
+
+    def test_gsd_inactive_warns_on_agents(self):
+        """Without GSD, many agents triggers a suggestion."""
+        action_log = [{"tool": "Agent", "error": False, "file": "", "ts": i} for i in range(5)]
+        r = evaluate(0.30, "Agent", {}, action_log, gsd_active=False)
+        assert r.mode == ResponseMode.GUIDE
+        assert any("agents spawned" in s for s in r.suggestions)
