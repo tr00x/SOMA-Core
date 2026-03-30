@@ -1,6 +1,8 @@
 """Tests for config migration — old threshold keys to new names."""
 
-from soma.cli.config_loader import migrate_config
+import tomli_w
+
+from soma.cli.config_loader import migrate_config, load_config, create_engine_from_config
 
 
 class TestConfigMigration:
@@ -35,3 +37,36 @@ class TestConfigMigration:
         result = migrate_config(config)
         assert result["weights"] == {"uncertainty": 1.2}
         assert result["budget"] == {"tokens": 100000}
+
+
+class TestMigrationEndToEnd:
+    def test_load_config_with_old_keys_returns_new(self, tmp_path):
+        """load_config auto-migrates old threshold keys."""
+        old_config = {
+            "thresholds": {"caution": 0.35, "degrade": 0.55, "quarantine": 0.75, "restart": 0.90},
+            "budget": {"tokens": 100000},
+        }
+        path = str(tmp_path / "soma.toml")
+        with open(path, "wb") as f:
+            tomli_w.dump(old_config, f)
+
+        result = load_config(path)
+        assert "guide" in result["thresholds"]
+        assert "caution" not in result["thresholds"]
+        assert "restart" not in result["thresholds"]
+        assert result["thresholds"]["guide"] == 0.35
+
+    def test_engine_from_migrated_config(self, tmp_path):
+        """Engine created from migrated config uses new threshold keys."""
+        old_config = {
+            "thresholds": {"caution": 0.35, "degrade": 0.55, "quarantine": 0.75, "restart": 0.90},
+            "budget": {"tokens": 100000},
+        }
+        path = str(tmp_path / "soma.toml")
+        with open(path, "wb") as f:
+            tomli_w.dump(old_config, f)
+
+        config = load_config(path)
+        engine = create_engine_from_config(config)
+        assert engine._custom_thresholds["guide"] == 0.35
+        assert "caution" not in engine._custom_thresholds
