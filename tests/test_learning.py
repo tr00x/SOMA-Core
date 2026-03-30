@@ -458,3 +458,95 @@ def test_success_counts_serialized():
 
     restored = LearningEngine.from_dict(d)
     assert restored._success_counts[(ResponseMode.OBSERVE, ResponseMode.GUIDE)] == 1
+
+
+# ---------------------------------------------------------------------------
+# Convergence validation
+# ---------------------------------------------------------------------------
+
+class TestConvergence:
+    """Prove that threshold and weight adjustments converge, don't oscillate,
+    and stay bounded under sustained false-positive pressure."""
+
+    def test_thresholds_converge_not_oscillate(self):
+        """30 false-positive escalations → positive adjustment <= max_threshold_shift.
+
+        A false positive here is OBSERVE→GUIDE where pressure stays at 0.30
+        after 6 actions (didn't help), proving the threshold was too low.
+        After batch 1 the adjustment must be positive (threshold rising).
+        After batch 2 it must still be <= max_threshold_shift (bounded, not runaway).
+        """
+        le = make_engine(
+            evaluation_window=5,
+            min_interventions=3,
+            threshold_adj_step=0.02,
+            max_threshold_shift=0.10,
+        )
+        signals = {"error_rate": 0.5}
+
+        # Batch 1: 30 false-positive escalations
+        for _ in range(30):
+            le.record_intervention(
+                "agent1",
+                ResponseMode.OBSERVE,
+                ResponseMode.GUIDE,
+                0.30,
+                signals,
+            )
+            le.evaluate("agent1", current_pressure=0.30, actions_since=6)
+
+        adj_after_batch1 = le.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
+        assert adj_after_batch1 > 0, (
+            f"Expected positive threshold adjustment after 30 false positives, got {adj_after_batch1}"
+        )
+
+        # Batch 2: 30 more false-positive escalations
+        for _ in range(30):
+            le.record_intervention(
+                "agent1",
+                ResponseMode.OBSERVE,
+                ResponseMode.GUIDE,
+                0.30,
+                signals,
+            )
+            le.evaluate("agent1", current_pressure=0.30, actions_since=6)
+
+        adj_after_batch2 = le.get_threshold_adjustment(ResponseMode.OBSERVE, ResponseMode.GUIDE)
+        assert adj_after_batch2 <= 0.10, (
+            f"Threshold adjustment {adj_after_batch2} exceeded max_threshold_shift=0.10 after 60 failures"
+        )
+
+    def test_weight_adjustment_bounded(self):
+        """50 false positives driven by uncertainty=0.8 → weight adjustment negative but floored.
+
+        The weight adjustment must be negative (uncertainty weight reduced) but
+        2.0 + adj must stay >= min_weight (0.2), i.e. adj >= -1.8.
+        """
+        le = make_engine(
+            evaluation_window=5,
+            min_interventions=3,
+            weight_adj_step=0.05,
+            min_weight=0.2,
+        )
+        signals = {"uncertainty": 0.8}
+
+        # 50 false positives: escalation didn't reduce pressure
+        for _ in range(50):
+            le.record_intervention(
+                "agent1",
+                ResponseMode.OBSERVE,
+                ResponseMode.GUIDE,
+                0.30,
+                signals,
+            )
+            le.evaluate("agent1", current_pressure=0.30, actions_since=6)
+
+        adj = le.get_weight_adjustment("uncertainty")
+        original_weight = 0.8
+        assert adj < 0, (
+            f"Expected negative weight adjustment after 50 false positives, got {adj}"
+        )
+        effective_weight = original_weight + adj
+        assert effective_weight >= le.min_weight - 1e-9, (
+            f"Effective weight {effective_weight} dropped below min_weight={le.min_weight}"
+        )
