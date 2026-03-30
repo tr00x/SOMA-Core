@@ -15,7 +15,6 @@ Output examples:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 MODE_STYLE = {
     "OBSERVE":  ("✦", "observe"),

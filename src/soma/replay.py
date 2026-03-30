@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from soma.engine import SOMAEngine, ActionResult
 from soma.recorder import SessionRecorder

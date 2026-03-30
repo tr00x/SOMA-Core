@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from soma.types import Action, Level, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig, DriftMode
+from soma.types import Action, Level, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig
 from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
