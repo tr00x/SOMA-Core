@@ -18,8 +18,8 @@ UserPromptSubmit ──► SOMA injects behavioral feedback into agent context
 Agent reasons (with SOMA's feedback visible)
     │
     ▼
-PreToolUse ────────► SOMA checks: is this tool allowed at current pressure?
-    │                 (blocks Write without Read, blocks Bash at DEGRADE+)
+PreToolUse ────────► SOMA evaluates guidance: observe, suggest, warn, or block
+    │                 (only blocks destructive ops at 75%+ pressure)
     ▼
 Tool executes
     │
@@ -39,7 +39,7 @@ Stop ──────────────► SOMA saves state, updates fin
 | Hook | When | What It Does |
 |:-----|:-----|:------------|
 | **UserPromptSubmit** | Before agent starts thinking | Injects: pressure %, signal values, pattern warnings, predictions, quality grade, scope drift, RCA diagnostics |
-| **PreToolUse** | Before every tool call | Checks escalation level. Blocks dangerous tools if pressure is high. Never blocks Read/Grep/Glob. |
+| **PreToolUse** | Before every tool call | Evaluates guidance mode. Blocks only destructive ops (rm -rf, git push --force, .env writes) at 75%+ pressure. Never blocks Read/Grep/Glob/Write/Edit/Bash/Agent as tool categories. |
 | **PostToolUse** | After every tool call | Records the action. Validates written code (syntax + lint). Updates pressure, predictions, quality. Reports level changes. |
 | **Stop** | Session ends | Saves engine state for next session. Updates agent fingerprint. Cleans session files. Prints summary. |
 
@@ -49,7 +49,7 @@ Stop ──────────────► SOMA saves state, updates fin
 
 This is the real output SOMA injects into the agent's context before every reasoning step.
 
-### Normal operation (HEALTHY, low pressure)
+### Normal operation (OBSERVE, low pressure)
 
 ```
 SOMA: p=9% #42 [u=0.03 d=0.12 e=0.00]
@@ -70,33 +70,34 @@ The agent sees specific, actionable instructions. Not "pressure is elevated" —
 ### When things go wrong
 
 ```
-SOMA: p=35% #89 [u=0.15 d=0.40 e=0.20]
-[pattern] 4 consecutive Bash failures — STOP retrying, try a different approach
+SOMA: p=35% #89 [u=0.15 d=0.40 e=0.20] mode=guide
+[suggest] 4 consecutive Bash failures — check assumptions before retrying
 [predict] escalation in ~5 actions (error_streak) — stop retrying the failing approach
 [quality] grade=D (2 syntax errors, 3/8 bash commands failed)
 ```
 
-The agent receives three separate warnings. Pressure is rising. If it doesn't change behavior, DEGRADE is ~5 actions away.
+The agent receives three separate messages. Pressure is rising. If it doesn't change behavior, WARN mode is ~5 actions away.
 
-### At elevated levels
+### At elevated pressure
 
 ```
-SOMA: p=55% #112 [u=0.30 d=0.45 e=0.35]
-[status] DEGRADED — Bash/Agent blocked. Focus on reading and planning. Fix the root cause before acting
+SOMA: p=55% #112 [u=0.30 d=0.45 e=0.35] mode=warn
+[warning] pressure at 55% — slow down and verify
 [why] error cascade: 5 consecutive Bash failures (error_rate=35%)
 [quality] grade=F (4 syntax errors, 5/10 bash commands failed)
 ```
 
-Bash is now blocked. The agent can only Read, Grep, Glob, Edit (with prior Read). It's forced to slow down and think.
+All tools are still available. But the agent receives insistent warnings. SOMA is loudly telling it to slow down.
 
-### At quarantine
+### At BLOCK mode
 
 ```
-SOMA: p=78% #130
-[status] QUARANTINE — read-only mode. Stop all mutations. Read the relevant code, understand what went wrong, then explain to the user what happened and ask for guidance
+SOMA: p=82% #130 mode=block
+[warning] pressure at 82% — only destructive ops blocked
+[why] error cascade: 7 consecutive Bash failures (error_rate=45%)
 ```
 
-The agent is restricted to read-only. The only way out is for pressure to drop (by reading and understanding) or for the user to manually release via `/soma:control release`.
+The agent can still Read, Write, Edit, Bash, and use Agent. Only genuinely destructive operations (rm -rf, git push --force, .env writes) are blocked. The agent is urged to focus on safe, reversible actions. Pressure drop comes from changing behavior, not from being locked out.
 
 ---
 
@@ -138,22 +139,22 @@ And the error feeds directly into pressure computation. Write broken code → pr
 Always visible at the bottom of Claude Code:
 
 ```
-SOMA + healthy  3% · #42 · quality A
+SOMA + observe  3% · #42 · quality A
 ```
 
 | Component | Meaning |
 |:----------|:--------|
 | `SOMA` | System is active |
-| `+ healthy` | Current escalation level |
+| `+ observe` | Current response mode |
 | `3%` | Aggregate pressure |
 | `#42` | Actions this session |
 | `quality A` | Code quality grade (A-F) |
 
-At elevated levels:
+At elevated pressure:
 ```
-SOMA ▲ caution  28% · #67 · quality B
-SOMA ▲ degrade  55% · #89 · quality D
-SOMA ■ quarantine  78% · #130 · quality F
+SOMA ▲ guide  28% · #67 · quality B
+SOMA ▲ warn   55% · #89 · quality D
+SOMA ■ block  82% · #130 · quality F
 ```
 
 ---
@@ -176,8 +177,8 @@ Switch with `soma mode <name>` or `/soma:config mode <name>`:
 |:--------|:------------|
 | `/soma:status` | Full status: pressure, all 5 vitals, quality report, budget, predictions, tips |
 | `/soma:config` | View and change settings live — modes, thresholds, weights, toggles |
-| `/soma:control quarantine` | Force the agent into quarantine immediately |
-| `/soma:control release` | Release from quarantine, reset to HEALTHY |
+| `/soma:control quarantine` | Force the agent into BLOCK mode immediately |
+| `/soma:control release` | Release from forced BLOCK, reset to OBSERVE |
 | `/soma:control reset` | Reset behavioral baseline (start learning from scratch) |
 | `/soma:help` | Full command reference with examples |
 
@@ -236,9 +237,9 @@ tokens = 1_000_000
 cost_usd = 50.0
 
 [thresholds]
-caution = 0.25
-degrade = 0.50
-quarantine = 0.75
+guide = 0.25
+warn = 0.50
+block = 0.75
 
 [weights]
 uncertainty = 2.0
@@ -260,7 +261,7 @@ I work under SOMA's watch in every session. Here's what that's actually like:
 
 **The pattern warnings change my behavior.** When SOMA tells me `"3 writes without a Read — Read the target file first"`, I stop and read the file. Without that warning, I'd continue writing blind. It's not that I can't figure this out myself — it's that in the middle of a complex task with dozens of files, it's easy to forget. SOMA catches what I miss.
 
-**I don't hit quarantine.** Not because the thresholds are too high — because the early warnings work. When I see `[predict] escalation in ~5 actions`, I change my approach. I read instead of writing. I slow down instead of retrying. The escalation ladder exists as a safety net, but the real value is in the warnings that prevent me from needing it.
+**I don't hit BLOCK mode.** Not because the thresholds are too high — because the early guidance works. When I see `[predict] escalation in ~5 actions`, I change my approach. I read instead of writing. I slow down instead of retrying. The BLOCK mode exists as a safety net, but the real value is in the suggestions and warnings that prevent me from needing it.
 
 **Scope drift detection is genuinely helpful.** In a session where I'm working on the SOMA engine, if I start editing README files, CLI code, and test fixtures all at once, SOMA flags: `"scope expanded to docs, cli, tests — is this intentional?"` Sometimes it is intentional. Sometimes it's not, and that reminder brings me back to the task.
 
@@ -268,4 +269,4 @@ I work under SOMA's watch in every session. Here's what that's actually like:
 
 **The pressure number is a pulse.** 3% means I'm operating cleanly. 12% means I'm doing something unusual — maybe legitimate exploration, maybe drift. 25% means something is actually wrong. I've learned to read it like a vital sign.
 
-SOMA doesn't make me a better AI. It makes me a more **aware** AI. And awareness prevents the mistakes that lead to quarantine, wasted tokens, and broken code.
+SOMA doesn't make me a better AI. It makes me a more **aware** AI. And awareness prevents the mistakes that lead to wasted tokens and broken code.
