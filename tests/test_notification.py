@@ -86,6 +86,48 @@ class TestWorkflowSeverity:
         assert not any("user check-in" in t.lower() for t in tips)
 
 
+class TestPositiveFeedback:
+    def test_read_before_edit_streak(self):
+        """Consistent read-before-edit pattern gets positive feedback."""
+        log = []
+        for i in range(12):
+            log.append({"tool": "Read", "error": False, "file": f"/src/file{i}.py", "ts": i * 2})
+            log.append({"tool": "Edit", "error": False, "file": f"/src/file{i}.py", "ts": i * 2 + 1})
+        tips = _analyze_patterns(log)
+        assert any("read-before-edit" in t.lower() or "✓" in t for t in tips)
+
+    def test_no_positive_if_negative_present(self):
+        """Don't mix positive and negative — negative takes priority."""
+        log = []
+        for i in range(6):
+            log.append({"tool": "Read", "error": False, "file": f"/src/file{i}.py", "ts": i * 2})
+            log.append({"tool": "Edit", "error": False, "file": f"/src/file{i}.py", "ts": i * 2 + 1})
+        # Then 3 blind edits in a DIFFERENT directory (never read)
+        for i in range(3):
+            log.append({"tool": "Edit", "error": False, "file": f"/other/dir/new{i}.py", "ts": 20 + i})
+        tips = _analyze_patterns(log)
+        assert not any("✓" in t for t in tips)
+
+    def test_zero_error_streak(self):
+        """Long streak with zero errors gets positive feedback."""
+        log = [
+            {"tool": "Bash", "error": False, "file": "", "ts": i}
+            for i in range(20)
+        ]
+        tips = _analyze_patterns(log)
+        assert any("clean" in t.lower() or "✓" in t for t in tips)
+
+    def test_no_positive_when_errors_present(self):
+        """No positive feedback if there are errors."""
+        log = [{"tool": "Bash", "error": False, "file": "", "ts": i} for i in range(15)]
+        log.append({"tool": "Bash", "error": True, "file": "", "ts": 16})
+        log.append({"tool": "Bash", "error": True, "file": "", "ts": 17})
+        log.append({"tool": "Bash", "error": True, "file": "", "ts": 18})
+        tips = _analyze_patterns(log)
+        # Should have error warning, not positive feedback
+        assert not any("✓" in t for t in tips)
+
+
 class TestExistingPatterns:
     """Ensure existing patterns still work."""
 

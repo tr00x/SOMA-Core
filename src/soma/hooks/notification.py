@@ -156,6 +156,27 @@ def _analyze_patterns(action_log: list[dict], workflow_mode: str = "") -> list[s
                     f"verify you're still on track before continuing"
                 )
 
+    # ── Positive feedback (only if no negative tips) ──
+    if not tips:
+        # Check for read-before-edit streak
+        read_files_set: set[str] = set()
+        read_edit_pairs = 0
+        for entry in action_log[-20:]:
+            if entry["tool"] in ("Read", "Grep"):
+                f = entry.get("file", "")
+                if f:
+                    read_files_set.add(f)
+            elif entry["tool"] in ("Edit", "Write") and entry.get("file", "") in read_files_set:
+                read_edit_pairs += 1
+
+        if read_edit_pairs >= 5:
+            tips.append(f"[✓] read-before-edit maintained ({read_edit_pairs} pairs)")
+        # Check for zero-error streak
+        elif len(action_log) >= 15:
+            recent_errors = sum(1 for e in action_log[-15:] if e.get("error"))
+            if recent_errors == 0:
+                tips.append(f"[✓] clean streak — {min(len(action_log), 15)} actions, 0 errors")
+
     return tips[:3]
 
 
