@@ -1644,16 +1644,40 @@ class TestTaskTracker:
         ctx = tt.get_context()
         assert ctx.scope_drift < 0.3
 
+    def test_scope_drift_cwd_relative(self):
+        """Files in different subdirs of same project should NOT trigger drift."""
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker(cwd="/Users/tim/project")
+        for i in range(6):
+            tt.record("Read", f"/Users/tim/project/src/auth/file{i}.py")
+        for i in range(20):
+            tt.record("Edit", f"/Users/tim/project/tests/unit/test{i}.py")
+        ctx = tt.get_context()
+        # src/ and tests/ are both under project/ — low drift
+        assert ctx.scope_drift < 0.5
+
+    def test_scope_drift_outside_cwd(self):
+        """Files outside project cwd SHOULD trigger drift."""
+        from soma.task_tracker import TaskTracker
+        tt = TaskTracker(cwd="/Users/tim/project-a")
+        for i in range(6):
+            tt.record("Read", f"/Users/tim/project-a/src/file{i}.py")
+        for i in range(20):
+            tt.record("Edit", f"/Users/tim/project-b/src/file{i}.py")
+        ctx = tt.get_context()
+        assert ctx.scope_drift > 0.5
+
     def test_serialization(self):
         from soma.task_tracker import TaskTracker
-        tt = TaskTracker()
-        tt.record("Read", "/src/foo.py")
-        tt.record("Edit", "/src/bar.py")
+        tt = TaskTracker(cwd="/project")
+        tt.record("Read", "/project/src/foo.py")
+        tt.record("Edit", "/project/src/bar.py")
 
         data = tt.to_dict()
         tt2 = TaskTracker.from_dict(data)
         assert tt2._all_files == tt._all_files
         assert tt2._all_tools == tt._all_tools
+        assert tt2.cwd == tt.cwd
 
 
 # ──────────────────────────────────────────────────────────────────

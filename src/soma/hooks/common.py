@@ -282,17 +282,21 @@ def save_fingerprint_engine(engine) -> None:
         pass
 
 
-def get_task_tracker():
+def get_task_tracker(cwd: str = ""):
     """Load or create task tracker for this session."""
     try:
         from soma.task_tracker import TaskTracker
         if TASK_TRACKER_PATH.exists():
             data = json.loads(TASK_TRACKER_PATH.read_text())
-            return TaskTracker.from_dict(data)
-        return TaskTracker()
+            tracker = TaskTracker.from_dict(data)
+            # Update cwd if provided (may change between sessions)
+            if cwd:
+                tracker.cwd = cwd
+            return tracker
+        return TaskTracker(cwd=cwd)
     except Exception:
         from soma.task_tracker import TaskTracker
-        return TaskTracker()
+        return TaskTracker(cwd=cwd)
 
 
 def save_task_tracker(tracker) -> None:

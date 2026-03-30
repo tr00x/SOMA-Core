@@ -126,8 +126,10 @@ def main():
 
         if hook_config.get("task_tracking", True):
             try:
+                import os as _os
+                cwd = _os.environ.get("CLAUDE_WORKING_DIRECTORY", _os.getcwd())
                 from soma.hooks.common import get_task_tracker, save_task_tracker
-                tracker = get_task_tracker()
+                tracker = get_task_tracker(cwd=cwd)
                 tracker.record(tool_name, file_path, error)
                 save_task_tracker(tracker)
             except Exception:
