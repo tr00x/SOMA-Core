@@ -169,7 +169,7 @@ def main():
         result = engine.record_action(agent_id, action)
         save_state(engine)
 
-        level_name = result.level.name
+        level_name = result.mode.name
         pressure = result.pressure
         vitals = result.vitals
 
@@ -213,10 +213,10 @@ def main():
             try:
                 predictor = get_predictor()
                 predictor.update(pressure, {"tool": tool_name, "error": error, "file": file_path})
-                from soma.ladder import THRESHOLDS as _LADDER_THRESHOLDS
-                thresholds = sorted(t[0] for t in _LADDER_THRESHOLDS if t[0] > pressure)
-                if thresholds:
-                    pred = predictor.predict(thresholds[0])
+                boundaries = [0.25, 0.50, 0.75]
+                next_boundary = next((b for b in boundaries if b > pressure), None)
+                if next_boundary:
+                    pred = predictor.predict(next_boundary)
                     if pred.will_escalate:
                         print(f"SOMA: predicted escalation in ~{pred.actions_ahead} actions (p={pred.predicted_pressure:.0%}, {pred.dominant_reason})", file=sys.stderr)
                 save_predictor(predictor)
