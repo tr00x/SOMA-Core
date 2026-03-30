@@ -22,10 +22,10 @@ engine = SOMAEngine(
 |--------|------------|
 | `register_agent(agent_id, autonomy?, system_prompt?, tools?)` | Add agent to monitoring |
 | `record_action(agent_id, action) -> ActionResult` | Main pipeline: action -> vitals -> pressure -> level |
-| `get_level(agent_id) -> Level` | Current escalation level |
-| `get_snapshot(agent_id) -> dict` | Full state: level, pressure, vitals, action_count, budget_health |
+| `get_level(agent_id) -> ResponseMode` | Current response mode (alias `get_mode`) |
+| `get_snapshot(agent_id) -> dict` | Full state: mode, pressure, vitals, action_count, budget_health |
 | `add_edge(source, target, trust_weight?)` | Connect agents in trust graph |
-| `approve_escalation(agent_id) -> Level` | Approve pending escalation (HUMAN_IN_THE_LOOP) |
+| `approve_escalation(agent_id) -> ResponseMode` | Approve pending escalation (HUMAN_IN_THE_LOOP) |
 | `export_state(path?)` | Write state to JSON |
 | `from_config(config?) -> SOMAEngine` | Create from soma.toml |
 
@@ -38,8 +38,8 @@ engine = SOMAEngine(
 5. Compute per-signal pressure (z-score, sigmoid-clamped)
 6. Aggregate pressure (0.7 * weighted mean + 0.3 * max)
 7. Propagate through trust graph
-8. Evaluate ladder (with learning adjustments)
-9. Emit events (level_changed, approval_needed)
+8. Map pressure to response mode via `pressure_to_mode()`
+9. Emit events (mode_changed, approval_needed)
 10. Learn from outcomes
 
 ### `Action`
@@ -63,23 +63,37 @@ action = Action(
 Returned by `record_action()`:
 
 ```python
-result.level      # Level enum
+result.mode       # ResponseMode enum (primary)
+result.level      # Alias for result.mode (backward compat)
 result.pressure   # float [0, 1]
 result.vitals     # VitalsSnapshot
-result.context_action  # "pass", "truncate_20", "quarantine", etc.
+result.context_action  # "pass", "truncate_20", etc.
 ```
 
-### `Level` enum
+### `ResponseMode` enum
 
 ```python
-from soma import Level
+from soma import ResponseMode
 
-Level.HEALTHY     # 0
-Level.CAUTION     # 1
-Level.DEGRADE     # 2
-Level.QUARANTINE  # 3
-Level.RESTART     # 4
-Level.SAFE_MODE   # 5
+ResponseMode.OBSERVE  # 0 — silent, metrics only
+ResponseMode.GUIDE    # 1 — soft suggestions
+ResponseMode.WARN     # 2 — insistent warnings
+ResponseMode.BLOCK    # 3 — blocks destructive ops only
+```
+
+Legacy alias: `Level = ResponseMode`. The old names (`HEALTHY`, `CAUTION`, `DEGRADE`, `QUARANTINE`, `RESTART`, `SAFE_MODE`) exist as enum aliases and will be removed in 0.5.0.
+
+### `GuidanceResponse`
+
+Returned by `guidance.evaluate()`:
+
+```python
+from soma.guidance import GuidanceResponse
+
+response.mode        # ResponseMode
+response.allow       # bool — True unless destructive op at BLOCK
+response.message     # str | None — human-readable guidance
+response.suggestions # list[str] — context-aware suggestions
 ```
 
 ### `AutonomyMode` enum
@@ -136,14 +150,41 @@ with Monitor(budget={"tokens": 10000}) as m:
     m.assert_below("agent-1", Level.QUARANTINE)
 ```
 
+## Guidance
+
+The guidance module (`soma.guidance`) replaces the old ladder-based blocking system.
+
+```python
+from soma.guidance import pressure_to_mode, evaluate, is_destructive_bash, is_sensitive_file
+
+# Map pressure to response mode
+mode = pressure_to_mode(0.60)  # ResponseMode.WARN
+
+# Full guidance evaluation (used by PreToolUse hook)
+response = evaluate(
+    pressure=0.80,
+    tool_name="Bash",
+    tool_input={"command": "rm -rf /tmp/build"},
+    action_log=[...],
+)
+response.allow       # False — destructive bash at BLOCK mode
+response.message     # "SOMA blocked: destructive command: rm -rf /tmp/build (p=80%)"
+
+# Utility checks
+is_destructive_bash("git push --force origin main")  # True
+is_destructive_bash("python main.py")                 # False
+is_sensitive_file(".env.production")                   # True
+is_sensitive_file("src/main.py")                       # False
+```
+
 ## Events
 
 ```python
-engine.events.on("level_changed", lambda data: print(data))
+engine.events.on("mode_changed", lambda data: print(data))
 engine.events.on("approval_needed", lambda data: print(data))
 ```
 
-Event data includes: agent_id, old_level, new_level, pressure, autonomy.
+Event data includes: agent_id, old_mode, new_mode, pressure, autonomy.
 
 ## Budget
 
