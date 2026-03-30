@@ -47,13 +47,30 @@ SOMA stops being a passive monitor and starts actively improving agent quality.
 | **Action log** — track tool call patterns for analysis | Done |
 | **Actionable feedback** — "3 writes without Read" instead of raw metrics | Done |
 | **Post-write validation** — py_compile + ruff lint + node --check | Done |
-| **Read-before-Write enforcement** — CAUTION blocks blind mutations | Done |
+| **Read-before-Write enforcement** — blocks blind mutations | Done |
 | **Cross-session memory** — inherit baseline between sessions | Done |
 | **Dead session cleanup** — auto-prune old agent states | Done |
 | **Session stats** — error count + top tools on Stop | Done |
 | **UserPromptSubmit hook** — inject tips into agent context | Done |
 | **Specific block messages** — "Read bar.py first" not just "blocked" | Done |
 | Test suite | Done — 476 tests |
+
+---
+
+## Milestone 1.7: Guidance System ✓
+
+*Shipped March 2026 — v0.4.0*
+
+SOMA shifts from progressive blocking (6 levels) to a guidance model (4 modes). Write/Edit/Bash/Agent are never blocked. Only destructive operations are gated at high pressure.
+
+| Deliverable | Status |
+|:------------|:-------|
+| **4 modes** — OBSERVE / GUIDE / WARN / BLOCK replace 6-level ladder | Done |
+| **Guidance over blocking** — tools stay available, advice injected | Done |
+| **Destructive-op gating** — rm -rf, git push --force, .env blocked at 75%+ | Done |
+| **Simplified CLI** — stop/start/reset/uninstall-claude | Done |
+| **Removed commands** — quarantine/release/approve/daemon/export | Done |
+| **Skill updates** — all Claude Code skills reflect new model | Done |
 
 ---
 
