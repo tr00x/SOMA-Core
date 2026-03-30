@@ -1090,16 +1090,28 @@ class TestPatternAnalysis:
         ]
         assert _analyze_patterns(log) == []
 
-    def test_writes_without_read(self):
+    def test_edits_without_read(self):
         from soma.hooks.notification import _analyze_patterns
+        # Only Edit counts as blind mutation — Write is often creating new files
         log = [
-            {"tool": "Write", "error": False, "file": "a.py", "ts": 1},
+            {"tool": "Edit", "error": False, "file": "a.py", "ts": 1},
             {"tool": "Edit", "error": False, "file": "b.py", "ts": 2},
-            {"tool": "Write", "error": False, "file": "c.py", "ts": 3},
+            {"tool": "Edit", "error": False, "file": "c.py", "ts": 3},
         ]
         tips = _analyze_patterns(log)
         assert len(tips) >= 1
-        assert "writes without a Read" in tips[0]
+        assert "edits without a Read" in tips[0]
+
+    def test_writes_without_read_no_false_positive(self):
+        from soma.hooks.notification import _analyze_patterns
+        # Write (new file creation) should NOT trigger the pattern
+        log = [
+            {"tool": "Write", "error": False, "file": "a.py", "ts": 1},
+            {"tool": "Write", "error": False, "file": "b.py", "ts": 2},
+            {"tool": "Write", "error": False, "file": "c.py", "ts": 3},
+        ]
+        tips = _analyze_patterns(log)
+        assert not any("edits without a Read" in t for t in tips)
 
     def test_consecutive_bash_failures(self):
         from soma.hooks.notification import _analyze_patterns
@@ -1617,17 +1629,17 @@ class TestTaskTracker:
         for i in range(6):
             tt.record("Read", f"/project/src/auth/file{i}.py")
 
-        # Now drift to completely different area
-        for i in range(10):
+        # Need 20+ files before drift is computed (was 10)
+        for i in range(20):
             tt.record("Edit", f"/project/tests/integration/test{i}.py")
 
         ctx = tt.get_context()
-        assert ctx.scope_drift > 0.3
+        assert ctx.scope_drift > 0.5
 
     def test_no_drift_same_area(self):
         from soma.task_tracker import TaskTracker
         tt = TaskTracker()
-        for i in range(15):
+        for i in range(25):
             tt.record("Read", f"/project/src/auth/file{i % 3}.py")
         ctx = tt.get_context()
         assert ctx.scope_drift < 0.3

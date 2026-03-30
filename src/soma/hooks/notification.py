@@ -30,22 +30,24 @@ def _analyze_patterns(action_log: list[dict]) -> list[str]:
     tips: list[str] = []
     recent = action_log[-10:]
 
-    # Pattern 1: Writes without Reads (blind mutation)
-    writes_since_read = 0
+    # Pattern 1: Edits without Reads (blind mutation)
+    # Only count Edit/NotebookEdit (modifying existing files).
+    # Write is often creating new files — no Read needed.
+    edits_since_read = 0
     blind_files: list[str] = []
     for entry in reversed(recent):
-        if entry["tool"] in ("Write", "Edit", "NotebookEdit"):
-            writes_since_read += 1
+        if entry["tool"] in ("Edit", "NotebookEdit"):
+            edits_since_read += 1
             f = entry.get("file", "")
             if f:
                 blind_files.append(f.rsplit("/", 1)[-1])
         elif entry["tool"] == "Read":
             break
-    if writes_since_read >= 2:
+    if edits_since_read >= 3:
         files_hint = f" ({', '.join(dict.fromkeys(blind_files[:3]))})" if blind_files else ""
         tips.append(
-            f"[pattern] {writes_since_read} writes without a Read{files_hint} — "
-            f"Read the target file first to understand current state"
+            f"[pattern] {edits_since_read} edits without a Read{files_hint} — "
+            f"Read the file first to understand current state"
         )
 
     # Pattern 2: Consecutive Bash failures
@@ -213,12 +215,12 @@ def _collect_findings(
             from soma.hooks.common import get_task_tracker
             tracker = get_task_tracker()
             ctx = tracker.get_context()
-            if ctx.scope_drift >= 0.4 and ctx.drift_explanation:
+            if ctx.scope_drift >= 0.7 and ctx.drift_explanation:
                 findings.append((1,
                     f"[scope] {ctx.drift_explanation} — "
                     f"is this intentional? If not, refocus on the original task"
                 ))
-            elif ctx.scope_drift >= 0.3 and ctx.drift_explanation:
+            elif ctx.scope_drift >= 0.5 and ctx.drift_explanation:
                 findings.append((2, f"[scope] {ctx.drift_explanation}"))
         except Exception:
             pass
