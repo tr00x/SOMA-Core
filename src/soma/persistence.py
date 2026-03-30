@@ -44,6 +44,7 @@ def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
             "known_tools": s.known_tools,
             "baseline_vector": s.baseline_vector,
             "level": s.mode.name,
+            "last_active": s._last_active,
         }
 
     target = Path(path)
@@ -141,6 +142,10 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         s.action_count = agent_state.get("action_count", 0)
         s.known_tools = agent_state.get("known_tools", [])
         s.baseline_vector = agent_state.get("baseline_vector")
+
+        # Restore last_active
+        import time as _time
+        s._last_active = agent_state.get("last_active", _time.time())
 
         # Restore mode
         from soma.types import ResponseMode
