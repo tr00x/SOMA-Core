@@ -1,7 +1,7 @@
 # SOMA Technical Reference
 ### System of Oversight and Monitoring for Agents
 
-**Version 0.3.2 | March 2026**
+**Version 0.4.0 | March 2026**
 
 A formal specification of the mathematical models, algorithms, and system architecture behind SOMA — the behavioral monitoring and control system for AI agents.
 
@@ -18,7 +18,7 @@ A formal specification of the mathematical models, algorithms, and system archit
 4. [Normalization: Z-Score with Sigmoid Clamping](#4-normalization-z-score-with-sigmoid-clamping)
 5. [Pressure Aggregation](#5-pressure-aggregation)
 6. [Baseline Learning (EMA)](#6-baseline-learning-ema)
-7. [Escalation Ladder with Hysteresis](#7-escalation-ladder-with-hysteresis)
+7. [Guidance System](#7-guidance-system)
 8. [Multi-Agent Pressure Propagation](#8-multi-agent-pressure-propagation)
 9. [Predictive Model](#9-predictive-model)
 10. [Self-Learning Engine](#10-self-learning-engine)
@@ -65,11 +65,11 @@ Action(tool, output, error, tokens, cost, duration, retried)
   │
   ├─→ [GRAPH PROPAGATION] trust-weighted multi-agent
   │
-  ├─→ [ESCALATION LADDER] with hysteresis + learning adjustments
+  ├─→ [GUIDANCE] pressure_to_mode → ResponseMode
   │
   ├─→ [LEARNING] evaluate intervention outcomes
   │
-  └─→ ActionResult(level, pressure, vitals, context_action)
+  └─→ ActionResult(mode, pressure, vitals, context_action)
 ```
 
 ---
@@ -97,7 +97,7 @@ The pipeline executes on every `record_action(agent_id, action)` call. Steps are
 | 11 | Set internal pressure on graph, propagate | `effective_pressure` |
 | 12 | Grace period check (action_count ≤ min_samples → pressure = 0) | |
 | 13 | Trust decay/recovery based on uncertainty | Edge weights mutated |
-| 14 | Evaluate ladder with learning adjustments + custom thresholds | `Level` |
+| 14 | Map pressure to response mode via `pressure_to_mode()` | `ResponseMode` |
 | 15 | Check autonomy mode, emit events, record intervention | Events emitted |
 | 16 | Evaluate pending learning interventions | `InterventionOutcome` |
 | 17 | Export state (if auto_export) | JSON written |
@@ -321,50 +321,57 @@ Returns 0.1 for signals with no observations (ensures z-scores remain bounded).
 
 ---
 
-## 7. Escalation Ladder with Hysteresis
+## 7. Guidance System
 
-**Source**: `src/soma/ladder.py`
+**Source**: `src/soma/guidance.py`
 
-### Threshold Table
+### Response Modes
 
-| Level | Escalation Threshold | De-escalation Threshold | Gap |
-|-------|---------------------|------------------------|-----|
-| HEALTHY | 0.00 | 0.00 | — |
-| CAUTION | 0.25 | 0.20 | 0.05 |
-| DEGRADE | 0.50 | 0.45 | 0.05 |
-| QUARANTINE | 0.75 | 0.70 | 0.05 |
-| RESTART | 0.90 | 0.85 | 0.05 |
-| SAFE_MODE | budget ≤ 0 | budget > 0.10 | special |
+| Mode | Pressure Range | Policy |
+|------|---------------|--------|
+| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
+| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
+| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
+| BLOCK | 75–100% | Blocks ONLY destructive operations. |
 
-### Escalation Rules (Priority Order)
+### Mode Mapping
 
-1. **Budget exhaustion**: `budget_health ≤ 0` → SAFE_MODE (latches until `budget_health > 0.10`)
-2. **Manual override**: `force_level` is set → that level
-3. **Upward escalation**: Jump to highest level whose threshold ≤ pressure (multi-level jumps allowed)
-4. **Downward de-escalation**: Drop exactly one level if `pressure < de_escalation_threshold` of current level
-5. **Hold**: If `de_threshold ≤ pressure < escalation_threshold`, hold current level
+```
+pressure_to_mode(pressure):
+    if pressure >= 0.75 → BLOCK
+    if pressure >= 0.50 → WARN
+    if pressure >= 0.25 → GUIDE
+    else                → OBSERVE
+```
 
-### Hysteresis
+No hysteresis is needed. The guidance system uses direct pressure-to-mode mapping because the modes are graduated responses, not hard capability gates. There is no oscillation risk — moving between GUIDE and WARN produces only a change in message tone, not a tool lockout.
 
-The gap between escalation and de-escalation thresholds (0.05 by default) prevents rapid oscillation. An agent that escalates to CAUTION at p=0.25 must drop below p=0.20 to return to HEALTHY. Without hysteresis, noise around the threshold would cause level thrashing.
+### Destructive Operation Detection
+
+At BLOCK mode, the guidance system checks whether a specific tool invocation is destructive:
+
+**Bash commands** matched against patterns:
+- `rm -rf`, `rm --recursive`, `rm --force --recursive`
+- `git reset --hard`, `git push --force`, `git clean -f`
+- `git checkout .`
+- `chmod 777`, `kill -9`
+
+**File writes** to sensitive paths:
+- `.env`, `.env.*`
+- `credentials*`, `secret*`
+- `*.pem`, `*.key`
+
+Only these specific invocations are blocked. Write, Edit, Bash, and Agent tools are **never blocked** as tool categories — the system blocks individual destructive uses.
 
 ### Learning Adjustments
 
-The learning engine (Section 10) produces threshold shifts that are added to the escalation thresholds before evaluation:
+The learning engine (Section 10) still produces threshold shifts. These adjust the pressure boundaries between modes:
 
 ```
 adjusted_threshold = base_threshold + learning_shift
 ```
 
 Shifts are capped at ±0.10 per transition.
-
-### Custom Thresholds
-
-User-configured thresholds from `soma.toml` replace the built-in defaults. The hysteresis gap is preserved:
-
-```
-de_escalation = custom_threshold - default_gap
-```
 
 ---
 
@@ -639,7 +646,7 @@ When drift > 0.2, identifies contributing signals:
 
 ### Suppression
 
-Returns `None` when `pressure < 0.15` and `level == HEALTHY`.
+Returns `None` when `pressure < 0.15` and `mode == OBSERVE`.
 
 ---
 
@@ -789,15 +796,14 @@ This prevents exploratory behavior (high drift but low errors/uncertainty) from 
 | Drift threshold | 0.30 | `engine.py:262` |
 | Uncertainty threshold | 0.30 | `engine.py:262` |
 
-### Escalation Thresholds (Default)
+### Response Mode Thresholds (Default)
 
-| Transition | Escalate | De-escalate |
-|-----------|----------|-------------|
-| → CAUTION | 0.25 | 0.20 |
-| → DEGRADE | 0.50 | 0.45 |
-| → QUARANTINE | 0.75 | 0.70 |
-| → RESTART | 0.90 | 0.85 |
-| → SAFE_MODE | budget ≤ 0 | budget > 0.10 |
+| Mode | Pressure Threshold |
+|------|-------------------|
+| OBSERVE | 0.00 |
+| GUIDE | 0.25 |
+| WARN | 0.50 |
+| BLOCK | 0.75 |
 
 ### Pattern Boosts
 
@@ -829,19 +835,14 @@ All outputs are in [0, 1]:
 - Resource vitals: `min(x/limit, 1.0)`
 - Aggregate pressure: weighted average of [0,1] values ∈ [0,1]
 
-### Monotonicity of Escalation
+### Direct Mode Mapping
 
-Let L(t) be the level at time t. For upward transitions:
+Let M(t) be the mode at time t:
 ```
-∃ i: pressure ≥ threshold_i → L(t) = max(L(t-1), level_i)
-```
-
-For downward transitions:
-```
-pressure < de_threshold(L(t-1)) → L(t) = L(t-1) - 1
+M(t) = pressure_to_mode(P(t))
 ```
 
-Multi-level jumps up, single-step down. This asymmetry protects against acute failures while enabling gradual recovery.
+The mode is a direct function of current pressure — no state machine, no hysteresis. This is possible because mode transitions change guidance tone, not hard capability gates. Moving from GUIDE to WARN adds urgency to messages; it does not lock out tools.
 
 ### Convergence of Learning
 
@@ -852,7 +853,7 @@ The learning engine's threshold adjustments are bounded by `[-max_threshold_shif
 For `action_count ≤ min_samples` (default 10):
 ```
 effective_pressure = 0.0
-level = HEALTHY
+mode = OBSERVE
 ```
 
 This holds regardless of signal values, ensuring new agents have time to establish baselines before any intervention.
@@ -866,7 +867,7 @@ Given identical:
 
 The system produces identical:
 - Pressure trajectory `[p₁, p₂, ..., pₙ]`
-- Level trajectory `[l₁, l₂, ..., lₙ]`
+- Mode trajectory `[m₁, m₂, ..., mₙ]`
 - Learning adjustments
 
 No randomness, no external state, no time dependencies (except action duration, which is an input).
