@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1] — 2026-03-30
+
+### Changed
+- Threshold config keys renamed: `caution`/`degrade`/`quarantine` → `guide`/`warn`/`block`
+- `restart` threshold removed — SOMA no longer has a restart concept
+- `pressure_to_mode()` and `evaluate()` accept optional `thresholds` dict
+- Engine uses `custom_thresholds` for mode transitions
+- `stale_timeout` configurable via `[hooks]` section in soma.toml
+
+### Added
+- `migrate_config()` auto-migrates old config keys on load
+- `get_guidance_thresholds()` loads thresholds from soma.toml for hooks
+
 ## [0.4.0] — 2026-03-30
 
 Redesigned from a blocking system to a guidance system. SOMA no longer blocks normal tools at any pressure level — it guides the agent with increasingly urgent feedback, and only blocks truly destructive operations.
