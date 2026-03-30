@@ -140,7 +140,7 @@ class TaskTracker:
 
         Returns (drift_score, explanation).
         """
-        if self._initial_focus is None or len(self._all_files) < 10:
+        if self._initial_focus is None or len(self._all_files) < 20:
             return 0.0, ""
 
         recent_dirs = set(
@@ -153,7 +153,7 @@ class TaskTracker:
         overlap = recent_dirs & self._initial_focus
         drift = 1.0 - len(overlap) / len(recent_dirs)
 
-        if drift < 0.3:
+        if drift < 0.5:
             return drift, ""
 
         # Explain what changed
