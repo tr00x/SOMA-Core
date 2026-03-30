@@ -260,3 +260,23 @@ class TestWrap:
             wrapped.messages.create(model="test", max_tokens=100, messages=[])
 
         assert wrapped._pending_context_action == "truncate_50_block_tools"
+
+
+class TestMultiAgentWrap:
+    def test_shared_engine(self):
+        """Multiple agents sharing one engine see each other."""
+        from soma.engine import SOMAEngine
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        engine.register_agent("planner")
+        engine.register_agent("coder")
+        engine.add_edge("planner", "coder", trust_weight=0.8)
+
+        client_a = MockAnthropicClient()
+        client_b = MockAnthropicClient()
+
+        wrapped_a = soma.wrap(client_a, agent_id="planner", engine=engine)
+        wrapped_b = soma.wrap(client_b, agent_id="coder", engine=engine)
+
+        assert wrapped_a.engine is wrapped_b.engine
+        assert wrapped_a.engine is engine

@@ -228,6 +228,7 @@ def wrap(
     agent_id: str = "default",
     auto_export: bool = True,
     block_at: ResponseMode = ResponseMode.BLOCK,
+    engine: SOMAEngine | None = None,
 ) -> WrappedClient:
     """Wrap an API client with SOMA monitoring and control.
 
@@ -237,6 +238,9 @@ def wrap(
         agent_id: Name for this agent in the SOMA dashboard.
         auto_export: Write state to ~/.soma/state.json after each call.
         block_at: ResponseMode at which to block API calls (default: BLOCK).
+        engine: Optional shared SOMAEngine. If provided, budget is ignored.
+            Pass the same engine to multiple wrap() calls so agents share
+            pressure state and can propagate signals to each other.
 
     Returns:
         A WrappedClient that proxies all calls through SOMA.
@@ -262,7 +266,8 @@ def wrap(
         print(client.soma_level)     # Level.HEALTHY
         print(client.soma_pressure)  # 0.03
     """
-    engine = SOMAEngine(budget=budget or {"tokens": 100_000})
+    if engine is None:
+        engine = SOMAEngine(budget=budget or {"tokens": 100_000})
     return WrappedClient(
         client=client,
         engine=engine,
