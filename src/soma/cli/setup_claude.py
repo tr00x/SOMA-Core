@@ -272,7 +272,7 @@ def run_setup_claude() -> None:
 
     print()
     print("  How it works:")
-    print("    PreToolUse        — checks pressure, blocks blind mutations")
+    print("    PreToolUse        — checks pressure, guides with suggestions, blocks only destructive ops")
     print("    PostToolUse       — records action, validates code, computes vitals")
     print("    UserPromptSubmit  — injects actionable tips into agent context")
     print("    Stop              — saves final state, cleans up session")
