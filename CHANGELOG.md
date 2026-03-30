@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.6] — 2026-03-30
+
+### Added
+- `detect_workflow_mode()` reads .planning/STATE.md for GSD context
+- Workflow-aware severity: patterns suppressed when they'd be noise
+
+### Changed
+- Agent spam, research paralysis, scope drift suppressed during plan/discuss
+- Long autonomous sequences suppressed during execute/plan
+
 ## [0.4.5] — 2026-03-30
 
 ### Fixed
