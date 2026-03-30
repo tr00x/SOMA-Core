@@ -14,7 +14,6 @@ from soma.types import AutonomyMode
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "soma": {
-        "version": "0.2.0",
         "store": "~/.soma/state.json",
     },
     "budget": {
@@ -27,10 +26,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "thresholds": {
-        "caution": 0.25,
-        "degrade": 0.50,
-        "quarantine": 0.75,
-        "restart": 0.90,
+        "guide": 0.25,
+        "warn": 0.50,
+        "block": 0.75,
     },
     "weights": {
         "uncertainty": 2.0,
@@ -58,7 +56,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
 # - Cold start grace period built into engine (first 10 actions penalty-free)
 CLAUDE_CODE_CONFIG: dict[str, Any] = {
     "soma": {
-        "version": "0.3.0",
         "store": "~/.soma/state.json",
         "profile": "claude-code",
     },
@@ -86,10 +83,9 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
         },
     },
     "thresholds": {
-        "caution": 0.40,
-        "degrade": 0.60,
-        "quarantine": 0.80,
-        "restart": 0.95,
+        "guide": 0.40,
+        "warn": 0.60,
+        "block": 0.80,
     },
     "weights": {
         "uncertainty": 1.2,
@@ -114,10 +110,9 @@ MODE_PRESETS: dict[str, dict[str, Any]] = {
             },
         },
         "thresholds": {
-            "caution": 0.20,
-            "degrade": 0.40,
-            "quarantine": 0.60,
-            "restart": 0.80,
+            "guide": 0.20,
+            "warn": 0.40,
+            "block": 0.60,
         },
         "hooks": {
             "verbosity": "verbose",
@@ -137,10 +132,9 @@ MODE_PRESETS: dict[str, dict[str, Any]] = {
             },
         },
         "thresholds": {
-            "caution": 0.40,
-            "degrade": 0.60,
-            "quarantine": 0.80,
-            "restart": 0.95,
+            "guide": 0.40,
+            "warn": 0.60,
+            "block": 0.80,
         },
         "hooks": {
             "verbosity": "normal",
@@ -160,10 +154,9 @@ MODE_PRESETS: dict[str, dict[str, Any]] = {
             },
         },
         "thresholds": {
-            "caution": 0.60,
-            "degrade": 0.80,
-            "quarantine": 0.95,
-            "restart": 0.99,
+            "guide": 0.60,
+            "warn": 0.80,
+            "block": 0.95,
         },
         "hooks": {
             "verbosity": "minimal",
@@ -177,6 +170,28 @@ MODE_PRESETS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
+_OLD_TO_NEW_THRESHOLDS = {
+    "caution": "guide",
+    "degrade": "warn",
+    "quarantine": "block",
+}
+
+
+def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Migrate old config keys to new names. Returns mutated config."""
+    thresholds = config.get("thresholds")
+    if thresholds is None:
+        return config
+    migrated = {}
+    for key, val in thresholds.items():
+        new_key = _OLD_TO_NEW_THRESHOLDS.get(key, key)
+        if key == "restart":
+            continue  # restart removed in 0.4.0
+        migrated[new_key] = val
+    config["thresholds"] = migrated
+    return config
 
 
 def apply_mode(config: dict[str, Any], mode: str) -> dict[str, Any]:
@@ -204,7 +219,8 @@ def load_config(path: str = "soma.toml") -> dict[str, Any]:
     if not os.path.exists(path):
         return DEFAULT_CONFIG.copy()
     with open(path, "rb") as fh:
-        return tomllib.load(fh)
+        config = tomllib.load(fh)
+    return migrate_config(config)
 
 
 def save_config(config: dict[str, Any], path: str = "soma.toml") -> None:

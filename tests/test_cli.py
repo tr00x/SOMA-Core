@@ -31,7 +31,7 @@ class TestLoadConfig:
         """load_config returns DEFAULT_CONFIG when the file does not exist."""
         missing = str(tmp_path / "nonexistent.toml")
         cfg = load_config(missing)
-        assert cfg["soma"]["version"] == DEFAULT_CONFIG["soma"]["version"]
+        assert cfg["soma"]["store"] == DEFAULT_CONFIG["soma"]["store"]
         assert cfg["budget"]["tokens"] == DEFAULT_CONFIG["budget"]["tokens"]
 
     def test_load_existing_file(self, tmp_path: Path) -> None:
