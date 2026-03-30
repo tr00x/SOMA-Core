@@ -17,14 +17,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# Level display config: (emoji, label, color_hint)
-LEVEL_STYLE = {
-    "HEALTHY":    ("✦", "healthy"),
-    "CAUTION":    ("⚡", "caution"),
-    "DEGRADE":    ("🔥", "degrade"),
-    "QUARANTINE": ("🚨", "lockdown"),
-    "RESTART":    ("💀", "restart"),
-    "SAFE_MODE":  ("⛔", "no-budget"),
+MODE_STYLE = {
+    "OBSERVE":  ("✦", "observe"),
+    "GUIDE":    ("💡", "guide"),
+    "WARN":     ("⚡", "warn"),
+    "BLOCK":    ("🚨", "block"),
+    # Backward compat for old state files
+    "HEALTHY":  ("✦", "observe"),
+    "CAUTION":  ("💡", "guide"),
+    "DEGRADE":  ("⚡", "warn"),
+    "QUARANTINE": ("🚨", "block"),
+    "RESTART":  ("🚨", "block"),
+    "SAFE_MODE": ("🚨", "block"),
 }
 
 
@@ -105,7 +109,7 @@ def main():
         actions = snap["action_count"]
         vitals = snap.get("vitals", {})
 
-        emoji, label = LEVEL_STYLE.get(level, ("?", level.lower()))
+        emoji, label = MODE_STYLE.get(level, ("?", level.lower()))
         bar = _bar(pressure)
 
         # Build parts
