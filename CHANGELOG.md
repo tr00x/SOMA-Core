@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.7] — 2026-03-30
+
+### Added
+- Positive feedback: `[✓] read-before-edit maintained` and `[✓] clean streak` when doing well
+- Only shown when no negative patterns — never mixed with warnings
+
 ## [0.4.6] — 2026-03-30
 
 ### Added
