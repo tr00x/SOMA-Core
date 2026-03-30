@@ -92,7 +92,7 @@ def _check_destructive(tool_name: str, tool_input: dict) -> tuple[bool, str]:
     return False, ""
 
 
-def _build_suggestions(tool_name: str, action_log: list[dict]) -> list[str]:
+def _build_suggestions(tool_name: str, action_log: list[dict], gsd_active: bool = False) -> list[str]:
     """Build context-aware suggestions based on action patterns."""
     suggestions: list[str] = []
     if not action_log:
@@ -121,10 +121,11 @@ def _build_suggestions(tool_name: str, action_log: list[dict]) -> list[str]:
     if consecutive_failures >= 2:
         suggestions.append(f"{consecutive_failures} bash failures in a row — check assumptions before retrying")
 
-    # Many agents
-    agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
-    if agent_calls >= 3:
-        suggestions.append(f"{agent_calls} agents spawned recently — check for file conflicts")
+    # Many agents — skip if GSD active (agent spawning is normal in workflows)
+    if not gsd_active:
+        agent_calls = sum(1 for e in recent if e["tool"] == "Agent")
+        if agent_calls >= 3:
+            suggestions.append(f"{agent_calls} agents spawned recently — check for file conflicts")
 
     return suggestions
 
@@ -152,7 +153,7 @@ def evaluate(
                 message=f"SOMA blocked: {reason} (p={pressure:.0%})",
                 suggestions=["pressure is very high — focus on safe, reversible actions"],
             )
-        suggestions = _build_suggestions(tool_name, action_log)
+        suggestions = _build_suggestions(tool_name, action_log, gsd_active)
         return GuidanceResponse(
             mode=mode,
             allow=True,
@@ -161,7 +162,7 @@ def evaluate(
         )
 
     if mode == ResponseMode.WARN:
-        suggestions = _build_suggestions(tool_name, action_log)
+        suggestions = _build_suggestions(tool_name, action_log, gsd_active)
         msg = None
         if suggestions:
             msg = f"SOMA warning (p={pressure:.0%}): {suggestions[0]}"
@@ -170,7 +171,7 @@ def evaluate(
         return GuidanceResponse(mode=mode, allow=True, message=msg, suggestions=suggestions)
 
     # GUIDE
-    suggestions = _build_suggestions(tool_name, action_log)
+    suggestions = _build_suggestions(tool_name, action_log, gsd_active)
     msg = None
     if suggestions:
         msg = f"SOMA suggestion: {suggestions[0]}"
