@@ -130,12 +130,39 @@ def _get_session_agent_id() -> str:
     return "claude-code"
 
 
+_TOML_MIGRATED = False
+
+
+def _maybe_migrate_soma_toml() -> None:
+    """If soma.toml exists with old threshold keys, migrate in place."""
+    global _TOML_MIGRATED
+    if _TOML_MIGRATED:
+        return
+    _TOML_MIGRATED = True
+    try:
+        import tomllib
+        toml_path = Path("soma.toml")
+        if not toml_path.exists():
+            return
+        with open(toml_path, "rb") as f:
+            config = tomllib.load(f)
+        thresholds = config.get("thresholds", {})
+        if any(k in thresholds for k in ("caution", "degrade", "quarantine")):
+            from soma.cli.config_loader import migrate_config, save_config
+            migrated = migrate_config(config)
+            save_config(migrated, str(toml_path))
+    except Exception:
+        pass
+
+
 def get_engine():
     """Load or create SOMA engine with session-scoped agent registered.
 
     Uses Claude Code optimized config (higher thresholds, relaxed sensitivity).
     Returns (engine, agent_id) tuple. Returns (None, None) on import failure.
     """
+    _maybe_migrate_soma_toml()
+
     try:
         from soma.engine import SOMAEngine
         from soma.persistence import load_engine_state
