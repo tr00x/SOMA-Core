@@ -10,10 +10,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from soma.types import Level
+from soma.types import ResponseMode
 
 
-def apply_context_control(context: dict[str, Any], level: Level) -> dict[str, Any]:
+def apply_context_control(context: dict[str, Any], level: ResponseMode) -> dict[str, Any]:
     """Return a modified copy of *context* appropriate for *level*.
 
     Parameters
@@ -25,12 +25,12 @@ def apply_context_control(context: dict[str, Any], level: Level) -> dict[str, An
         ``tools``         – list[str] of currently available tool names.
         ``system_prompt`` – str; always preserved unchanged.
         ``expensive_tools`` – (optional) list[str] of tool names to drop under
-                              DEGRADE.
+                              WARN.
         ``minimal_tools`` – (optional) list[str] of the minimal tool set used
-                            under QUARANTINE and SAFE_MODE.
+                            under BLOCK.
 
     level:
-        The current :class:`~soma.types.Level`.
+        The current :class:`~soma.types.ResponseMode`.
 
     Returns
     -------
@@ -44,30 +44,20 @@ def apply_context_control(context: dict[str, Any], level: Level) -> dict[str, An
     expensive_tools: list[str] = list(context.get("expensive_tools") or [])
     minimal_tools: list[str] = list(context.get("minimal_tools") or [])
 
-    if level == Level.HEALTHY:
+    if level == ResponseMode.OBSERVE:
         # Return unchanged (still a copy so callers cannot mutate the original).
         pass
 
-    elif level == Level.CAUTION:
+    elif level == ResponseMode.GUIDE:
         # Keep the newest 80 % of messages; keep all tools.
         messages = _keep_newest(messages, fraction=0.80)
 
-    elif level == Level.DEGRADE:
+    elif level == ResponseMode.WARN:
         # Keep the newest 50 % of messages; remove expensive tools.
         messages = _keep_newest(messages, fraction=0.50)
         tools = [t for t in tools if t not in expensive_tools]
 
-    elif level == Level.QUARANTINE:
-        # Clear message history; restrict to minimal tools only.
-        messages = []
-        tools = list(minimal_tools)
-
-    elif level == Level.RESTART:
-        # Clear message history; restore full tool list (unchanged from input).
-        messages = []
-        # tools stay as-is (full list passed by caller)
-
-    elif level == Level.SAFE_MODE:
+    elif level == ResponseMode.BLOCK:
         # Clear message history; restrict to minimal tools only.
         messages = []
         tools = list(minimal_tools)
