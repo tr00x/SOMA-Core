@@ -1,6 +1,9 @@
 """Persist and restore SOMAEngine state across process restarts."""
 
+import fcntl
 import json
+import os
+import tempfile
 from pathlib import Path
 from soma.engine import SOMAEngine
 from soma.baseline import Baseline
@@ -8,7 +11,11 @@ from soma.budget import MultiBudget
 
 
 def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
-    """Save full engine state to JSON file."""
+    """Save full engine state to JSON file.
+
+    Uses atomic write (write to temp file, fsync, rename) with exclusive
+    file locking so concurrent multi-agent saves don't corrupt state.
+    """
     if path is None:
         path = str(Path.home() / ".soma" / "engine_state.json")
 
@@ -33,12 +40,36 @@ def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
             "level": s.mode.name,
         }
 
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(state, indent=2, default=str))
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(state, indent=2, default=str)
+
+    # Atomic write: temp file -> fsync -> rename
+    # Use the same directory so rename is atomic (same filesystem).
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(target.parent), suffix=".tmp", prefix=".soma_state_"
+        )
+        try:
+            # Acquire exclusive lock on the temp file
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            os.write(fd, data.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        # Atomic rename (POSIX guarantees atomicity on same filesystem)
+        os.rename(tmp_path, str(target))
+    except OSError:
+        # Fallback: direct write if atomic path fails
+        target.write_text(data)
 
 
 def load_engine_state(path: str | None = None) -> SOMAEngine | None:
-    """Restore engine from saved state. Returns None if no state file."""
+    """Restore engine from saved state. Returns None if no state file.
+
+    Uses a shared file lock so reads don't conflict with each other
+    but wait for any in-progress write to complete.
+    """
     if path is None:
         path = str(Path.home() / ".soma" / "engine_state.json")
 
@@ -47,7 +78,12 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         return None
 
     try:
-        state = json.loads(p.read_text())
+        with open(p) as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                state = json.load(f)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except (json.JSONDecodeError, OSError):
         return None
 

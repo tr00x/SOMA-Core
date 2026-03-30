@@ -1,6 +1,7 @@
 """Tests for SOMAEngine state persistence across process restarts."""
 
 import json
+import threading
 import pytest
 from pathlib import Path
 
@@ -160,3 +161,79 @@ class TestRestoredEngineIsUsable:
         # Graph should contain both agents
         assert "agent-alpha" in restored._graph.agents
         assert "agent-beta" in restored._graph.agents
+
+
+class TestConcurrentSaves:
+    def test_concurrent_saves_produce_valid_json(self, tmp_path):
+        """Two threads saving simultaneously should not corrupt the state file."""
+        state_file = tmp_path / "engine_state.json"
+        errors: list[Exception] = []
+
+        def save_worker(agent_name: str):
+            try:
+                engine = SOMAEngine(budget={"tokens": 50000})
+                engine.register_agent(agent_name)
+                for i in range(10):
+                    engine.record_action(agent_name, _make_action(i))
+                    save_engine_state(engine, str(state_file))
+            except Exception as exc:
+                errors.append(exc)
+
+        t1 = threading.Thread(target=save_worker, args=("writer-1",))
+        t2 = threading.Thread(target=save_worker, args=("writer-2",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors, f"Threads raised exceptions: {errors}"
+
+        # File must exist and be valid JSON
+        data = json.loads(state_file.read_text())
+        assert "agents" in data
+        assert "budget" in data
+
+        # State should be from one of the two writers (not a mix)
+        agents = set(data["agents"].keys())
+        assert agents == {"writer-1"} or agents == {"writer-2"}
+
+    def test_concurrent_saves_never_produce_partial_file(self, tmp_path):
+        """Rapid concurrent saves should always leave a parseable file."""
+        state_file = tmp_path / "engine_state.json"
+        read_errors: list[str] = []
+        stop = threading.Event()
+
+        def save_loop(agent_name: str):
+            engine = SOMAEngine(budget={"tokens": 50000})
+            engine.register_agent(agent_name)
+            for i in range(20):
+                if stop.is_set():
+                    break
+                engine.record_action(agent_name, _make_action(i))
+                save_engine_state(engine, str(state_file))
+
+        def read_loop():
+            for _ in range(50):
+                if stop.is_set():
+                    break
+                try:
+                    text = state_file.read_text()
+                    json.loads(text)
+                except FileNotFoundError:
+                    pass  # File not yet created
+                except json.JSONDecodeError as exc:
+                    read_errors.append(f"Corrupt JSON: {exc}")
+                    stop.set()
+
+        t1 = threading.Thread(target=save_loop, args=("w1",))
+        t2 = threading.Thread(target=save_loop, args=("w2",))
+        t3 = threading.Thread(target=read_loop)
+        t1.start()
+        t2.start()
+        t3.start()
+        t1.join()
+        t2.join()
+        stop.set()
+        t3.join()
+
+        assert not read_errors, f"Found corrupt state: {read_errors}"
