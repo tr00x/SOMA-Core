@@ -16,6 +16,7 @@ predict = true               # anomaly prediction (warn before escalation)
 fingerprint = true           # agent fingerprinting (detect behavior shifts)
 quality = true               # quality scoring (A-F grade per session)
 task_tracking = true         # task-aware monitoring (scope drift detection)
+stale_timeout = 1800         # seconds before session data is considered stale
 
 [agents.claude-code]
 autonomy = "human_on_the_loop"
@@ -26,10 +27,9 @@ tools = [
 ]
 
 [thresholds]
-caution = 0.40
-degrade = 0.60
-quarantine = 0.80
-restart = 0.95
+guide = 0.40
+warn = 0.60
+block = 0.80
 
 [weights]
 uncertainty = 1.2

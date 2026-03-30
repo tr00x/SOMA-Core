@@ -280,9 +280,10 @@ def main():
         # ── Stale session detection ──
         # If the last action is older than 30 minutes, this is a new session.
         # Clean task tracker to prevent false scope drift from previous work.
+        stale_timeout = hook_config.get("stale_timeout", 1800)
         if action_log:
             last_ts = action_log[-1].get("ts", 0)
-            if last_ts and (time.time() - last_ts) > 1800:
+            if last_ts and (time.time() - last_ts) > stale_timeout:
                 try:
                     from soma.hooks.common import TASK_TRACKER_PATH
                     TASK_TRACKER_PATH.unlink(missing_ok=True)
