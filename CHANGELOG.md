@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.3] — 2026-03-30
+
+### Added
+- `soma doctor` — check installation health (hooks, binary, state, version)
+- Auto-migrate soma.toml old keys on first hook run
+
+### Fixed
+- `soma mode` command uses new threshold key names
+
 ## [0.4.2] — 2026-03-30
 
 ### Fixed
