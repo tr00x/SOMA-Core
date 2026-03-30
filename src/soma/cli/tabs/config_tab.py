@@ -205,7 +205,7 @@ class ConfigTab(TabPane):
 
     def _build_preview(self, thresholds: dict[str, Any]) -> str:
         """Show what mode an agent at example pressure would get."""
-        current_level = pressure_to_mode(_PREVIEW_PRESSURE)
+        current_level = pressure_to_mode(_PREVIEW_PRESSURE, thresholds)
         orig_level = pressure_to_mode(_PREVIEW_PRESSURE)
 
         color = MODE_COLORS.get(current_level, "white")
