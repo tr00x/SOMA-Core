@@ -5,6 +5,7 @@ predictions, scope drift, fingerprint divergence, and RCA into
 a structured findings list.
 
 Layers call collect() and format the results for their output channel.
+State loaders come from soma.state (core), not hooks.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ def collect(
     level_name: str,
     actions: int,
     hook_config: dict,
+    agent_id: str = "claude-code",
 ) -> list[Finding]:
     """Collect all monitoring findings.
 
@@ -62,7 +64,7 @@ def collect(
     # ── Quality ──
     if hook_config.get("quality", True):
         try:
-            from soma.hooks.common import get_quality_tracker
+            from soma.state import get_quality_tracker
             qt = get_quality_tracker()
             report = qt.get_report()
             if report.total_writes + report.total_bashes >= 3:
@@ -83,7 +85,7 @@ def collect(
     # ── Prediction ──
     if hook_config.get("predict", True):
         try:
-            from soma.hooks.common import get_predictor
+            from soma.state import get_predictor
             predictor = get_predictor()
             if predictor._pressures:
                 boundaries = [0.25, 0.50, 0.75]
@@ -136,7 +138,7 @@ def collect(
     # ── Scope drift (suppressed during planning) ──
     if hook_config.get("task_tracking", True) and workflow_mode not in ("plan", "discuss"):
         try:
-            from soma.hooks.common import get_task_tracker
+            from soma.state import get_task_tracker
             tracker = get_task_tracker()
             ctx = tracker.get_context()
             if ctx.scope_drift >= 0.7 and ctx.drift_explanation:
@@ -156,9 +158,9 @@ def collect(
     # ── Fingerprint divergence ──
     if hook_config.get("fingerprint", True):
         try:
-            from soma.hooks.common import get_fingerprint_engine, _get_session_agent_id
+            from soma.state import get_fingerprint_engine
             fp_engine = get_fingerprint_engine()
-            div, explanation = fp_engine.check_divergence(_get_session_agent_id(), action_log)
+            div, explanation = fp_engine.check_divergence(agent_id, action_log)
             if div >= 0.3 and explanation:
                 findings.append(Finding(
                     priority=2, category="fingerprint",

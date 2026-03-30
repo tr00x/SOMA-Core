@@ -7,15 +7,18 @@ import sys
 import time
 from pathlib import Path
 
+from soma.state import (  # noqa: F401
+    PREDICTOR_PATH, FINGERPRINT_PATH, TASK_TRACKER_PATH, QUALITY_PATH,
+    get_predictor, save_predictor,
+    get_fingerprint_engine, save_fingerprint_engine,
+    get_task_tracker, save_task_tracker,
+    get_quality_tracker, save_quality_tracker,
+)
 
 SOMA_DIR = Path.home() / ".soma"
 ENGINE_STATE_PATH = SOMA_DIR / "engine_state.json"
 STATE_PATH = SOMA_DIR / "state.json"
 ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
-PREDICTOR_PATH = SOMA_DIR / "predictor.json"
-FINGERPRINT_PATH = SOMA_DIR / "fingerprint.json"
-TASK_TRACKER_PATH = SOMA_DIR / "task_tracker.json"
-QUALITY_PATH = SOMA_DIR / "quality.json"
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -272,97 +275,6 @@ def save_state(engine):
     except Exception:
         pass
 
-
-def get_predictor():
-    """Load or create predictor for this session."""
-    try:
-        from soma.predictor import PressurePredictor
-        if PREDICTOR_PATH.exists():
-            data = json.loads(PREDICTOR_PATH.read_text())
-            return PressurePredictor.from_dict(data)
-        return PressurePredictor()
-    except Exception:
-        from soma.predictor import PressurePredictor
-        return PressurePredictor()
-
-
-def save_predictor(predictor) -> None:
-    """Persist predictor state."""
-    try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        PREDICTOR_PATH.write_text(json.dumps(predictor.to_dict()))
-    except Exception:
-        pass
-
-
-def get_fingerprint_engine():
-    """Load or create fingerprint engine (persists across sessions)."""
-    try:
-        from soma.fingerprint import FingerprintEngine
-        if FINGERPRINT_PATH.exists():
-            data = json.loads(FINGERPRINT_PATH.read_text())
-            return FingerprintEngine.from_dict(data)
-        return FingerprintEngine()
-    except Exception:
-        from soma.fingerprint import FingerprintEngine
-        return FingerprintEngine()
-
-
-def save_fingerprint_engine(engine) -> None:
-    """Persist fingerprint engine."""
-    try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        FINGERPRINT_PATH.write_text(json.dumps(engine.to_dict()))
-    except Exception:
-        pass
-
-
-def get_task_tracker(cwd: str = ""):
-    """Load or create task tracker for this session."""
-    try:
-        from soma.task_tracker import TaskTracker
-        if TASK_TRACKER_PATH.exists():
-            data = json.loads(TASK_TRACKER_PATH.read_text())
-            tracker = TaskTracker.from_dict(data)
-            # Update cwd if provided (may change between sessions)
-            if cwd:
-                tracker.cwd = cwd
-            return tracker
-        return TaskTracker(cwd=cwd)
-    except Exception:
-        from soma.task_tracker import TaskTracker
-        return TaskTracker(cwd=cwd)
-
-
-def save_task_tracker(tracker) -> None:
-    """Persist task tracker state."""
-    try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        TASK_TRACKER_PATH.write_text(json.dumps(tracker.to_dict()))
-    except Exception:
-        pass
-
-
-def get_quality_tracker():
-    """Load or create quality tracker for this session."""
-    try:
-        from soma.quality import QualityTracker
-        if QUALITY_PATH.exists():
-            data = json.loads(QUALITY_PATH.read_text())
-            return QualityTracker.from_dict(data)
-        return QualityTracker()
-    except Exception:
-        from soma.quality import QualityTracker
-        return QualityTracker()
-
-
-def save_quality_tracker(tracker) -> None:
-    """Persist quality tracker state."""
-    try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        QUALITY_PATH.write_text(json.dumps(tracker.to_dict()))
-    except Exception:
-        pass
 
 
 def read_stdin() -> dict:

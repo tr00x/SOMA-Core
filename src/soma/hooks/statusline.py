@@ -5,11 +5,10 @@ The agent's vital signs — always visible, always honest.
 Must be fast (<50ms) and never crash.
 
 Output examples:
-    🧠 SOMA ✦ healthy ░░░░░░░░░░  0% · #3 · warming up
-    🧠 SOMA ✦ healthy ░░░░░░░░░░  8% · u:0.04 d:0.12 · #42 · quality A
-    🧠 SOMA ⚡ caution ███░░░░░░░ 32% · d:0.45↑ · #87 · quality B
-    🧠 SOMA 🔥 degrade ██████░░░░ 62% · e:0.38↑ · #130 · quality D
-    🧠 SOMA 🚨 lockdown █████████░ 85% · e:0.72↑ · #201 · quality F
+    🧠 SOMA ✦ observe ░░░░░░░░░░  0% · ctx:high focus:focused · #42 · quality A
+    🧠 SOMA 💡 guide  ███░░░░░░░ 32% · d:0.45↑ · #87 · quality B
+    🧠 SOMA ⚡ warn   ██████░░░░ 62% · e:0.38↑ · #130 · quality D
+    🧠 SOMA 🚨 block  █████████░ 85% · e:0.72↑ · #201 · quality F
 """
 
 from __future__ import annotations
