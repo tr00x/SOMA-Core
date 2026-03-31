@@ -684,21 +684,21 @@ As AI agents become more autonomous and more widely deployed, the gap between "a
 
 ## References
 
-[1] Chen, M. et al. "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?" arXiv:2310.06770, 2023.
+[1] Chen, M. et al. "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?" arXiv:2310.06770, 2023. *(Benchmark documenting real-world agent failures on GitHub issues — empirical evidence for the behavioral loops and scope drift SOMA is designed to detect.)*
 
-[2] Yang, J. et al. "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering." arXiv:2405.15793, 2024.
+[2] Yang, J. et al. "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering." arXiv:2405.15793, 2024. *(Agent-computer interaction design — demonstrates tool-call granularity as the natural observation unit, the same granularity SOMA monitors.)*
 
-[3] Jimenez, C.E. et al. "Measuring Coding Challenge Competence With APPS." arXiv:2105.09938, 2021.
+[3] Jimenez, C.E. et al. "Measuring Coding Challenge Competence With APPS." arXiv:2105.09938, 2021. *(Coding task evaluation — quantifies how agent performance degrades with task complexity, motivating SOMA's task complexity estimator.)*
 
-[4] Kamhoua, C. et al. "EigenTrust: Algorithm for Reputation Management in P2P Networks." ACM, 2003.
+[4] Kamhoua, C. et al. "EigenTrust: Algorithm for Reputation Management in P2P Networks." ACM, 2003. *(Distributed trust propagation — SOMA's trust graph with damped weighted averaging is a simplification of EigenTrust's iterative convergence model.)*
 
-[5] Slovic, P. "Perceived risk, trust, and democracy." Risk Analysis, 13(6), 675-682, 1993.
+[5] Slovic, P. "Perceived risk, trust, and democracy." Risk Analysis, 13(6), 675-682, 1993. *(Asymmetric trust dynamics — "trust is slow to build, fast to destroy." Directly informs SOMA's 2.5:1 decay-to-recovery ratio in the trust graph.)*
 
-[6] Shewhart, W.A. "Economic Control of Quality of Manufactured Product." Van Nostrand, 1931.
+[6] Shewhart, W.A. "Economic Control of Quality of Manufactured Product." Van Nostrand, 1931. *(Statistical process control — z-score control charts are the foundation of SOMA's signal normalization via sigmoid-clamped z-scores.)*
 
-[7] Astrom, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008.
+[7] Åström, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008. *(Classical control theory — PID composition, hysteresis, and deadband control principles that inform SOMA's graduated guidance and grace period design.)*
 
-[8] Bai, Y. et al. "Constitutional AI: Harmlessness from AI Feedback." arXiv:2212.08073, 2022.
+[8] Bai, Y. et al. "Constitutional AI: Harmlessness from AI Feedback." arXiv:2212.08073, 2022. *(Training-time alignment — SOMA complements Constitutional AI by providing the runtime behavioral guarantees that training-time alignment cannot.)*
 
 [9] Kendall, A. & Gal, Y. "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?" NeurIPS, 2017. *(Epistemic vs. aleatoric uncertainty decomposition — foundational framework for SOMA's uncertainty classification.)*
 
