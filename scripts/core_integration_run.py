@@ -1,12 +1,13 @@
 """
-SOMA Core Integration Run — практический тест всего pipeline.
+SOMA Core Integration Run — end-to-end pipeline test with real numbers.
 
-Симулирует три сценария агентской работы:
-  A) Здоровая сессия — нормальная работа
-  B) Деградирующая сессия — нарастающие ошибки → эскалация режима
-  C) Мульти-агент — propagation давления через trust-граф
+Simulates four agent scenarios:
+  A) Healthy session — normal operation, low error rate
+  B) Degrading session — errors spike after 30 actions → mode escalation
+  C) Multi-agent — pressure propagation through trust graph
+  D) Policy engine — declarative rules fire on elevated vitals
 
-Конфиг движка берётся из soma.toml (как в проде).
+Engine config matches soma.toml (production settings).
 """
 
 from __future__ import annotations
@@ -165,7 +166,7 @@ def run_scenario_b() -> tuple[list[StepRecord], dict]:
 def run_scenario_c() -> tuple[dict, dict]:
     """
     Multi-agent graph: orchestrator → [worker-a, worker-b]
-    orchestrator накапливает давление → смотрим propagation к воркерам.
+    Orchestrator accumulates pressure → observe propagation to workers.
     """
     engine = make_engine()
     engine.register_agent("orchestrator",
