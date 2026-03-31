@@ -510,11 +510,11 @@ class SOMAEngine:
         # Also zero the graph so get_snapshot returns 0
         if s.action_count <= s.baseline.min_samples:
             effective = 0.0
+            pressure_vector = PressureVector()  # keep consistent with effective=0.0
             self._graph.set_internal_pressure(agent_id, 0.0)
             self._graph._nodes[agent_id].effective_pressure = 0.0
-            zero_vec = PressureVector()
-            self._graph.set_internal_pressure_vector(agent_id, zero_vec)
-            self._graph._nodes[agent_id].effective_pressure_vector = zero_vec
+            self._graph.set_internal_pressure_vector(agent_id, pressure_vector)
+            self._graph._nodes[agent_id].effective_pressure_vector = pressure_vector
 
         # 9. Trust
         if uncertainty > 0.5:
