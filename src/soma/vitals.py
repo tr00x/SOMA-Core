@@ -213,6 +213,25 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Goal coherence
+# ---------------------------------------------------------------------------
+
+def compute_goal_coherence(
+    current_actions: Sequence[Action],
+    initial_task_vector: list[float],
+    initial_known_tools: list[str],
+) -> float:
+    """Cosine similarity between current behavior and initial task signature.
+
+    Returns float in [0, 1]. Higher = agent still working on original task.
+    Uses initial_known_tools (frozen at signature capture time) to ensure
+    consistent vector dimensionality.
+    """
+    current_vec = compute_behavior_vector(current_actions, initial_known_tools)
+    return cosine_similarity(current_vec, initial_task_vector)
+
+
+# ---------------------------------------------------------------------------
 # Drift
 # ---------------------------------------------------------------------------
 

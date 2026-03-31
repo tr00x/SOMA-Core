@@ -140,7 +140,6 @@ class TestGoalCoherenceIntegration:
             r = e.record_action("a", Action(tool_name="Bash", output_text="ok"))
         assert r.vitals.goal_coherence is None
 
-    @pytest.mark.xfail(reason="Implementation in Plan 02")
     def test_goal_coherence_computed_after_warmup(self):
         e = SOMAEngine(budget={"tokens": 100000})
         e.register_agent("a")
