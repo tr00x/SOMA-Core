@@ -33,50 +33,87 @@ Research basis: SOMA-RESEARCH.pdf — 10 open problems from academic literature 
 
 ---
 
-## Milestone 2 — Platform Expansion
+## Milestone 2 — Platform Expansion (DONE — v0.5.0)
 
-### Universal SDK
+### Universal SDK (DONE)
 
-- [ ] **SDK-01**: Universal Python SDK — `soma.track()` context manager for any agent framework (LangChain, CrewAI, AutoGen, custom)
-- [ ] **SDK-02**: LangChain adapter — middleware that instruments LangChain agents transparently
-- [ ] **SDK-03**: CrewAI adapter — observer for CrewAI crew execution
-- [ ] **SDK-04**: AutoGen adapter — monitor for AutoGen conversation flows
-- [ ] **SDK-05**: TypeScript SDK — first-class JS/TS support for Vercel AI SDK, LangChain.js
+- [x] **SDK-01**: Universal Python SDK — `soma.track()` context manager
+- [x] **SDK-02**: LangChain adapter — `SomaLangChainCallback`
+- [x] **SDK-03**: CrewAI adapter — `SomaCrewObserver`
+- [x] **SDK-04**: AutoGen adapter — `SomaAutoGenMonitor`
+- [x] **SDK-05**: TypeScript SDK scaffold — `packages/soma-ai/`
 
-### Policy Engine
+### Policy Engine (DONE)
 
-- [ ] **POL-01**: YAML policy engine — declarative rules (when/do) beyond pressure thresholds
-- [ ] **POL-02**: Python guardrail decorator — `@soma.guardrail` for programmatic rules
-- [ ] **POL-03**: Community policy packs — shareable rule sets hosted on GitHub
-
-### Observability
-
-- [ ] **OTL-01**: OpenTelemetry exporter — structured traces/metrics to any OTel collector (dep already exists)
-- [ ] **OTL-02**: Structured audit log — JSON Lines out of the box, zero config
-- [ ] **RPT-01**: Session reports — automatic post-session HTML/PDF summary (actions, quality, cost, patterns, interventions)
+- [x] **POL-01**: YAML/TOML policy engine — declarative when/do rules
+- [x] **POL-02**: Python guardrail decorator — `@soma.guardrail` sync/async
+- [ ] **POL-03**: Community policy packs — shareable rule sets (Milestone 5)
 
 ---
 
-## Milestone 3 — Ecosystem & Visibility
+## Milestone 3 — Production Ready
+
+### Adoption Blockers
+
+- [ ] **ASYNC-01**: Async client support — `soma.wrap(AsyncAnthropic())`
+- [ ] **ASYNC-02**: Streaming support — intercept `client.messages.stream()`
+- [ ] **PUB-01**: PyPI publish 0.5.0 — update published package
+- [ ] **TEST-01**: Real API testing — verified with live Anthropic + OpenAI calls
+- [ ] **CTX-01**: Context window tracking — monitor context consumption as degradation predictor
+- [ ] **LOG-01**: Structured audit log (OTL-02) — JSON Lines per action, zero config
+- [ ] **DOC-01**: CONTRIBUTING.md — dev setup, test instructions, contribution guide
+
+---
+
+## Milestone 4 — Observability
+
+- [ ] **OTL-01**: OpenTelemetry exporter — structured traces/metrics to any OTel collector
+- [ ] **RPT-01**: Session reports — automatic post-session summary (HTML/Markdown)
+- [ ] **ALT-01**: Webhook alerting — Slack, Discord, PagerDuty on WARN/BLOCK/policy violation
+- [ ] **HIST-01**: Historical analytics — trends over time, per-agent degradation patterns
+
+---
+
+## Milestone 5 — Ecosystem
+
+- [ ] **HOOK-01**: Cursor/Windsurf hooks — same 4-hook architecture for other AI coding tools
+- [ ] **OAAI-01**: OpenAI Agents SDK adapter
+- [ ] **NPM-01**: NPM publish TypeScript SDK
+- [ ] **DEMO-01**: Demo GIF/video for README
+- [ ] **POL-03**: Community policy packs — shareable rule sets
+- [ ] **LAYER-01**: Layer SDK — trivial creation of new platform integrations
+
+---
+
+## Milestone 6 — Intelligence
+
+- [ ] **PRED-01**: Context-aware degradation score (context window + half-life + error trend)
+- [ ] **TUNE-01**: ML-optimized thresholds per agent type, per task type
+- [ ] **TASK-01**: Semantic task-aware monitoring (drift from goal, not just from stats)
+- [ ] **ANOM-01**: Cross-session anomaly prediction (5-10 actions ahead)
+
+---
+
+## Milestone 7 — Platform
 
 ### Web Dashboard
 
-- [ ] **DSH-01**: Self-hosted web dashboard — real-time multi-agent monitoring (FastAPI + React/htmx, Docker)
+- [ ] **DSH-01**: Self-hosted web dashboard (FastAPI + htmx/React, Docker)
 - [ ] **DSH-02**: Pressure timeline graphs per agent
 - [ ] **DSH-03**: Trust graph visualization
 - [ ] **DSH-04**: Session history with drill-down
 
-### Alerting & Fleet
+### Fleet & Teams
 
-- [ ] **ALT-01**: Webhook alerting — Slack, Discord, PagerDuty on WARN/BLOCK/policy violation
-- [ ] **FLT-01**: Fleet management — central git-based config for multiple machines
+- [ ] **FLT-01**: Fleet management — central config for multiple machines
 - [ ] **FLT-02**: Aggregate fleet dashboards
+- [ ] **TEAM-01**: Multi-user, role-based access
 
 ### Research & Community
 
-- [ ] **BEN-01**: Agent Safety Score — standardized cross-model safety metric using SOMA vitals
-- [ ] **BEN-02**: Collective benchmarks — opt-in anonymized telemetry + community leaderboard
-- [ ] **SAF-01**: Open research datasets — anonymized behavioral traces for AI safety research
+- [ ] **BEN-01**: Agent Safety Score — cross-model safety metric
+- [ ] **BEN-02**: Collective benchmarks — opt-in anonymized telemetry
+- [ ] **SAF-01**: Open research datasets — anonymized behavioral traces
 
 ---
 

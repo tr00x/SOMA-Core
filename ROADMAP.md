@@ -20,145 +20,98 @@ Not because we want lock-in. Because agents without oversight are dangerous, exp
 
 *Shipped March 28, 2026*
 
-The core engine works. Monitor agents, compute pressure, propagate it across graphs, control behavior directively. The math is verified, the tests are comprehensive, the CLI is ready.
+Core engine, CLI, hooks, persistence, self-learning, test suite.
 
 | Deliverable | Status |
 |:------------|:-------|
-| Core engine (vitals, baseline, pressure, graph, ladder, learning) | Done — 100% coverage |
-| `soma.wrap()` — universal API client wrapper | Done — Anthropic + OpenAI |
-| CLI: `soma`, `soma init`, `soma status`, `soma replay` | Done |
-| TUI Dashboard (4 tabs) | Done |
+| Core engine (vitals, baseline, pressure, graph, learning) | Done |
+| `soma.wrap()` — Anthropic + OpenAI client wrapper | Done |
+| CLI + TUI Dashboard | Done |
 | Session recording + replay | Done |
-| `soma.testing.Monitor` for pytest | Done |
-| State persistence | Done |
-| Cold start grace period | Done |
-| Self-learning feedback loop | Done — connected |
-| Claude Code hooks (PreToolUse, PostToolUse, Stop) | Done |
-| Paperclip plugin | Done — installed |
-| Documentation (guide + reference + API) | Done — 3,449 lines |
-| Test suite | Done — 399 tests |
-
----
-
-## Milestone 1.5: Agent Intelligence ✓
-
-*Shipped March 28, 2026*
-
-SOMA stops being a passive monitor and starts actively improving agent quality.
-
-| Deliverable | Status |
-|:------------|:-------|
-| **Action log** — track tool call patterns for analysis | Done |
-| **Actionable feedback** — "3 writes without Read" instead of raw metrics | Done |
-| **Post-write validation** — py_compile + ruff lint + node --check | Done |
-| **Read-before-Write enforcement** — blocks blind mutations | Done |
-| **Cross-session memory** — inherit baseline between sessions | Done |
-| **Dead session cleanup** — auto-prune old agent states | Done |
-| **Session stats** — error count + top tools on Stop | Done |
-| **UserPromptSubmit hook** — inject tips into agent context | Done |
-| **Specific block messages** — "Read bar.py first" not just "blocked" | Done |
-| Test suite | Done — 476 tests |
-
----
-
-## Milestone 1.7: Guidance System ✓
-
-*Shipped March 2026 — v0.4.0*
-
-SOMA shifts from progressive blocking (6 levels) to a guidance model (4 modes). Write/Edit/Bash/Agent are never blocked. Only destructive operations are gated at high pressure.
-
-| Deliverable | Status |
-|:------------|:-------|
-| **4 modes** — OBSERVE / GUIDE / WARN / BLOCK replace 6-level ladder | Done |
-| **Guidance over blocking** — tools stay available, advice injected | Done |
-| **Destructive-op gating** — rm -rf, git push --force, .env blocked at 75%+ | Done |
-| **Simplified CLI** — stop/start/reset/uninstall-claude | Done |
-| **Removed commands** — quarantine/release/approve/daemon/export | Done |
-| **Skill updates** — all Claude Code skills reflect new model | Done |
-
----
-
-## Milestone 1.8: Core Polish ✓
-
-*Shipped March 2026 — v0.4.1–0.4.12*
-
-Hardening the guidance system for real-world use. False positive reduction, actionable feedback, layer-agnostic architecture.
-
-| Deliverable | Status |
-|:------------|:-------|
-| **Configurable thresholds** — guide/warn/block keys, soma.toml migration | Done |
-| **False positive reduction** — cwd-relative drift, read-context awareness | Done |
-| **`soma doctor`** — installation health check | Done |
-| **CI/ruff** — GitHub Actions lint pipeline | Done |
-| **Read-context awareness** — checks last 30 actions for prior reads | Done |
-| **Workflow severity** — suppress noise during plan/discuss/execute phases | Done |
-| **Positive feedback** — read-before-edit and clean streak recognition | Done |
-| **Actionable metrics** — context efficiency, focus, phase-aware status | Done |
-| **Directive prompts** — `[do] Read before editing` not just pattern names | Done |
-| **Layer-agnostic architecture** — patterns.py, findings.py, context.py | Done |
-| **Visibility fix** — findings shown regardless of pressure level | Done |
+| State persistence (atomic writes, file locking) | Done |
+| Self-learning feedback loop | Done |
+| Claude Code hooks (4 lifecycle hooks + status line) | Done |
+| 4-mode guidance (OBSERVE/GUIDE/WARN/BLOCK) | Done |
+| False positive reduction, read-context awareness | Done |
+| Layer-agnostic architecture (patterns, findings, context) | Done |
+| Test suite — 476 tests | Done |
 
 ---
 
 ## Milestone 2: Agent Intelligence ✓
 
-*Shipped March 2026 — v0.5.0*
+*Shipped March 31, 2026 — v0.5.0*
 
-8 phases of behavioral analysis capabilities. SOMA gains uncertainty classification, vector pressure propagation, temporal modeling, reliability metrics, a policy engine, framework adapters, and a TypeScript SDK.
+8 phases of behavioral analysis. SOMA gains uncertainty classification, vector pressure propagation, temporal modeling, reliability metrics, policy engine, framework adapters, and per-session isolation.
 
 | Deliverable | Description | Status |
 |:------------|:------------|:-------|
-| Phase 01: Vitals Accuracy | VIT-01 goal coherence, VIT-02 uncertainty classification, VIT-03 baseline integrity | Done |
-| Phase 02: Uncertainty Classification | Epistemic/aleatoric classification wired into engine pipeline | Done |
-| Phase 03: Vector Pressure Propagation | PressureVector per-signal propagation through trust graph | Done |
-| Phase 04: Coordination Intelligence | SNR isolation, task complexity estimation | Done |
-| Phase 05: Temporal Half-Life | Agent degradation modeling with exponential decay | Done |
-| Phase 06: Reliability Metrics | Calibration scoring, verbal-behavioral divergence detection | Done |
-| Phase 07: Universal Python SDK | Framework adapters for LangChain, CrewAI, AutoGen | Done |
-| Phase 08: Policy Engine + TypeScript | Declarative policy rules, guardrail decorator, TypeScript SDK | Done |
-| Test suite | 735 tests, all passing | Done |
+| Vitals Accuracy | Goal coherence, uncertainty classification, baseline integrity | Done |
+| Uncertainty Classification | Epistemic/aleatoric via entropy, pressure modulation (1.3x/0.7x) | Done |
+| Vector Pressure Propagation | PressureVector per-signal through trust graph | Done |
+| Coordination Intelligence | SNR isolation, task complexity estimation | Done |
+| Temporal Half-Life | Exponential decay modeling, handoff suggestions | Done |
+| Reliability Metrics | Calibration scoring, verbal-behavioral divergence | Done |
+| Universal Python SDK | LangChain, CrewAI, AutoGen adapters | Done |
+| Policy Engine + TypeScript | Declarative YAML/TOML rules, @guardrail, TypeScript SDK scaffold | Done |
+| Error-Rate Aggregate Floor | Prevents weighted-mean dilution of dominant error signals | Done |
+| Per-Session Isolation | Each Claude Code instance gets own agent_id + state files | Done |
+| Test suite — 735 tests | Done |
 
 ---
 
-## Milestone 3: Real-World Ready
+## Milestone 3: Production Ready
 
 *Target: April 2026*
 
-Make SOMA work seamlessly in production. No rough edges. Install, configure, forget.
+**Without this, nobody can use SOMA in real production.** These are adoption blockers.
 
-| Deliverable | Priority | Status |
-|:------------|:---------|:-------|
-| **PyPI publish** — `pip install soma-ai` works globally | Critical | Done |
-| **GitHub Actions CI** — tests + lint on every push/PR | Critical | Done |
-| **Async client support** — `soma.wrap(AsyncAnthropic())` | High | |
-| **Progress tracking** — detect stuck agents, not just confused | High | |
-| **GIF/demo recording** — for README and social | High | |
-| **Real API testing** — verified with live Anthropic + OpenAI | High | |
-| **Dashboard UX polish** — responsive layout, keybindings | Medium | |
-| **soma.toml validation** — helpful errors on bad config | Medium | |
+| Deliverable | Priority | Why |
+|:------------|:---------|:----|
+| **Async client support** — `soma.wrap(AsyncAnthropic())` | Critical | 90% of production Python uses async |
+| **Streaming support** — intercept `client.messages.stream()` | Critical | Every real app streams responses |
+| **PyPI publish 0.5.0** — update the published package | Critical | Users still get 0.4.12 |
+| **Real API testing** — verified with live Anthropic + OpenAI calls | Critical | Never tested against real API response formats |
+| **Context window tracking** — monitor how much context the agent has consumed | High | Strongest predictor of agent degradation; half-life model needs this input |
+| **Structured audit log** (OTL-02) — JSON Lines per action, zero config | High | Compliance, post-mortem analysis, and training data for improving the core |
+| **CONTRIBUTING.md** — how to contribute, dev setup, test instructions | High | Open source without it is dead |
+| **soma.toml validation** — helpful errors on bad config | Medium | Current failure mode is silent |
 
 ---
 
-## Milestone 4: Ecosystem
+## Milestone 4: Observability
+
+*Target: April–May 2026*
+
+SOMA speaks the language of existing monitoring infrastructure.
+
+| Deliverable | Description |
+|:------------|:------------|
+| **OpenTelemetry export** (OTL-01) | Export pressure, vitals, mode changes as OTEL spans + metrics. Grafana/Datadog/New Relic out of the box. |
+| **Session reports** (RPT-01) | Automatic post-session summary — actions, quality, cost, patterns, interventions. HTML or Markdown. |
+| **Webhook alerting** | Slack, Discord, PagerDuty on WARN/BLOCK/policy violation |
+| **Historical analytics** | Trends over time per agent. Which tasks cause drift? Which agents degrade fastest? |
+
+---
+
+## Milestone 5: Ecosystem
 
 *Target: May 2026*
 
-Framework integrations. Community layers. SOMA works with everything.
+SOMA works with every agent platform, not just Claude Code.
 
-| Deliverable | Owner |
-|:------------|:------|
-| **soma-langchain** — LangChain callback integration | Community |
-| **soma-crewai** — CrewAI middleware | Community |
-| **soma-autogen** — AutoGen observer | Community |
-| **soma-openai-agents** — OpenAI Agents SDK | Community |
-| **OpenTelemetry export** — Grafana/Datadog metrics | Community |
-| **Layer SDK** — trivial layer creation | Core |
-| **Layer registry** — discover and install from CLI | Core |
-| **Cursor/Windsurf hooks** — not just Claude Code | Core |
+| Deliverable | Description |
+|:------------|:------------|
+| **Cursor/Windsurf hooks** | Same 4-hook architecture adapted for other AI coding tools |
+| **OpenAI Agents SDK adapter** | Native integration with OpenAI's agent framework |
+| **NPM publish TypeScript SDK** | `packages/soma-ai/` published to npm |
+| **Demo GIF/video** | README demo showing SOMA in action — the "aha moment" |
+| **Community policy packs** (POL-03) | Shareable rule sets on GitHub — security, cost, quality presets |
+| **Layer SDK** | Trivial creation of new platform integrations |
 
 ---
 
-## Milestone 5: Intelligence
+## Milestone 6: Intelligence
 
 *Target: June–July 2026*
 
@@ -166,30 +119,31 @@ SOMA stops being reactive and starts being predictive.
 
 | Deliverable | Description |
 |:------------|:------------|
-| **Anomaly prediction** | Predict escalation 5–10 actions before it happens from historical patterns |
-| **Automatic threshold tuning** | ML-optimized thresholds per agent, per task type |
-| **Task-aware monitoring** | Know WHAT the agent is doing, not just HOW — drift from goal, not just from stats |
+| **Context-aware degradation** | Combine context window usage + half-life + error trend into composite degradation score |
+| **Automatic threshold tuning** | ML-optimized thresholds per agent type, per task type, per codebase |
+| **Task-aware monitoring** | Understand WHAT the agent is doing (not just HOW) — semantic drift from goal |
+| **Anomaly prediction** | Predict escalation 5–10 actions ahead from historical cross-session patterns |
+| **Agent comparison** | Same task, different models — which performs better under SOMA? |
 
 ---
 
-## Milestone 6: Platform
+## Milestone 7: Platform
 
 *Target: Q3–Q4 2026*
 
-SOMA becomes a platform. Web dashboard. Teams. Alerting.
+SOMA becomes a platform. Web dashboard. Teams. Fleet management.
 
 | Deliverable | Description |
 |:------------|:------------|
-| **Web dashboard** | Browser-based. Real-time WebSocket. Shareable URLs. |
-| **Team monitoring** | Multiple users, same agents. Role-based access. |
-| **Alert channels** | Slack, Discord, email, PagerDuty |
-| **Historical analytics** | Trends over time. Which agents struggle? Which tasks cause drift? |
+| **Web dashboard** | Browser-based real-time monitoring. WebSocket. Multi-agent view. |
+| **Team monitoring** | Multiple users, same project. Role-based access. |
+| **Fleet management** | Central config for multiple machines. Aggregate dashboards. |
 | **API server** | REST/GraphQL for custom integrations |
 | **SOMA Cloud** | Hosted version. Sign up, wrap your client, done. |
 
 ---
 
-## Milestone 7: Research
+## Milestone 8: Research
 
 *Target: 2027*
 
@@ -199,7 +153,7 @@ Contribute back to the research community.
 |:------------|:------------|
 | **Paper: Behavioral Pressure as Agent Health Metric** | Formalize pressure computation, validate on production data |
 | **Paper: Trust Dynamics in Multi-Agent Monitoring** | Analyze trust decay/recovery patterns in real deployments |
-| **Open dataset** | Anonymized agent behavior traces |
+| **Open dataset** | Anonymized agent behavior traces from real sessions |
 | **Benchmark suite** | Standard benchmark for agent monitoring tools |
 
 ---
@@ -208,11 +162,11 @@ Contribute back to the research community.
 
 Every milestone has tasks marked [`help wanted`](https://github.com/tr00x/SOMA-Core/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and [`good first issue`](https://github.com/tr00x/SOMA-Core/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-**Easiest start:** Build a layer. Pick a framework you use and create `soma-{framework}`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+**Easiest start:** Pick a framework you use and write an adapter. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Researchers:** If you work on agent reliability, behavioral analysis, or multi-agent systems — open an issue or reach out.
+**Researchers:** Working on agent reliability, behavioral analysis, or multi-agent systems? Open an issue or reach out.
 
-**Companies:** Running AI agents in production? Want early access to Milestone 5+ features? Open an issue with your use case.
+**Companies:** Running AI agents in production? Open an issue with your use case.
 
 ---
 
