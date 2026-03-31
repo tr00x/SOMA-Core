@@ -24,6 +24,7 @@ from soma.guidance import pressure_to_mode, DEFAULT_THRESHOLDS
 from soma.graph import PressureGraph
 from soma.learning import LearningEngine
 from soma.events import EventBus
+from soma.audit import AuditLogger
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,8 @@ class SOMAEngine:
         custom_weights: dict | None = None,
         custom_thresholds: dict | None = None,
         context_window: int = 200_000,
+        audit_enabled: bool = True,
+        audit_path: str | None = None,
     ) -> None:
         self._agents: dict[str, _AgentState] = {}
         self._budget = MultiBudget(budget or {"tokens": 100_000})
@@ -85,6 +88,7 @@ class SOMAEngine:
         self._custom_thresholds = custom_thresholds
         self._default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
         self._context_window = context_window
+        self._audit = AuditLogger(path=audit_path, enabled=audit_enabled)
         self._vitals_config: dict[str, Any] = {}
 
     @property
@@ -229,6 +233,8 @@ class SOMAEngine:
             default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
 
         context_window = config.get("context_window", 200_000)
+        audit_enabled = config.get("audit_enabled", True)
+        audit_path = config.get("audit_path", None)
 
         engine = cls(
             budget=budget or {"tokens": 100_000},
@@ -236,6 +242,8 @@ class SOMAEngine:
             custom_weights=custom_weights,
             custom_thresholds=custom_thresholds,
             context_window=context_window,
+            audit_enabled=audit_enabled,
+            audit_path=audit_path,
         )
         engine._default_autonomy = default_autonomy
         engine._vitals_config = config.get("vitals", {})
@@ -616,6 +624,14 @@ class SOMAEngine:
             context_action=context_action,
             pressure_vector=pressure_vector,
             handoff_suggestion=handoff_suggestion,
+        )
+
+        self._audit.append(
+            agent_id=agent_id,
+            tool_name=action.tool_name,
+            error=action.error,
+            pressure=result.pressure,
+            mode=result.mode.name,
         )
 
         if self._auto_export:
