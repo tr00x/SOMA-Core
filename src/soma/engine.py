@@ -18,7 +18,7 @@ from soma.vitals import (
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
 from soma.budget import MultiBudget
-from soma.guidance import pressure_to_mode
+from soma.guidance import pressure_to_mode, DEFAULT_THRESHOLDS
 from soma.graph import PressureGraph
 from soma.learning import LearningEngine
 from soma.events import EventBus
@@ -101,7 +101,20 @@ class SOMAEngine:
             agent_id=agent_id, autonomy=autonomy,
             system_prompt=system_prompt, tools_allowed=tools or [],
         )
-        self._agents[agent_id] = _AgentState(config)
+        state = _AgentState(config)
+        # Compute task complexity from system_prompt if available (most accurate source).
+        # Falls back to first action output in record_action() if prompt is empty.
+        if system_prompt:
+            vitals_cfg = self._vitals_config or {}
+            complexity_cfg = {
+                k[len("complexity_"):]: v
+                for k, v in vitals_cfg.items()
+                if k.startswith("complexity_")
+            }
+            state.task_complexity_score = estimate_task_complexity(
+                system_prompt, complexity_cfg or None
+            )
+        self._agents[agent_id] = state
         self._graph.add_agent(agent_id)
 
     def add_edge(self, source: str, target: str, trust_weight: float = 1.0) -> None:
@@ -487,7 +500,6 @@ class SOMAEngine:
         if s.task_complexity_score is not None and s.task_complexity_score > 0.5:
             # Complexity in (0.5, 1.0] → reduce thresholds by up to 0.20
             reduction = 0.4 * (s.task_complexity_score - 0.5)  # up to 0.20
-            from soma.guidance import DEFAULT_THRESHOLDS
             for key in ("guide", "warn", "block"):
                 base = effective_thresholds.get(key, DEFAULT_THRESHOLDS[key])
                 effective_thresholds[key] = max(0.10, base - reduction)
