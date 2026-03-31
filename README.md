@@ -24,6 +24,7 @@
   <a href="docs/guide.md">User Guide</a> &bull;
   <a href="docs/api.md">API Reference</a> &bull;
   <a href="docs/hooks.md">Hook Reference</a> &bull;
+  <a href="docs/INTEGRATION-TEST-REPORT.md">Integration Tests</a> &bull;
   <a href="ROADMAP.md">Roadmap</a>
 </p>
 
@@ -549,6 +550,8 @@ Every formula, threshold, edge case, and integration path is covered.
 16 stress scenarios validate behavior under extreme conditions: rapid action sequences, budget exhaustion, pressure spikes, loop detection, and multi-agent propagation.
 
 Full Claude Code integration tests simulate complete hook workflows end-to-end.
+
+**[Integration Test Report](docs/INTEGRATION-TEST-REPORT.md)** — 4 scenarios with real engine, 231 actions, full pipeline: healthy session (zero false positives), degrading session (OBSERVE→GUIDE→WARN→BLOCK in 16 actions), multi-agent trust graph propagation, and policy engine live evaluation.
 
 </td>
 <td>
