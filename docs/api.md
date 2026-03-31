@@ -1,5 +1,7 @@
 # SOMA API Reference
 
+*Version 0.5.0*
+
 ## Core
 
 ### `SOMAEngine`
@@ -32,15 +34,20 @@ engine = SOMAEngine(
 #### `record_action` pipeline
 
 1. Compute uncertainty (retry rate, tool deviation, entropy, format)
-2. Compute drift (cosine similarity to baseline behavior vector)
-3. Compute resource vitals (token usage, cost, error rate)
-4. Update baselines (EMA)
-5. Compute per-signal pressure (z-score, sigmoid-clamped)
-6. Aggregate pressure (0.7 * weighted mean + 0.3 * max)
-7. Propagate through trust graph
-8. Map pressure to response mode via `pressure_to_mode()`
-9. Emit events (mode_changed, approval_needed)
-10. Learn from outcomes
+2. Classify uncertainty (epistemic vs aleatoric)
+3. Compute drift (cosine similarity to baseline behavior vector)
+4. Compute resource vitals (token usage, cost, error rate)
+5. Compute goal coherence
+6. Update baselines (EMA)
+7. Compute per-signal pressure (z-score, sigmoid-clamped)
+8. Aggregate pressure (0.7 * weighted mean + 0.3 * max)
+9. Propagate through trust graph (vector pressure propagation)
+10. Map pressure to response mode via `pressure_to_mode()`
+11. Evaluate policy engine rules
+12. Emit events (mode_changed, approval_needed)
+13. Update half-life predictor
+14. Update reliability metrics
+15. Learn from outcomes
 
 ### `Action`
 
@@ -81,7 +88,7 @@ ResponseMode.WARN     # 2 — insistent warnings
 ResponseMode.BLOCK    # 3 — blocks destructive ops only
 ```
 
-Legacy alias: `Level = ResponseMode`. The old names (`HEALTHY`, `CAUTION`, `DEGRADE`, `QUARANTINE`, `RESTART`, `SAFE_MODE`) exist as enum aliases and will be removed in 0.5.0.
+Legacy alias: `Level = ResponseMode`. The old names (`HEALTHY`, `CAUTION`, `DEGRADE`, `QUARANTINE`, `RESTART`, `SAFE_MODE`) have been removed in 0.5.0.
 
 ### `GuidanceResponse`
 
@@ -105,6 +112,182 @@ AutonomyMode.FULLY_AUTONOMOUS   # Never asks for approval
 AutonomyMode.HUMAN_ON_THE_LOOP  # Approval only for BLOCK+
 AutonomyMode.HUMAN_IN_THE_LOOP  # Approval blocks escalation
 ```
+
+## Policy Engine
+
+The policy engine evaluates custom rules against the current vitals snapshot. Rules can be defined in YAML, TOML, or as Python dicts.
+
+### `PolicyEngine`
+
+```python
+from soma import PolicyEngine
+
+# Load from file (YAML or TOML)
+pe = PolicyEngine.from_file("rules.yaml")
+
+# Load from dict
+pe = PolicyEngine.from_dict({
+    "rules": [
+        {
+            "when": {"error_rate": {">": 0.5}},
+            "do": {"action": "warn", "message": "Error rate critically high"}
+        },
+        {
+            "when": {"drift": {">": 0.6}, "cost": {">": 0.8}},
+            "do": {"action": "block", "message": "Drift and cost both elevated"}
+        }
+    ]
+})
+
+# Evaluate against current vitals
+results = pe.evaluate(vitals_dict)
+
+for result in results:
+    result.action    # "guide", "warn", "block"
+    result.message   # str — human-readable message
+    result.rule_id   # int — index of the matched rule
+```
+
+### Rule format
+
+Each rule has a `when` clause (conditions) and a `do` clause (action):
+
+- **when**: dict of signal names to comparison operators. Multiple conditions are AND-ed.
+- **do**: `action` (one of "guide", "warn", "block") and `message` (str).
+
+Supported operators: `>`, `<`, `>=`, `<=`, `==`.
+
+## Guardrail Decorator
+
+Wraps a function with a pressure check. If the agent's current pressure exceeds the threshold, `SomaBlocked` is raised instead of executing the function.
+
+```python
+from soma import guardrail
+
+@guardrail(engine, "agent-1", threshold=0.8)
+def risky_operation():
+    ...
+
+# Calling risky_operation() when agent-1 pressure > 0.8 raises SomaBlocked
+# Calling it when pressure <= 0.8 executes normally
+```
+
+Parameters:
+- `engine`: `SOMAEngine` instance
+- `agent_id`: str — the agent whose pressure is checked
+- `threshold`: float — pressure threshold (0.0 to 1.0)
+
+## Pressure Vector
+
+Represents multi-dimensional pressure as a structured object rather than a scalar.
+
+```python
+from soma.types import PressureVector
+
+pv = PressureVector(
+    uncertainty=0.3,
+    drift=0.1,
+    error_rate=0.8,
+    cost=0.0,
+    token_usage=0.2,
+    goal_coherence=0.1,
+)
+
+pv.aggregate()       # float — scalar pressure (weighted mean + max blend)
+pv.dominant_signal   # str — signal with highest pressure ("error_rate")
+pv.as_dict()         # dict[str, float]
+```
+
+Used internally by the trust graph for vector pressure propagation. Each signal's pressure travels independently along trust-weighted edges.
+
+## Uncertainty Classification
+
+Classifies uncertainty into epistemic (knowledge gap) or aleatoric (inherent randomness).
+
+```python
+from soma.vitals import classify_uncertainty
+
+result = classify_uncertainty(uncertainty=0.5, task_entropy=0.2)
+# Returns: "epistemic"
+
+result = classify_uncertainty(uncertainty=0.5, task_entropy=0.6)
+# Returns: "aleatoric"
+```
+
+Parameters:
+- `uncertainty`: float — current uncertainty value (0.0 to 1.0)
+- `task_entropy`: float — entropy of the current task context (0.0 to 1.0)
+
+Returns: `"epistemic"` or `"aleatoric"`
+
+The classification affects how SOMA generates guidance:
+- Epistemic: "Read the relevant files before proceeding"
+- Aleatoric: "Add error handling or retry logic for this operation"
+
+## Reliability Metrics
+
+### `compute_calibration_score`
+
+Measures alignment between agent confidence and actual outcomes.
+
+```python
+from soma.reliability import compute_calibration_score
+
+score = compute_calibration_score(
+    predictions=[0.9, 0.8, 0.7, 0.6],
+    outcomes=[True, True, False, True],
+)
+# Returns: float [0, 1] where 1.0 = perfectly calibrated
+```
+
+Parameters:
+- `predictions`: list[float] — predicted success probabilities
+- `outcomes`: list[bool] — actual success/failure outcomes
+
+### `detect_verbal_behavioral_divergence`
+
+Detects mismatch between stated intentions and actual actions.
+
+```python
+from soma.reliability import detect_verbal_behavioral_divergence
+
+score = detect_verbal_behavioral_divergence(
+    stated_actions=["read config.py", "edit config.py"],
+    actual_actions=[
+        {"tool": "Edit", "file": "config.py"},
+        {"tool": "Bash", "command": "rm -rf tmp/"},
+    ],
+)
+# Returns: float [0, 1] where 0.0 = perfect alignment
+```
+
+Parameters:
+- `stated_actions`: list[str] — what the agent said it would do
+- `actual_actions`: list[dict] — what the agent actually did
+
+## Half-Life Predictor
+
+Temporal success prediction using exponential decay weighting.
+
+```python
+from soma.halflife import HalfLifePredictor
+
+hlp = HalfLifePredictor(decay_constant=10)
+
+hlp.record(success=True)
+hlp.record(success=True)
+hlp.record(success=False)
+
+pred = hlp.predict()
+pred.success_probability  # float [0, 1]
+pred.trend                # "rising", "falling", or "stable"
+pred.half_life            # float — actions until probability halves (if falling)
+```
+
+Parameters for constructor:
+- `decay_constant`: int — number of actions for half-weight decay (default: 10)
+
+The predictor integrates with the pressure model. Falling success probability contributes to increased pressure.
 
 ## Core Modules
 

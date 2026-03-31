@@ -1,7 +1,7 @@
 # SOMA Technical Reference
 ### System of Oversight and Monitoring for Agents
 
-**Version 0.4.11 | March 2026**
+**Version 0.5.0 | March 2026**
 
 A formal specification of the mathematical models, algorithms, and system architecture behind SOMA — the behavioral monitoring and control system for AI agents.
 
@@ -17,6 +17,7 @@ A formal specification of the mathematical models, algorithms, and system archit
    - 3.3 [Resource Vitals](#33-resource-vitals)
 4. [Normalization: Z-Score with Sigmoid Clamping](#4-normalization-z-score-with-sigmoid-clamping)
 5. [Pressure Aggregation](#5-pressure-aggregation)
+   - 5.1 [Error-Rate Aggregate Floor](#51-error-rate-aggregate-floor)
 6. [Baseline Learning (EMA)](#6-baseline-learning-ema)
 7. [Guidance System](#7-guidance-system)
 8. [Multi-Agent Pressure Propagation](#8-multi-agent-pressure-propagation)
@@ -31,9 +32,15 @@ A formal specification of the mathematical models, algorithms, and system archit
     - 16.1 [Pattern Analysis](#161-pattern-analysis)
     - 16.2 [Findings Collector](#162-findings-collector)
     - 16.3 [Session Context](#163-session-context)
-17. [Config Migration](#17-config-migration)
-18. [System Constants](#18-system-constants)
-19. [Formal Properties](#19-formal-properties)
+17. [Uncertainty Classification](#17-uncertainty-classification)
+18. [Vector Pressure Propagation](#18-vector-pressure-propagation)
+19. [Coordination SNR Isolation](#19-coordination-snr-isolation)
+20. [Half-Life Temporal Modeling](#20-half-life-temporal-modeling)
+21. [Reliability Metrics](#21-reliability-metrics)
+22. [Policy Engine](#22-policy-engine)
+23. [Config Migration](#23-config-migration)
+24. [System Constants](#24-system-constants)
+25. [Formal Properties](#25-formal-properties)
 
 ---
 
@@ -52,29 +59,29 @@ SOMA operates on a discrete event model. Each **action** (tool call, API call) i
 
 ```
 Action(tool, output, error, tokens, cost, duration, retried)
-  │
-  ├─→ Ring Buffer (last 10 actions)
-  │
-  ├─→ [VITALS]
-  │     ├─ Uncertainty(retry_rate, tool_deviation, format_deviation, entropy)
-  │     ├─ Drift(cosine_distance(behavior_vector, baseline_vector))
-  │     ├─ Error Rate(errors_in_window / actions_in_window)
-  │     ├─ Token Usage(spent / limit)
-  │     └─ Cost(spent / budget)
-  │
-  ├─→ [BASELINE UPDATE] EMA(α=0.15, cold_start_blend)
-  │
-  ├─→ [SIGNAL PRESSURE] z_score → sigmoid_clamp per signal
-  │
-  ├─→ [AGGREGATE] 0.7·weighted_mean + 0.3·max
-  │
-  ├─→ [GRAPH PROPAGATION] trust-weighted multi-agent
-  │
-  ├─→ [GUIDANCE] pressure_to_mode(thresholds?) → ResponseMode
-  │
-  ├─→ [LEARNING] evaluate intervention outcomes
-  │
-  └─→ ActionResult(mode, pressure, vitals, context_action)
+  |
+  +---> Ring Buffer (last 10 actions)
+  |
+  +---> [VITALS]
+  |       +- Uncertainty(retry_rate, tool_deviation, format_deviation, entropy)
+  |       +- Drift(cosine_distance(behavior_vector, baseline_vector))
+  |       +- Error Rate(errors_in_window / actions_in_window)
+  |       +- Token Usage(spent / limit)
+  |       +- Cost(spent / budget)
+  |
+  +---> [BASELINE UPDATE] EMA(alpha=0.15, cold_start_blend)
+  |
+  +---> [SIGNAL PRESSURE] z_score -> sigmoid_clamp per signal
+  |
+  +---> [AGGREGATE] 0.7*weighted_mean + 0.3*max
+  |
+  +---> [GRAPH PROPAGATION] trust-weighted multi-agent
+  |
+  +---> [GUIDANCE] pressure_to_mode(thresholds?) -> ResponseMode
+  |
+  +---> [LEARNING] evaluate intervention outcomes
+  |
+  +---> ActionResult(mode, pressure, vitals, context_action)
 ```
 
 ---
@@ -118,14 +125,14 @@ The pipeline executes on every `record_action(agent_id, action)` call. Steps are
 Uncertainty is a weighted composite of four sub-signals:
 
 ```
-U = w_r · R + w_t · σ(T) + w_f · F + w_e · σ(E)
+U = w_r * R + w_t * sigma(T) + w_f * F + w_e * sigma(E)
 ```
 
 Where:
 - **R** = retry rate = `count(retried actions) / total_actions`
-- **T** = tool call deviation = `|len(actions) - baseline_avg| / baseline_std` (z-score, σ-clamped)
+- **T** = tool call deviation = `|len(actions) - baseline_avg| / baseline_std` (z-score, sigma-clamped)
 - **F** = format deviation = `count(missing expected lines) / total_expected_lines`
-- **E** = entropy deviation = `|H(output) - baseline_entropy| / baseline_entropy_std` (z-score, σ-clamped)
+- **E** = entropy deviation = `|H(output) - baseline_entropy| / baseline_entropy_std` (z-score, sigma-clamped)
 
 Default weights: `(w_r, w_t, w_f, w_e) = (0.30, 0.25, 0.20, 0.25)`
 
@@ -138,8 +145,8 @@ Result clamped to [0, 1].
 Normalized Shannon entropy over character bigrams:
 
 ```
-H(text) = -Σ p(b) · log₂(p(b))  for each bigram b
-H_norm = H(text) / log₂(N)       where N = count of bigrams
+H(text) = -sum( p(b) * log2(p(b)) )  for each bigram b
+H_norm = H(text) / log2(N)            where N = count of bigrams
 ```
 
 Returns 0 for text shorter than 2 characters. High entropy indicates chaotic/random output; low entropy indicates repetitive output. Both extremes deviate from baseline.
@@ -153,7 +160,7 @@ If an action's duration exceeds 2 standard deviations from the mean:
 ```
 time_deviation = (duration - baseline_mean) / max(baseline_std, 0.1)
 if time_deviation > 2.0:
-    time_boost = min(σ(time_deviation) × 0.3, 0.3)
+    time_boost = min(sigma(time_deviation) * 0.3, 0.3)
     uncertainty = min(1.0, uncertainty + time_boost)
 ```
 
@@ -175,7 +182,7 @@ Where:
 - `avg_tool_calls` = 1.0 (each action is one tool call)
 - `avg_output_len` = mean character length / 1000 (normalized)
 - `avg_duration` = mean `duration_sec`
-- `pattern_entropy` = Shannon entropy over tool name sequence: `-Σ p(t)·log₂(p(t))`
+- `pattern_entropy` = Shannon entropy over tool name sequence: `-sum( p(t)*log2(p(t)) )`
 - `tool_dist` = vector of `[count(tool_i) / n for tool_i in known_tools]`
 
 #### Cosine Distance
@@ -183,7 +190,7 @@ Where:
 ```
 drift = 1 - cos(v_current, v_baseline)
 
-cos(a, b) = (a · b) / (|a| × |b|)
+cos(a, b) = (a . b) / (|a| * |b|)
 ```
 
 Returns 0 for zero vectors. The baseline vector is recomputed every 10 actions.
@@ -210,7 +217,7 @@ Every signal is converted to a pressure value via:
 
 ```
 z = (current - baseline) / max(std, 0.1)
-p = σ_clamp(z)
+p = sigma_clamp(z)
 ```
 
 The minimum std of 0.1 prevents division explosion during early sessions when variance is near zero.
@@ -218,16 +225,16 @@ The minimum std of 0.1 prevents division explosion during early sessions when va
 ### Sigmoid Clamp Function
 
 ```
-σ_clamp(x) =
-  0.0                    if x ≤ 0
-  1 / (1 + e^(-x+3))    if 0 < x ≤ 6
+sigma_clamp(x) =
+  0.0                    if x <= 0
+  1 / (1 + e^(-x+3))    if 0 < x <= 6
   1.0                    if x > 6
 ```
 
 This is a shifted sigmoid centered at x=3. Properties:
-- σ(0) = 0 (values at or below baseline produce zero pressure)
-- σ(3) ≈ 0.5 (3 standard deviations = 50% pressure)
-- σ(6) → 1.0 (hard clamp prevents overflow)
+- sigma(0) = 0 (values at or below baseline produce zero pressure)
+- sigma(3) ~ 0.5 (3 standard deviations = 50% pressure)
+- sigma(6) -> 1.0 (hard clamp prevents overflow)
 - Monotonically increasing on (0, 6]
 
 ### Absolute Floors
@@ -253,10 +260,10 @@ This ensures that objectively bad signals cannot be "normalized away" by a corru
 **Source**: `src/soma/pressure.py:28-65`
 
 ```
-P = 0.7 × Σ(wᵢ · pᵢ) / Σ(wᵢ) + 0.3 × max(pᵢ)
+P = 0.7 * sum(w_i * p_i) / sum(w_i) + 0.3 * max(p_i)
 ```
 
-Where `pᵢ` are individual signal pressures and `wᵢ` are their weights.
+Where `p_i` are individual signal pressures and `w_i` are their weights.
 
 ### Default Signal Weights
 
@@ -278,6 +285,30 @@ The 70/30 blend of mean and max serves two purposes:
 
 When `drift_mode == INFORMATIONAL`, the drift signal weight is set to 0 before aggregation. This prevents drift from contributing to pressure when it lacks confirmatory signals (see [Section 15](#15-drift-mode-classification)).
 
+### 5.1 Error-Rate Aggregate Floor
+
+Z-score normalization combined with the weighted-mean formula can be defeated when a single dominant signal is diluted by healthy signals. When the error_rate signal pressure `er_p >= 0.50`, SOMA applies an absolute aggregate floor:
+
+```
+floor = 0.40 + 0.40 * (er_p - 0.50) / 0.50
+```
+
+This produces the following mapping:
+
+| error_rate pressure | Aggregate floor | Mode entry |
+|---------------------|----------------|------------|
+| 0.50 | 0.40 | GUIDE |
+| 0.75 | 0.60 | WARN |
+| 1.00 | 0.80 | BLOCK |
+
+The floor is applied after the standard 70/30 aggregation:
+
+```
+aggregate = max(standard_aggregate, floor)
+```
+
+The floor only activates when the error_rate weight is positive, ensuring it can be disabled via custom weight configuration. This guarantees that sustained high error rates always produce meaningful pressure regardless of how healthy the other signals are.
+
 ---
 
 ## 6. Baseline Learning (EMA)
@@ -289,11 +320,11 @@ Each signal maintains an independent Exponential Moving Average baseline.
 ### Update Rule
 
 ```
-value_new = α · current + (1 - α) · value_old
-variance_new = α · (current - value_old)² + (1 - α) · variance_old
+value_new = alpha * current + (1 - alpha) * value_old
+variance_new = alpha * (current - value_old)^2 + (1 - alpha) * variance_old
 ```
 
-Default α = 0.15. This gives an effective half-life of ~4.3 samples: `ln(2) / ln(1/0.85) ≈ 4.27`.
+Default alpha = 0.15. This gives an effective half-life of ~4.3 samples: `ln(2) / ln(1/0.85) ~ 4.27`.
 
 ### Cold-Start Blending
 
@@ -301,7 +332,7 @@ During the first `min_samples` (default 10) observations:
 
 ```
 blend = min(count / min_samples, 1.0)
-effective_baseline = blend × computed_ema + (1 - blend) × default_value
+effective_baseline = blend * computed_ema + (1 - blend) * default_value
 ```
 
 Default values:
@@ -319,7 +350,7 @@ This prevents the first few observations from dominating the baseline. At count=
 ### Standard Deviation
 
 ```
-std = max(√variance, 1e-9)
+std = max(sqrt(variance), 1e-9)
 ```
 
 Returns 0.1 for signals with no observations (ensures z-scores remain bounded).
@@ -352,10 +383,10 @@ DEFAULT_THRESHOLDS = {"guide": 0.25, "warn": 0.50, "block": 0.75}
 ```
 pressure_to_mode(pressure, thresholds=None):
     t = thresholds or DEFAULT_THRESHOLDS
-    if pressure >= t["block"]  → BLOCK
-    if pressure >= t["warn"]   → WARN
-    if pressure >= t["guide"]  → GUIDE
-    else                       → OBSERVE
+    if pressure >= t["block"]  -> BLOCK
+    if pressure >= t["warn"]   -> WARN
+    if pressure >= t["guide"]  -> GUIDE
+    else                       -> OBSERVE
 ```
 
 The `thresholds` parameter is an optional `dict[str, float]` with keys `guide`, `warn`, `block`. When `None`, `DEFAULT_THRESHOLDS` is used. The engine passes `custom_thresholds` (loaded from config) to every `pressure_to_mode()` call.
@@ -387,7 +418,7 @@ The learning engine (Section 10) still produces threshold shifts. These adjust t
 adjusted_threshold = base_threshold + learning_shift
 ```
 
-Shifts are capped at ±0.10 per transition.
+Shifts are capped at +/-0.10 per transition.
 
 ---
 
@@ -399,7 +430,7 @@ Shifts are capped at ±0.10 per transition.
 
 SOMA models agent relationships as a directed graph G = (V, E) where:
 - V = set of registered agents
-- E = directed edges with trust weights `w ∈ [0, 1]`
+- E = directed edges with trust weights `w in [0, 1]`
 
 Each node maintains:
 - `internal_pressure`: computed from the agent's own signals
@@ -414,8 +445,8 @@ For each node n:
     if no incoming edges:
         effective[n] = internal[n]
     else:
-        weighted_avg = Σ(w_e · effective[source_e]) / Σ(w_e)
-        effective[n] = max(internal[n], damping × weighted_avg)
+        weighted_avg = sum(w_e * effective[source_e]) / sum(w_e)
+        effective[n] = max(internal[n], damping * weighted_avg)
 ```
 
 Where `damping = 0.6` (default).
@@ -428,12 +459,12 @@ Trust weights evolve based on agent behavior:
 
 **Decay** (when source agent's uncertainty > 0.5):
 ```
-w_new = clamp(w - decay_rate × uncertainty, [0, 1])
+w_new = clamp(w - decay_rate * uncertainty, [0, 1])
 ```
 
-**Recovery** (when source agent's uncertainty ≤ 0.5):
+**Recovery** (when source agent's uncertainty <= 0.5):
 ```
-w_new = clamp(w + recovery_rate × (1 - uncertainty), [0, 1])
+w_new = clamp(w + recovery_rate * (1 - uncertainty), [0, 1])
 ```
 
 Default rates: `decay_rate = 0.05`, `recovery_rate = 0.02`
@@ -449,7 +480,7 @@ Recovery is intentionally slower than decay (asymmetric): trust is hard to earn,
 The predictor estimates pressure `h` actions ahead using two components:
 
 ```
-P_predicted = clamp(P_current + slope × h + boost, [0, 1])
+P_predicted = clamp(P_current + slope * h + boost, [0, 1])
 ```
 
 ### Linear Trend (OLS Regression)
@@ -459,9 +490,9 @@ P_predicted = clamp(P_current + slope × h + boost, [0, 1])
 Ordinary least squares on the sliding window of pressure readings:
 
 ```
-slope = Σ((xᵢ - x̄)(yᵢ - ȳ)) / Σ((xᵢ - x̄)²)
+slope = sum((x_i - x_mean)(y_i - y_mean)) / sum((x_i - x_mean)^2)
 
-R² = [Σ((xᵢ - x̄)(yᵢ - ȳ))]² / [Σ((xᵢ - x̄)²) × Σ((yᵢ - ȳ)²)]
+R^2 = [sum((x_i - x_mean)(y_i - y_mean))]^2 / [sum((x_i - x_mean)^2) * sum((y_i - y_mean)^2)]
 ```
 
 Where x = action index, y = pressure reading. Window size = 10, horizon = 5.
@@ -474,27 +505,27 @@ Known-bad behavioral patterns detected from the action log:
 
 | Pattern | Condition | Boost |
 |---------|-----------|-------|
-| `error_streak` | ≥3 consecutive errors at end of window | +0.15 |
-| `blind_writes` | ≥2 Write/Edit actions without intervening Read | +0.10 |
-| `thrashing` | Same file edited ≥3 times in window | +0.08 |
-| `retry_storm` | Error rate > 40% across window (≥5 actions) | +0.12 |
+| `error_streak` | >=3 consecutive errors at end of window | +0.15 |
+| `blind_writes` | >=2 Write/Edit actions without intervening Read | +0.10 |
+| `thrashing` | Same file edited >=3 times in window | +0.08 |
+| `retry_storm` | Error rate > 40% across window (>=5 actions) | +0.12 |
 
 Boosts are additive. Multiple patterns can fire simultaneously.
 
 ### Confidence Score
 
 ```
-confidence = 0.6 × sample_confidence + 0.4 × fit_confidence
+confidence = 0.6 * sample_confidence + 0.4 * fit_confidence
 
 sample_confidence = min(n / window, 1.0)
-fit_confidence = max(R², 0.0) if n ≥ 3 else 0.0
+fit_confidence = max(R^2, 0.0) if n >= 3 else 0.0
 ```
 
 Escalation warning is emitted only when `confidence > 0.3`.
 
 ### Dominant Reason
 
-If `boost > |slope × horizon|`, the dominant reason is the pattern. Otherwise, it's "trend" (positive slope) or "stable" (zero/negative slope).
+If `boost > |slope * horizon|`, the dominant reason is the pattern. Otherwise, it's "trend" (positive slope) or "stable" (zero/negative slope).
 
 ---
 
@@ -511,7 +542,7 @@ The learning engine tracks whether escalation interventions actually helped, and
 3. **Evaluate**: Compare current pressure to recorded pressure:
    - `delta = pressure_at_intervention - pressure_now`
    - `delta > 0` → **SUCCESS** (pressure dropped, intervention helped)
-   - `delta ≤ 0` → **FAILURE** (pressure held or rose, intervention was premature)
+   - `delta <= 0` → **FAILURE** (pressure held or rose, intervention was premature)
 
 ### Adaptive Step Size
 
@@ -519,15 +550,15 @@ The learning engine tracks whether escalation interventions actually helped, and
 
 ```
 ratio = same_type_count / total_outcomes
-multiplier = 1.0 + 2.0 × max(0, ratio - 0.5)
-step = base_step × multiplier
+multiplier = 1.0 + 2.0 * max(0, ratio - 0.5)
+step = base_step * multiplier
 ```
 
 At 50/50 success/failure: multiplier = 1.0x. At 100% same type: multiplier = 3.0x. This accelerates convergence when the pattern is clear.
 
 ### On Failure (False Positive)
 
-When `failure_count ≥ min_interventions` (default 3):
+When `failure_count >= min_interventions` (default 3):
 
 **Threshold adjustment** (make escalation harder):
 ```
@@ -543,16 +574,16 @@ new_adj = max(new_adj, floor)
 
 ### On Success (True Positive)
 
-When `success_count ≥ min_interventions` (default 3):
+When `success_count >= min_interventions` (default 3):
 
 **Threshold adjustment** (make escalation slightly easier):
 ```
-shift = max(current_shift - adaptive_step × 0.5, -max_threshold_shift)
+shift = max(current_shift - adaptive_step * 0.5, -max_threshold_shift)
 ```
 
 **Weight recovery** (restore signal importance):
 ```
-recovery = min(weight_adj_step × 0.5, |current_adj|)
+recovery = min(weight_adj_step * 0.5, |current_adj|)
 new_adj = current_adj + recovery
 ```
 
@@ -566,7 +597,7 @@ Success adjustments are half the magnitude of failure adjustments. This creates 
 | `threshold_adj_step` | 0.02 | Base step per adjustment |
 | `weight_adj_step` | 0.05 | Weight change per adjustment |
 | `min_weight` | 0.2 | Floor for effective signal weight |
-| `max_threshold_shift` | ±0.10 | Maximum cumulative shift per transition |
+| `max_threshold_shift` | +/-0.10 | Maximum cumulative shift per transition |
 | `min_interventions` | 3 | Minimum same-type outcomes before adjusting |
 
 ---
@@ -585,10 +616,10 @@ Quality is tracked over a rolling window (default 30 events). Events are tuples 
 write_score = clean_writes / total_writes        (1.0 if no writes)
 bash_score  = 1 - bash_failures / total_bashes   (1.0 if no bashes)
 
-score = (write_count / total × write_score) + (bash_count / total × bash_score)
+score = (write_count / total * write_score) + (bash_count / total * bash_score)
 
 if syntax_errors > 0:
-    score *= max(0.5, 1.0 - syntax_errors × 0.15)
+    score *= max(0.5, 1.0 - syntax_errors * 0.15)
 
 score = clamp(score, [0, 1])
 ```
@@ -597,7 +628,7 @@ score = clamp(score, [0, 1])
 
 | Grade | Score Range |
 |-------|-----------|
-| A | ≥ 0.90 |
+| A | >= 0.90 |
 | B | [0.80, 0.90) |
 | C | [0.70, 0.80) |
 | D | [0.50, 0.70) |
@@ -606,10 +637,10 @@ score = clamp(score, [0, 1])
 ### Syntax Penalty
 
 Each syntax error multiplies the score by `(1 - 0.15)`, with a floor of 0.5x. This means:
-- 1 error: score × 0.85
-- 2 errors: score × 0.70
-- 3 errors: score × 0.55
-- 4+ errors: score × 0.50 (floor)
+- 1 error: score * 0.85
+- 2 errors: score * 0.70
+- 3 errors: score * 0.55
+- 4+ errors: score * 0.50 (floor)
 
 ---
 
@@ -627,14 +658,14 @@ Scans last 12 actions for repeating sequences of 2-3 tools:
 ```
 pattern = tools[-seq_len:]
 Count consecutive repetitions scanning backward.
-If repetitions ≥ 3 → "stuck in Edit→Bash loop on config.py (3 cycles)"
+If repetitions >= 3 -> "stuck in Edit->Bash loop on config.py (3 cycles)"
 ```
 
 #### 2. Error Cascade (severity: 0.5 + 0.1 per consecutive error)
 Counts consecutive errors from the end of the action log:
 
 ```
-If consecutive_errors ≥ 2:
+If consecutive_errors >= 2:
     "error cascade: {n} consecutive Bash failures (error_rate=40%)"
 ```
 
@@ -642,7 +673,7 @@ If consecutive_errors ≥ 2:
 Counts Write/Edit actions since the last Read:
 
 ```
-If writes_since_read ≥ 3:
+If writes_since_read >= 3:
     "blind mutation: 5 writes without reading (foo.py, bar.py)"
 ```
 
@@ -650,10 +681,10 @@ If writes_since_read ≥ 3:
 Checks if 7/8 recent actions are read-only with zero writes:
 
 ```
-"possible stall: 7/8 recent actions are reads with no writes — may be stuck researching"
+"possible stall: 7/8 recent actions are reads with no writes -- may be stuck researching"
 ```
 
-#### 5. Drift Explanation (severity: 0.4 + 0.5 × drift)
+#### 5. Drift Explanation (severity: 0.4 + 0.5 * drift)
 When drift > 0.2, identifies contributing signals:
 
 ```
@@ -683,35 +714,35 @@ Returns `None` when `pressure < 0.15` and `mode == OBSERVE`.
 
 ### EMA Update
 
-All fingerprint components use EMA with α = 0.1 (slower than baselines, reflecting longer-term patterns):
+All fingerprint components use EMA with alpha = 0.1 (slower than baselines, reflecting longer-term patterns):
 
 ```
 For each scalar:
-    fp.value = 0.1 × current + 0.9 × fp.value
+    fp.value = 0.1 * current + 0.9 * fp.value
 
 For tool distribution:
     For each tool:
-        fp.dist[t] = 0.1 × current_dist[t] + 0.9 × fp.dist[t]
+        fp.dist[t] = 0.1 * current_dist[t] + 0.9 * fp.dist[t]
 ```
 
 ### Divergence Score
 
 **Source**: `src/soma/fingerprint.py:31-71`
 
-Requires `sample_count ≥ 10` to produce a non-zero divergence.
+Requires `sample_count >= 10` to produce a non-zero divergence.
 
 Three components:
 
-**1. Jensen-Shannon Divergence (tool distribution)** — weight: 2x
+**1. Jensen-Shannon Divergence (tool distribution)** -- weight: 2x
 
 ```
 For each tool t in union(P, Q):
     M(t) = (P(t) + Q(t)) / 2
 
-JS = ½ Σ [P(t) · log₂(P(t)/M(t)) + Q(t) · log₂(Q(t)/M(t))]
+JS = 0.5 * sum [P(t) * log2(P(t)/M(t)) + Q(t) * log2(Q(t)/M(t))]
 ```
 
-Smoothing: 0.001 minimum for unseen tools. JS divergence ∈ [0, 1].
+Smoothing: 0.001 minimum for unseen tools. JS divergence in [0, 1].
 
 **2. Error Rate Delta**
 
@@ -721,7 +752,7 @@ err_delta = |current_error_rate - fingerprint_error_rate| / max(fingerprint_erro
 
 Clamped to [0, 1].
 
-**3. Read/Write Ratio Delta** — weight: 0.5x
+**3. Read/Write Ratio Delta** -- weight: 0.5x
 
 ```
 rw_delta = |current_rw - fingerprint_rw| / max(fingerprint_rw, 0.1)
@@ -747,7 +778,7 @@ Recent tool usage (last `drift_window` actions) is classified into phases:
 
 | Phase | Tools | Priority |
 |-------|-------|----------|
-| debug | — | Triggered by error_rate > 30% in window |
+| debug | -- | Triggered by error_rate > 30% in window |
 | research | Read, Grep, Glob, WebSearch, WebFetch | Count-based |
 | implement | Write, Edit, NotebookEdit | Count-based |
 | test | Bash | Count-based |
@@ -760,7 +791,7 @@ After the first 5 file-touching actions establish an `initial_focus` (set of par
 
 ```
 recent_dirs = directories touched in last drift_window actions
-overlap = recent_dirs ∩ initial_focus
+overlap = recent_dirs intersection initial_focus
 drift = 1.0 - |overlap| / |recent_dirs|
 ```
 
@@ -885,7 +916,266 @@ class SessionContext:
 
 ---
 
-## 17. Config Migration
+## 17. Uncertainty Classification
+
+SOMA classifies uncertainty into epistemic and aleatoric categories based on output entropy analysis. This classification modulates the pressure contribution of the uncertainty signal.
+
+### Classification Logic
+
+The classifier examines the relationship between normalized output entropy (H_norm) and the computed uncertainty value (U):
+
+```
+if U > min_uncertainty (0.30):
+    if H_norm < low_entropy_threshold (0.35):
+        classification = EPISTEMIC
+        multiplier = epistemic_pressure_multiplier (1.3)
+    elif H_norm > high_entropy_threshold (0.65):
+        classification = ALEATORIC
+        multiplier = aleatoric_pressure_multiplier (0.7)
+    else:
+        classification = UNCLASSIFIED
+        multiplier = 1.0
+else:
+    classification = UNCLASSIFIED
+    multiplier = 1.0
+```
+
+### Epistemic Uncertainty
+
+Low entropy combined with high uncertainty indicates a knowledge gap. The agent produces repetitive, similar outputs because it lacks the information needed to proceed. The elevated multiplier (1.3x) accelerates escalation, since epistemic uncertainty is unlikely to resolve without external intervention (e.g., user input, additional context).
+
+### Aleatoric Uncertainty
+
+High entropy combined with high uncertainty indicates inherent task ambiguity. The agent produces varied outputs because multiple valid approaches exist. The dampening multiplier (0.7x) reduces pressure, since behavioral variance is expected and does not indicate malfunction.
+
+### Application
+
+The multiplier is applied to the uncertainty signal pressure before aggregation:
+
+```
+uncertainty_pressure = base_uncertainty_pressure * classification_multiplier
+```
+
+This occurs after z-score normalization but before the 70/30 mean-max aggregation step.
+
+---
+
+## 18. Vector Pressure Propagation
+
+The standard pressure propagation model (Section 8) operates on scalar aggregate pressure. Vector pressure propagation extends this to per-signal granularity, preserving signal-level information across the trust graph.
+
+### PressureVector
+
+Each node in the graph maintains a `PressureVector` in addition to its scalar pressure:
+
+```python
+@dataclass
+class PressureVector:
+    uncertainty: float
+    drift: float
+    error_rate: float
+    cost: float
+    token_usage: float
+```
+
+### Per-Signal Propagation
+
+Rather than propagating a single scalar, each signal pressure is propagated independently through the trust graph:
+
+```
+For each signal s in {uncertainty, drift, error_rate, cost, token_usage}:
+    For each node n with incoming edges:
+        weighted_avg_s = sum(w_e * vector[source_e].s) / sum(w_e)
+        effective_vector[n].s = max(internal_vector[n].s, damping * weighted_avg_s)
+```
+
+The scalar effective pressure is then recomputed from the propagated vector using the standard aggregation formula.
+
+### Advantages
+
+Per-signal propagation preserves diagnostic information. When a downstream agent's effective pressure rises due to upstream influence, the vector reveals which specific signals are responsible. This enables more targeted guidance — e.g., "upstream agent has high error rate" rather than "upstream pressure elevated".
+
+---
+
+## 19. Coordination SNR Isolation
+
+In multi-agent systems, coordination overhead (message passing, task delegation, status checks) generates behavioral noise that can obscure genuine degradation signals. SOMA isolates coordination noise from substantive behavioral signals using signal-to-noise ratio (SNR) analysis.
+
+### Noise Floor Estimation
+
+SOMA estimates the coordination noise floor by analyzing the frequency and regularity of coordination-related actions (Agent tool calls, status checks, delegation patterns):
+
+```
+coordination_rate = count(coordination_actions) / total_actions
+noise_floor = coordination_rate * coordination_noise_weight
+```
+
+### Signal Extraction
+
+For each behavioral signal, the SNR is computed:
+
+```
+SNR_s = (signal_pressure_s - noise_floor) / max(noise_floor, 0.01)
+```
+
+When `SNR_s < 1.0`, the signal is predominantly noise-driven. SOMA applies a suppression factor:
+
+```
+if SNR_s < 1.0:
+    effective_pressure_s = signal_pressure_s * SNR_s
+```
+
+This prevents coordination-heavy multi-agent pipelines from generating false escalations due to the inherent behavioral variance of inter-agent communication.
+
+---
+
+## 20. Half-Life Temporal Modeling
+
+SOMA's EMA baselines treat all historical observations equally within the exponential decay window. Half-life temporal modeling adds explicit time-aware decay to signal contributions, ensuring that older observations lose influence at a predictable rate.
+
+### Decay Function
+
+Each signal observation is weighted by a temporal decay factor:
+
+```
+w(t) = 2^(-dt / half_life)
+```
+
+Where `dt` is the number of actions since the observation and `half_life` is the configured decay period (default: matches EMA effective half-life of ~4.3 actions).
+
+### Application
+
+The half-life model is used in two contexts:
+
+**Predictor trend weighting**: Recent pressure readings receive higher weight in OLS regression, improving trend detection accuracy when behavioral shifts are recent.
+
+**Pattern booster decay**: Pattern boost values decay over time. An error streak detected 8 actions ago contributes less than one detected 2 actions ago:
+
+```
+effective_boost = base_boost * 2^(-actions_since_detection / pattern_half_life)
+```
+
+This prevents stale pattern detections from inflating predictions after the underlying issue has resolved.
+
+---
+
+## 21. Reliability Metrics
+
+SOMA tracks two reliability metrics that measure the consistency between an agent's declared intentions and actual behavior.
+
+### Calibration Score
+
+Calibration measures how well an agent's expressed confidence correlates with outcomes:
+
+```
+calibration = 1.0 - mean(|confidence_i - outcome_i|) for i in rolling_window
+```
+
+Where `confidence_i` is extracted from output text patterns (e.g., "I'm sure", "this should work" -> high confidence; "I think", "let me try" -> low confidence) and `outcome_i` is 1.0 for successful subsequent actions, 0.0 for failures.
+
+| Calibration | Interpretation |
+|-------------|----------------|
+| >= 0.80 | Well-calibrated |
+| [0.50, 0.80) | Moderate calibration |
+| < 0.50 | Poorly calibrated (overconfident or underconfident) |
+
+### Verbal-Behavioral Divergence
+
+Divergence measures inconsistency between stated intent and actual tool calls:
+
+```
+divergence = count(mismatched_intent_action_pairs) / count(intent_declarations)
+```
+
+An intent-action pair is mismatched when:
+- Agent declares "I'll read the file first" but next action is Write/Edit
+- Agent declares "fixing the bug" but edits unrelated files
+- Agent declares "running tests" but executes non-test commands
+
+Sustained divergence (> 0.30 over 10+ actions) feeds into the uncertainty signal as an additional sub-component and triggers an informational finding.
+
+---
+
+## 22. Policy Engine
+
+The policy engine provides a declarative layer for operator-defined behavioral rules, evaluated after the core pressure pipeline on every action.
+
+### Rule Structure
+
+Each rule consists of:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Unique rule identifier |
+| `condition` | `str` | Predicate expression over vitals, pressure, action properties |
+| `action` | `str` | Response: `guide`, `warn`, `block`, or `log` |
+| `message` | `str` | Human-readable explanation |
+| `cooldown` | `int` (optional) | Minimum actions between repeated firings |
+
+### Condition Evaluation
+
+Conditions are evaluated against a context dict containing:
+
+```python
+{
+    "pressure": float,
+    "mode": str,
+    "error_rate": float,
+    "uncertainty": float,
+    "drift": float,
+    "cost": float,
+    "token_usage": float,
+    "tool_name": str,
+    "action_count": int,
+    "quality_grade": str,
+}
+```
+
+Standard comparison operators (`>`, `<`, `>=`, `<=`, `==`, `!=`) and logical operators (`and`, `or`, `not`) are supported.
+
+### Configuration Format
+
+Rules are defined in `soma.toml` or a separate YAML policy file:
+
+```toml
+[[policy.rules]]
+name = "high-error-block"
+condition = "error_rate > 0.60 and tool_name == 'Bash'"
+action = "block"
+message = "Error rate exceeds 60%. Bash blocked until errors stabilize."
+cooldown = 5
+
+[[policy.rules]]
+name = "cost-warning"
+condition = "cost > 0.80"
+action = "warn"
+message = "Cost usage exceeds 80% of budget."
+```
+
+### Guardrail Decorator
+
+The policy engine exposes a `@guardrail` decorator for programmatic integration:
+
+```python
+@soma.guardrail(agent_id="worker")
+async def run_tool(tool_name: str, args: dict) -> str:
+    ...
+```
+
+The decorator:
+1. Records the action with the engine
+2. Evaluates all active policy rules
+3. Raises `SomaBlocked` if any rule triggers a `block` action
+4. Injects guidance messages for `warn` and `guide` actions
+5. Works with both sync and async functions
+
+### Rule Precedence
+
+Policy rules do not override the core pressure model. If the core pipeline produces BLOCK mode, it takes effect regardless of policy rules. Policy rules provide additional constraints on top of the core system. When multiple rules fire, the most restrictive action wins.
+
+---
+
+## 23. Config Migration
 
 **Source**: `src/soma/cli/config_loader.py`
 
@@ -904,7 +1194,7 @@ Migration runs automatically on config load. Old keys are preserved for backward
 
 ---
 
-## 18. System Constants
+## 24. System Constants
 
 ### Default Weights
 
@@ -925,10 +1215,21 @@ Migration runs automatically on config load. Old keys are preserved for backward
 | Prediction window | 10 | `predictor.py:45` |
 | Prediction horizon | 5 actions | `predictor.py:45` |
 | Learning evaluation window | 5 actions | `learning.py:58` |
-| Max threshold shift | ±0.10 | `learning.py:63` |
+| Max threshold shift | +/-0.10 | `learning.py:63` |
 | Quality rolling window | 30 events | `quality.py:39` |
 | Drift threshold | 0.30 | `engine.py:262` |
 | Uncertainty threshold | 0.30 | `engine.py:262` |
+
+### Uncertainty Classification Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `epistemic_pressure_multiplier` | 1.3 | Pressure multiplier for epistemic uncertainty |
+| `aleatoric_pressure_multiplier` | 0.7 | Pressure multiplier for aleatoric uncertainty |
+| `min_uncertainty` | 0.3 | Minimum uncertainty to trigger classification |
+| `low_entropy_threshold` | 0.35 | Below this entropy, uncertainty is epistemic |
+| `high_entropy_threshold` | 0.65 | Above this entropy, uncertainty is aleatoric |
+| `error_rate_floor_threshold` | 0.50 | Error-rate pressure above which aggregate floor activates |
 
 ### Response Mode Thresholds (DEFAULT_THRESHOLDS)
 
@@ -943,10 +1244,10 @@ Migration runs automatically on config load. Old keys are preserved for backward
 
 | Pattern | Boost | Condition |
 |---------|-------|-----------|
-| error_streak | +0.15 | ≥3 consecutive errors |
+| error_streak | +0.15 | >=3 consecutive errors |
 | retry_storm | +0.12 | >40% error rate in window |
-| blind_writes | +0.10 | ≥2 writes without read |
-| thrashing | +0.08 | Same file edited ≥3 times |
+| blind_writes | +0.10 | >=2 writes without read |
+| thrashing | +0.08 | Same file edited >=3 times |
 
 ### Uncertainty Weights
 
@@ -959,15 +1260,15 @@ Migration runs automatically on config load. Old keys are preserved for backward
 
 ---
 
-## 19. Formal Properties
+## 25. Formal Properties
 
 ### Boundedness
 
 All outputs are in [0, 1]:
-- Sigmoid clamp: domain ℝ → range [0, 1]
+- Sigmoid clamp: domain R -> range [0, 1]
 - Cosine similarity: clamped by definition
 - Resource vitals: `min(x/limit, 1.0)`
-- Aggregate pressure: weighted average of [0,1] values ∈ [0,1]
+- Aggregate pressure: weighted average of [0,1] values in [0,1]
 
 ### Direct Mode Mapping
 
@@ -980,11 +1281,11 @@ Where `T = {guide, warn, block}` defaults to `{0.25, 0.50, 0.75}`. The mode is a
 
 ### Convergence of Learning
 
-The learning engine's threshold adjustments are bounded by `[-max_threshold_shift, +max_threshold_shift]`. Signal weight adjustments are bounded by `[min_weight - original_weight, 0]`. Combined with `min_interventions ≥ 3`, the system converges to stable thresholds for any stationary agent behavior distribution.
+The learning engine's threshold adjustments are bounded by `[-max_threshold_shift, +max_threshold_shift]`. Signal weight adjustments are bounded by `[min_weight - original_weight, 0]`. Combined with `min_interventions >= 3`, the system converges to stable thresholds for any stationary agent behavior distribution.
 
 ### Grace Period Guarantee
 
-For `action_count ≤ min_samples` (default 10):
+For `action_count <= min_samples` (default 10):
 ```
 effective_pressure = 0.0
 mode = OBSERVE
@@ -995,13 +1296,13 @@ This holds regardless of signal values, ensuring new agents have time to establi
 ### Determinism
 
 Given identical:
-- Action sequence `[a₁, a₂, ..., aₙ]`
+- Action sequence `[a_1, a_2, ..., a_n]`
 - Budget configuration
 - Custom weights/thresholds
 
 The system produces identical:
-- Pressure trajectory `[p₁, p₂, ..., pₙ]`
-- Mode trajectory `[m₁, m₂, ..., mₙ]`
+- Pressure trajectory `[p_1, p_2, ..., p_n]`
+- Mode trajectory `[m_1, m_2, ..., m_n]`
 - Learning adjustments
 
 No randomness, no external state, no time dependencies (except action duration, which is an input).

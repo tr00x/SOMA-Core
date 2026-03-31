@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/v/soma-ai?style=for-the-badge&color=blue&label=PyPI" alt="PyPI" /></a>&nbsp;
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/pyversions/soma-ai?style=for-the-badge" alt="Python" /></a>&nbsp;
   <a href="https://github.com/tr00x/SOMA-Core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tr00x/SOMA-Core?style=for-the-badge" alt="License" /></a>&nbsp;
-  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-568%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
+  <a href="#-test-results"><img src="https://img.shields.io/badge/tests-735%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -43,16 +43,18 @@ pip install soma-ai
 
 SOMA is not a dashboard. It's not a logger. It's a **closed-loop behavioral guidance system** that watches every action an AI agent takes, detects problems as they develop, and **injects corrective feedback directly into the agent's context**.
 
-### Watch → Guide → Warn → Block (only destructive ops)
+### Watch → Classify → Guide → Warn → Block (only destructive ops)
 
 | | What | How |
 |:--|:-----|:----|
 | **Watch** | 5 behavioral signals per action | Uncertainty, drift, error rate, cost, token usage |
+| **Classify** | Epistemic vs aleatoric uncertainty | Epistemic (agent lacks knowledge) gets 1.3x pressure; aleatoric (inherently ambiguous) gets 0.7x dampening |
 | **Guide** | Injects specific advice into agent context | `"3 writes without a Read — Read the target file first"` |
 | **Warn** | Escalating warnings as pressure rises | Insistent guidance with increasing urgency |
 | **Block** | Blocks ONLY destructive operations | `rm -rf`, `git push --force`, `.env` writes — never blocks normal tools |
 | **Learn** | Adapts thresholds to each agent | Tracks intervention outcomes, tunes over time |
 | **Predict** | Warns ~5 actions before escalation | Linear trend + pattern detection (error streaks, thrashing, blind writes) |
+| **Predict degradation** | Half-life models warn before failure | Exponential decay modeling predicts probability of success at future action counts |
 
 ### What SOMA Catches
 
@@ -107,6 +109,42 @@ response = client.messages.create(
     messages=[...],
 )
 # Every API call is monitored
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Framework Adapters**
+
+```python
+# LangChain
+from soma.sdk.langchain import SomaLangChainCallback
+chain.invoke(input, config={"callbacks": [SomaLangChainCallback(engine, "agent")]})
+
+# CrewAI
+from soma.sdk.crewai import SomaCrewMiddleware
+crew = SomaCrewMiddleware(engine, "crew-agent").wrap(crew)
+
+# AutoGen
+from soma.sdk.autogen import SomaAutoGenObserver
+agent.register_observer(SomaAutoGenObserver(engine, "autogen-agent"))
+```
+
+</td>
+<td>
+
+**TypeScript SDK**
+
+```typescript
+import { SOMAEngine, track, wrapVercelAI } from "soma-ai";
+
+const engine = new SOMAEngine();
+track(engine, "my-agent", { tool: "bash", output: "..." });
+
+// Vercel AI SDK integration
+const model = wrapVercelAI(engine, "agent", yourModel);
 ```
 
 </td>
@@ -170,6 +208,10 @@ Read-context awareness eliminates false positives — edits after reads are not 
 
 Linear trend extrapolation + pattern detection. Confidence-weighted — only warns when the data justifies it.
 
+### Half-Life Temporal Modeling
+
+SOMA models agent degradation over time using exponential decay. Each agent has a computed half-life — the number of actions before their success probability drops to 50%. Agents that degrade faster get earlier warnings, before they enter failure territory.
+
 ---
 
 ## Self-Learning
@@ -190,6 +232,69 @@ Adaptive step size. Bounded +/-0.10 max shift. After ~15 interventions, SOMA con
 
 ---
 
+## Reliability Metrics
+
+SOMA tracks two dimensions of agent reliability:
+
+- **Calibration score** — how well an agent's confidence matches actual performance. A perfectly calibrated agent that claims 80% confidence succeeds 80% of the time.
+- **Verbal-behavioral divergence** — catches agents that say they're doing well but aren't. When an agent claims success but its actions show errors, SOMA flags the discrepancy.
+
+---
+
+## Policy Engine
+
+Declarative rules that fire based on vitals thresholds — no code required:
+
+```yaml
+# rules.yaml
+- name: high-error-lockdown
+  when:
+    error_rate: ">= 0.5"
+    pressure: ">= 0.6"
+  do:
+    mode: BLOCK
+    message: "Error rate critical — blocking destructive operations"
+
+- name: drift-warning
+  when:
+    drift: ">= 0.3"
+  do:
+    mode: WARN
+    message: "Significant drift detected — verify you're on track"
+```
+
+```python
+from soma.policy import PolicyEngine
+
+policy = PolicyEngine.from_file("rules.yaml")
+# Rules evaluated automatically against vitals each action
+```
+
+Supports YAML and TOML formats. Loads from local files or remote URLs.
+
+---
+
+## Guardrail Decorator
+
+Block function calls when pressure exceeds a threshold — works with sync and async:
+
+```python
+import soma
+
+engine = soma.SOMAEngine()
+engine.register_agent("worker")
+
+@soma.guardrail(engine, "worker", threshold=0.8)
+def deploy_to_production():
+    ...  # Raises SomaBlocked if pressure > 0.8
+
+@soma.guardrail(engine, "worker", threshold=0.6)
+async def run_migration():
+    ...  # Works with async functions too
+```
+
+---
+
 ## Enterprise: Multi-Agent Systems
 
 Running 5, 10, 50 agents? SOMA was built for this. Here's what it gives you that nothing else does:
@@ -201,7 +306,7 @@ When a planning agent hallucinates requirements, the coding agent implements the
 ### What SOMA Gives Enterprise Teams
 
 <details>
-<summary><strong>Multi-Agent Pressure Propagation</strong> — when one agent spirals, downstream agents get warned before they inherit the chaos</summary>
+<summary><strong>Vector Pressure Propagation</strong> — per-signal pressure flows through the trust graph, so downstream agents know WHY upstream is struggling</summary>
 
 ```python
 from soma import SOMAEngine
@@ -216,13 +321,22 @@ engine.graph.add_edge("planner", "coder", trust=0.8)
 engine.graph.add_edge("coder", "reviewer", trust=0.6)
 ```
 
-- Pressure flows along trust-weighted edges (damping: 0.60)
+- **PressureVector** propagation — not just a scalar. Each signal (uncertainty, drift, error_rate, cost) propagates independently along trust-weighted edges
+- Downstream agents know the planner has high *uncertainty* vs high *error_rate* — different problems, different guidance
+- **Coordination SNR** — signal-to-noise ratio isolation zeroes out influence from noisy upstream agents with no meaningful pressure
+- **Task complexity estimation** — complex tasks (ambiguous specs, interdependencies) get adjusted thresholds automatically
 - Trust decays 2.5x faster than it recovers — trust is easy to lose, hard to earn
-- When your planner spirals, the coder gets warned **before** the bad outputs arrive
-- No manual intervention needed — the graph handles it automatically
+- Damping factor 0.60 prevents runaway cascades
 
 **Without SOMA:** planner hallucinates → coder implements garbage → reviewer wastes time → you find out an hour later.
-**With SOMA:** planner's pressure rises → coder's effective pressure rises → coder gets guided → pipeline self-corrects.
+**With SOMA:** planner's uncertainty rises → coder sees elevated upstream uncertainty → coder gets targeted guidance → pipeline self-corrects.
+
+</details>
+
+<details>
+<summary><strong>Goal Coherence Scoring</strong> — detects when agents diverge from their objectives</summary>
+
+SOMA estimates goal coherence from system prompt analysis. When an agent's actions diverge from its stated goals, coherence drops and pressure rises proportionally. Low coherence = high divergence = the agent is no longer doing what it was told to do.
 
 </details>
 
@@ -292,7 +406,7 @@ A runaway agent hits its budget limit → SAFE_MODE → pipeline continues with 
 |:-------------|:----------|
 | Agent loops for 30 minutes before anyone notices | Loop detected at iteration 3, agent guided to change approach |
 | $500 API bill from a retry storm overnight | Budget SAFE_MODE after $25, agent stops automatically |
-| Planner hallucinates → entire pipeline builds garbage | Planner's pressure propagates, coder gets warned before bad outputs arrive |
+| Planner hallucinates → entire pipeline builds garbage | Planner's pressure vector propagates, coder gets targeted guidance |
 | Post-mortem: "the agent edited 47 files it shouldn't have" | Real-time: `"scope expanded to unrelated dirs — is this intentional?"` |
 | "Which agent caused the cascade failure?" | RCA: `"error cascade: 4 consecutive failures in coder (error_rate=40%)"` |
 
@@ -416,6 +530,7 @@ No neural networks. No black boxes. Every formula is documented and tested.
 | `μₜ = 0.15·x + 0.85·μₜ₋₁` | EMA baseline — half-life of ~4.3 observations |
 | `P̂ = P + slope·h + boost` | Prediction — linear trend + pattern boosts |
 | `Q = (w·Qw + b·Qb) · penalty` | Quality — write/bash success with syntax penalty |
+| `floor = 0.40 + 0.40·(er_p - 0.50)/0.50` | Error-rate floor — if `er_p >= 0.50`, `aggregate = max(aggregate, floor)`. Prevents weighted-mean from diluting dominant error signals: 0.50 → GUIDE, 0.75 → WARN, 1.00 → BLOCK |
 
 > *Complete derivations in [Technical Reference](docs/TECHNICAL.md). Theoretical foundations in [Research Paper](docs/PAPER.md).*
 
@@ -427,31 +542,35 @@ No neural networks. No black boxes. Every formula is documented and tested.
 <tr>
 <td>
 
-**568 tests. 0 failures. 0.70 seconds.**
+**735 tests. 0 failures. ~1 second.**
 
 Every formula, threshold, edge case, and integration path is covered.
 
 16 stress scenarios validate behavior under extreme conditions: rapid action sequences, budget exhaustion, pressure spikes, loop detection, and multi-agent propagation.
 
-72KB of Claude Code integration tests simulate complete hook workflows end-to-end.
+Full Claude Code integration tests simulate complete hook workflows end-to-end.
 
 </td>
 <td>
 
 ```
 test_engine.py         ✓ Core pipeline
-test_pressure.py       ✓ Z-score, sigmoid, aggregation
+test_pressure.py       ✓ Z-score, sigmoid, aggregation, floors
 test_vitals.py         ✓ All 5 signals
 test_baseline.py       ✓ EMA, cold-start
 test_guidance.py       ✓ Mode transitions, blocking
 test_learning.py       ✓ Threshold adaptation
-test_predictor.py      ✓ Trend, patterns
+test_predictor.py      ✓ Trend, patterns, half-life
+test_halflife.py       ✓ Temporal degradation modeling
+test_reliability.py    ✓ Calibration, verbal-behavioral divergence
+test_policy.py         ✓ Declarative policy engine
 test_quality.py        ✓ A-F grading
 test_rca.py            ✓ Root cause analysis
 test_fingerprint.py    ✓ JSD, divergence
-test_graph.py          ✓ Multi-agent propagation
+test_graph.py          ✓ Vector pressure propagation
 test_budget.py         ✓ Budget, SAFE_MODE
 test_wrap.py           ✓ Anthropic + OpenAI
+test_sdk.py            ✓ LangChain, CrewAI, AutoGen adapters
 test_stress.py         ✓ 16 stress scenarios
 test_claude_code_*.py  ✓ Full integration
 test_hooks_*.py        ✓ All 4 hooks
@@ -470,7 +589,7 @@ test_modes.py          ✓ Operating modes
 ```
 soma/
 ├── engine.py          Core pipeline — the brain
-├── pressure.py        Pressure aggregation (weighted mean + max)
+├── pressure.py        Pressure aggregation (weighted mean + max + error-rate floors)
 ├── vitals.py          5 behavioral signal computations
 ├── baseline.py        EMA baselines with cold-start blending
 ├── guidance.py        4-mode guidance system (OBSERVE → GUIDE → WARN → BLOCK)
@@ -479,18 +598,40 @@ soma/
 ├── context.py         Read-context tracking and phase-aware awareness
 ├── learning.py        Self-tuning threshold adaptation
 ├── predictor.py       5-action-ahead pressure prediction
+├── halflife.py        Temporal half-life degradation modeling
+├── reliability.py     Calibration scoring and verbal-behavioral divergence
+├── policy.py          Declarative policy engine with YAML/TOML rules
 ├── quality.py         A-F code quality grading
 ├── rca.py             Root cause analysis (plain English)
 ├── task_tracker.py    Task phase and scope drift detection
 ├── fingerprint.py     Agent behavioral signatures (JSD)
-├── graph.py           Multi-agent pressure propagation
+├── graph.py           Multi-agent vector pressure propagation
 ├── budget.py          Multi-dimensional budget tracking
 ├── wrap.py            Universal client wrapper
+├── sdk/               Framework adapters (LangChain, CrewAI, AutoGen)
 ├── hooks/             Claude Code lifecycle hooks
 └── cli/               Terminal UI and commands
 ```
 
-3 dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
+59 modules. ~15,000 lines of Python. 3 dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
+
+---
+
+## TypeScript SDK
+
+Full TypeScript implementation in `packages/soma-ai/`:
+
+```typescript
+import { SOMAEngine, track, wrapVercelAI } from "soma-ai";
+
+const engine = new SOMAEngine();
+track(engine, "my-agent", { tool: "bash", output: "command output..." });
+
+// Vercel AI SDK integration
+const wrappedModel = wrapVercelAI(engine, "agent-id", baseModel);
+```
+
+Includes `SOMAEngine`, `track()`, `wrapVercelAI()`, `SomaLangChainCallback`, and full type definitions.
 
 ---
 

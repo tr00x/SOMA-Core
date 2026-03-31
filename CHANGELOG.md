@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.5.0] — 2026-03-31
+
+Agent Intelligence Pipeline: 8 phases of behavioral analysis capabilities.
+
+### Added
+- **Uncertainty classification** (VIT-02) — classifies uncertainty as epistemic (knowledge gap) or aleatoric (inherent ambiguity) via output entropy; epistemic gets 1.3x pressure, aleatoric gets 0.7x dampening
+- **Goal coherence scoring** (VIT-01) — estimates goal coherence from system prompt; low coherence increases pressure
+- **Baseline integrity checking** (VIT-03) — detects corrupted baseline state via checksums
+- **Vector pressure propagation** (PRS-01) — per-signal PressureVector (uncertainty, drift, error_rate, cost) flows through trust graph; downstream agents know WHY upstream struggles
+- **Coordination SNR** (PRS-02) — signal-to-noise isolation zeroes out influence from upstream agents with no meaningful pressure
+- **Task complexity estimation** (PRS-03) — estimates task complexity from system prompt content (ambiguity markers, interdependencies)
+- **Half-life temporal modeling** (HLF-01/02) — models agent degradation with exponential decay; predicts P(success) at future action counts
+- **Calibration score** (REL-01) — measures how well agent confidence matches actual performance
+- **Verbal-behavioral divergence** (REL-02) — detects agents that report success while performing poorly
+- **Policy engine** (POL-01/02) — declarative YAML/TOML rules with when/do conditions; `PolicyEngine.from_file()`, `from_dict()`, `from_url()`
+- **Guardrail decorator** (POL-03) — `@soma.guardrail(engine, agent_id, threshold)` blocks sync/async calls when pressure exceeds threshold
+- **TypeScript SDK scaffold** (SDK-01-04) — `packages/soma-ai/` with SOMAEngine, track(), wrapVercelAI(), SomaLangChainCallback
+- **Framework adapters** — LangChain callback, CrewAI middleware, AutoGen observer (Python SDK); importable without requiring the frameworks
+- **Error-rate aggregate floor** — prevents weighted-mean dilution of high error signals; maps error_rate >=0.50 to guaranteed GUIDE/WARN/BLOCK floors
+
+### Changed
+- Default signal weights updated: uncertainty=2.0, drift=1.8, error_rate=1.5, cost=1.0, token_usage=0.8, goal_coherence=1.5
+- VitalsSnapshot extended with: uncertainty_type, goal_coherence, calibration_score, task_complexity, predicted_success_rate
+- PressureGraph extended with per-node PressureVector storage and vector-based propagation
+- Engine pipeline expanded: 10 steps → includes uncertainty classification, complexity estimation, half-life modeling, reliability metrics, vector propagation
+
+### Fixed
+- Pressure sensitivity: 35% error rate was stuck in OBSERVE due to weighted-mean dilution — now correctly escalates via aggregate floor
+- Epistemic multiplier test: uncertainty at exactly min_uncertainty threshold (0.30) returned None classification
+- Grace period pressure_vector consistency during warmup
+- Unused imports removed across graph, pressure, and SDK modules
+
 ## [0.4.12] — 2026-03-30
 
 Multi-agent core hardening: concurrent safety, agent lifecycle, learning validation.
