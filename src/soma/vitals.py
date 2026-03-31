@@ -350,9 +350,10 @@ def estimate_task_complexity(text: str, config: dict[str, float] | None = None) 
     dep_count = sum(1 for m in _DEPENDENCY_MARKERS if m in text_lower)
     dependency_score = min(1.0, dep_count / 5.0)
 
-    w_len = cfg.get("complexity_weight_length", 0.40)
-    w_amb = cfg.get("complexity_weight_ambiguity", 0.35)
-    w_dep = cfg.get("complexity_weight_dependency", 0.25)
+    # Config keys after stripping "complexity_" prefix (e.g. soma.toml: complexity_weight_length)
+    w_len = cfg.get("weight_length", 0.40)
+    w_amb = cfg.get("weight_ambiguity", 0.35)
+    w_dep = cfg.get("weight_dependency", 0.25)
 
     return min(1.0, max(0.0, w_len * length_score + w_amb * ambiguity_score + w_dep * dependency_score))
 
