@@ -12,7 +12,7 @@ from soma.ring_buffer import RingBuffer
 from soma.vitals import (
     compute_uncertainty, compute_drift, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
-    sigmoid_clamp, compute_goal_coherence,
+    sigmoid_clamp, compute_goal_coherence, compute_baseline_integrity,
 )
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
@@ -333,6 +333,28 @@ class SOMAEngine:
             "token_usage": rv.token_usage,
         }
 
+        # Baseline integrity check (per D-08, D-10, D-11)
+        baseline_integrity = True  # Default: intact
+        min_samples = vitals_cfg.get("baseline_integrity_min_samples", 10)
+        error_ratio = vitals_cfg.get("baseline_integrity_error_ratio", 2.0)
+        min_error_rate = vitals_cfg.get("baseline_integrity_min_error_rate", 0.20)
+        try:
+            from soma.state import get_fingerprint_engine
+            fp_engine = get_fingerprint_engine()
+            fp = fp_engine.get(agent_id)
+            if fp is not None:
+                baseline_integrity = compute_baseline_integrity(
+                    baseline_error_rate=s.baseline.get("error_rate"),
+                    current_error_rate=rv.error_rate,
+                    fingerprint_avg_error_rate=fp.avg_error_rate,
+                    fingerprint_sample_count=fp.sample_count,
+                    min_samples=min_samples,
+                    error_ratio_threshold=error_ratio,
+                    min_current_error_rate=min_error_rate,
+                )
+        except Exception:
+            pass  # Fingerprint unavailable — default True (per D-10)
+
         # Goal coherence (None during warmup)
         goal_coherence: float | None = None
         if s.initial_task_vector is not None and s.initial_known_tools is not None:
@@ -430,7 +452,7 @@ class SOMAEngine:
                 uncertainty=uncertainty, drift=drift, drift_mode=drift_mode,
                 token_usage=rv.token_usage, cost=rv.cost, error_rate=rv.error_rate,
                 goal_coherence=goal_coherence,
-                baseline_integrity=True,  # Computed in Plan 03
+                baseline_integrity=baseline_integrity,
             ),
             context_action=context_action,
         )

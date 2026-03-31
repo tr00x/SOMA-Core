@@ -157,7 +157,6 @@ class TestBaselineIntegrityIntegration:
             r = e.record_action("a", Action(tool_name="Bash", output_text="ok"))
         assert r.vitals.baseline_integrity is True
 
-    @pytest.mark.xfail(reason="Implementation in Plan 03")
     def test_baseline_integrity_false_after_corruption(self):
         from unittest.mock import patch, MagicMock
         e = SOMAEngine(budget={"tokens": 100000})
@@ -176,3 +175,25 @@ class TestBaselineIntegrityIntegration:
             for _ in range(25):
                 r = e.record_action("a", Action(tool_name="Bash", output_text="error", error=True))
         assert r.vitals.baseline_integrity is False
+
+    def test_baseline_integrity_true_legitimate_change(self):
+        from unittest.mock import patch, MagicMock
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {
+            "baseline_integrity_error_ratio": 2.0,
+            "baseline_integrity_min_error_rate": 0.20,
+            "baseline_integrity_min_samples": 10,
+        }
+        e.register_agent("a")
+        # Historically very error-prone agent (avg_error_rate=0.60)
+        # After 25 error actions baseline ~0.95, ratio = 0.95/0.60 = 1.58x < 2.0 → True
+        mock_fp = MagicMock()
+        mock_fp.avg_error_rate = 0.60
+        mock_fp.sample_count = 20
+        mock_fp_engine = MagicMock()
+        mock_fp_engine.get.return_value = mock_fp
+        with patch("soma.state.get_fingerprint_engine", return_value=mock_fp_engine):
+            for _ in range(25):
+                r = e.record_action("a", Action(tool_name="Bash", output_text="error", error=True))
+        # baseline / fingerprint ratio stays within 2x for high-error baseline agent
+        assert r.vitals.baseline_integrity is True
