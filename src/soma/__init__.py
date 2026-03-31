@@ -15,6 +15,7 @@ from soma.recorder import SessionRecorder
 from soma.replay import replay_session
 from soma.wrap import wrap, WrappedClient, SomaBlocked, SomaBudgetExhausted
 from soma.persistence import save_engine_state, load_engine_state
+from soma.sdk.track import track, SomaTracker
 
 def quickstart(budget=None, agents=None):
     """Fastest way to start. Returns a configured engine.
@@ -44,4 +45,5 @@ __all__ = [
     "wrap", "WrappedClient", "SomaBlocked", "SomaBudgetExhausted",
     "quickstart",
     "save_engine_state", "load_engine_state",
+    "track", "SomaTracker",
 ]
