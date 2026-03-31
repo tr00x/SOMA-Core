@@ -69,7 +69,12 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
   2. At session end, SOMA generates a Markdown report covering actions, quality, cost, patterns, interventions
   3. Webhook alerting fires on WARN/BLOCK/policy violation to configurable endpoints
   4. Historical analytics API returns per-agent trends over time
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — Exporter interface, context exhaustion pressure, model-aware sizing
+- [ ] 11-02-PLAN.md — OpenTelemetry exporter and webhook alerting
+- [ ] 11-03-PLAN.md — Session reports, historical analytics, CLI commands
 
 ### Phase 12: Ecosystem
 **Goal**: SOMA works with every AI coding tool, not just Claude Code
