@@ -122,7 +122,7 @@ SOMA v0.5.0 is a fully operational behavioral monitoring system with 735 tests, 
 **Plans:** 2 plans
 Plans:
 - [x] 09-01-PLAN.md — Async client wrapper (ASYNC-01)
-- [ ] 09-02-PLAN.md — Streaming interception (ASYNC-02)
+- [x] 09-02-PLAN.md — Streaming interception (ASYNC-02)
 
 ### Phase 10: Production Hardening
 **Goal**: Validate SOMA against real APIs, add context window tracking, structured audit logging, and publish 0.5.0 to PyPI

@@ -56,7 +56,7 @@ Research basis: SOMA-RESEARCH.pdf — 10 open problems from academic literature 
 ### Adoption Blockers
 
 - [x] **ASYNC-01**: Async client support — `soma.wrap(AsyncAnthropic())`
-- [ ] **ASYNC-02**: Streaming support — intercept `client.messages.stream()`
+- [x] **ASYNC-02**: Streaming support — intercept `client.messages.stream()`
 - [ ] **PUB-01**: PyPI publish 0.5.0 — update published package
 - [ ] **TEST-01**: Real API testing — verified with live Anthropic + OpenAI calls
 - [ ] **CTX-01**: Context window tracking — monitor context consumption as degradation predictor
