@@ -13,8 +13,6 @@ Output examples:
 
 from __future__ import annotations
 
-import json
-
 MODE_STYLE = {
     "OBSERVE":  ("✦", "observe"),
     "GUIDE":    ("💡", "guide"),
@@ -59,7 +57,7 @@ def _metrics_display(vitals: dict, actions: int, pressure: float) -> str:
     if pressure >= 0.25 or actions < 10:
         return _vitals_compact(vitals, actions)
 
-    # Healthy — show actionable metrics
+    # Healthy — show actionable metrics (agent_id not available here, use legacy path)
     try:
         from soma.hooks.common import get_task_tracker
         tracker = get_task_tracker()
@@ -79,33 +77,27 @@ def _metrics_display(vitals: dict, actions: int, pressure: float) -> str:
     return _vitals_compact(vitals, actions)
 
 
-def _quality_badge() -> str:
+def _quality_badge(agent_id: str = "") -> str:
     """Load quality grade if available."""
     try:
-        from soma.hooks.common import QUALITY_PATH
-        if QUALITY_PATH.exists():
-            data = json.loads(QUALITY_PATH.read_text())
-            from soma.quality import QualityTracker
-            qt = QualityTracker.from_dict(data)
-            report = qt.get_report()
-            if report.total_writes + report.total_bashes >= 3:
-                return f"quality {report.grade}"
+        from soma.hooks.common import get_quality_tracker
+        qt = get_quality_tracker(agent_id=agent_id)
+        report = qt.get_report()
+        if report.total_writes + report.total_bashes >= 3:
+            return f"quality {report.grade}"
     except Exception:
         pass
     return ""
 
 
-def _phase_badge() -> str:
+def _phase_badge(agent_id: str = "") -> str:
     """Load current task phase if available."""
     try:
-        from soma.hooks.common import TASK_TRACKER_PATH
-        if TASK_TRACKER_PATH.exists():
-            data = json.loads(TASK_TRACKER_PATH.read_text())
-            from soma.task_tracker import TaskTracker
-            tt = TaskTracker.from_dict(data)
-            ctx = tt.get_context()
-            if ctx.phase != "unknown":
-                return ctx.phase
+        from soma.hooks.common import get_task_tracker
+        tt = get_task_tracker(agent_id=agent_id)
+        ctx = tt.get_context()
+        if ctx.phase != "unknown":
+            return ctx.phase
     except Exception:
         pass
     return ""
@@ -147,8 +139,8 @@ def main():
         parts.append(f"#{actions}")
 
         # Badges
-        phase = _phase_badge()
-        quality = _quality_badge()
+        phase = _phase_badge(agent_id)
+        quality = _quality_badge(agent_id)
         if quality:
             parts.append(quality)
         if phase:

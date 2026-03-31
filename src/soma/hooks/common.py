@@ -16,9 +16,17 @@ from soma.state import (  # noqa: F401
 )
 
 SOMA_DIR = Path.home() / ".soma"
+SESSIONS_DIR = SOMA_DIR / "sessions"
 ENGINE_STATE_PATH = SOMA_DIR / "engine_state.json"
 STATE_PATH = SOMA_DIR / "state.json"
-ACTION_LOG_PATH = SOMA_DIR / "action_log.json"
+ACTION_LOG_PATH = SOMA_DIR / "action_log.json"  # legacy fallback
+
+
+def _action_log_path(agent_id: str = "") -> Path:
+    """Session-scoped action log path."""
+    if agent_id:
+        return SESSIONS_DIR / agent_id / "action_log.json"
+    return ACTION_LOG_PATH
 
 CLAUDE_TOOLS = [
     "Bash", "Edit", "Read", "Write", "Grep", "Glob",
@@ -76,17 +84,19 @@ def detect_workflow_mode() -> str:
         return ""
 
 
-def read_action_log() -> list[dict]:
+def read_action_log(agent_id: str = "") -> list[dict]:
     """Read recent action log for pattern analysis."""
+    path = _action_log_path(agent_id)
     try:
-        if ACTION_LOG_PATH.exists():
-            return json.loads(ACTION_LOG_PATH.read_text())
+        if path.exists():
+            return json.loads(path.read_text())
     except (json.JSONDecodeError, IOError):
         pass
     return []
 
 
-def append_action_log(tool_name: str, error: bool = False, file_path: str = "") -> list[dict]:
+def append_action_log(tool_name: str, error: bool = False, file_path: str = "",
+                      agent_id: str = "") -> list[dict]:
     """Append an action to the log and return updated log.
 
     Uses file locking to prevent race conditions when multiple
@@ -101,28 +111,30 @@ def append_action_log(tool_name: str, error: bool = False, file_path: str = "") 
         "ts": time.time(),
     }
 
+    path = _action_log_path(agent_id)
+
     try:
-        SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        lock_path = SOMA_DIR / "action_log.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = path.parent / "action_log.lock"
 
         with open(lock_path, "w") as lock_file:
             fcntl.flock(lock_file, fcntl.LOCK_EX)
             try:
-                log = read_action_log()
+                log = read_action_log(agent_id)
                 log.append(entry)
                 log = log[-ACTION_LOG_MAX:]
-                ACTION_LOG_PATH.write_text(json.dumps(log))
+                path.write_text(json.dumps(log))
             finally:
                 fcntl.flock(lock_file, fcntl.LOCK_UN)
 
         return log
     except Exception:
         # Fallback: try without lock
-        log = read_action_log()
+        log = read_action_log(agent_id)
         log.append(entry)
         log = log[-ACTION_LOG_MAX:]
         try:
-            ACTION_LOG_PATH.write_text(json.dumps(log))
+            path.write_text(json.dumps(log))
         except IOError:
             pass
         return log
@@ -132,12 +144,21 @@ SESSION_ID_PATH = SOMA_DIR / "session_id"
 
 
 def _get_session_agent_id() -> str:
-    """Return a fixed agent ID for Claude Code.
+    """Return a unique agent ID per Claude Code session.
 
-    One agent per machine. No sessions, no PIDs, no complexity.
-    Claude Code context compressions, reconnects, and subprocess spawning
-    all see the same agent with accumulated history.
+    Uses PPID (the Claude Code process that spawned this hook) so each
+    terminal/session gets isolated monitoring. Context compressions
+    within the same session keep the same PPID, so state is preserved.
+
+    Fallback to 'claude-code' if PPID detection fails.
     """
+    import os
+    try:
+        ppid = os.getppid()
+        if ppid > 1:  # 1 = init/launchd, not useful
+            return f"cc-{ppid}"
+    except Exception:
+        pass
     return "claude-code"
 
 

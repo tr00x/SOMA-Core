@@ -8,8 +8,6 @@ Output goes to stdout as "additional context" in Claude Code.
 
 from __future__ import annotations
 
-import time
-
 
 def _format_finding(f) -> str:
     """Format a Finding for Claude Code output."""
@@ -51,18 +49,7 @@ def main():
         verbosity = hook_config.get("verbosity", "normal")
 
         # ── Load action log ──
-        action_log = read_action_log()
-
-        # ── Stale session detection ──
-        stale_timeout = hook_config.get("stale_timeout", 1800)
-        if action_log:
-            last_ts = action_log[-1].get("ts", 0)
-            if last_ts and (time.time() - last_ts) > stale_timeout:
-                try:
-                    from soma.hooks.common import TASK_TRACKER_PATH
-                    TASK_TRACKER_PATH.unlink(missing_ok=True)
-                except Exception:
-                    pass
+        action_log = read_action_log(agent_id)
 
         # ── Grace period: first 3 actions, stay silent ──
         if actions < 3:
@@ -82,7 +69,7 @@ def main():
         quality_str = ""
         try:
             from soma.hooks.common import get_task_tracker
-            tracker = get_task_tracker()
+            tracker = get_task_tracker(agent_id=agent_id)
             ctx = tracker.get_context()
             if ctx.phase != "unknown":
                 phase_str = f" [{ctx.phase}]"
