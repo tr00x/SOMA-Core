@@ -44,7 +44,8 @@ class ActionResult:
 class _AgentState:
     __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
                  "baseline_vector", "action_count", "_last_active",
-                 "initial_task_vector", "initial_known_tools", "task_complexity_score")
+                 "initial_task_vector", "initial_known_tools", "task_complexity_score",
+                 "cumulative_tokens")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -58,6 +59,7 @@ class _AgentState:
         self.initial_task_vector: list[float] | None = None
         self.initial_known_tools: list[str] | None = None
         self.task_complexity_score: float | None = None
+        self.cumulative_tokens: int = 0
 
 
 class SOMAEngine:
@@ -70,6 +72,7 @@ class SOMAEngine:
         state_path: str | None = None,
         custom_weights: dict | None = None,
         custom_thresholds: dict | None = None,
+        context_window: int = 200_000,
     ) -> None:
         self._agents: dict[str, _AgentState] = {}
         self._budget = MultiBudget(budget or {"tokens": 100_000})
@@ -81,6 +84,7 @@ class SOMAEngine:
         self._custom_weights = custom_weights
         self._custom_thresholds = custom_thresholds
         self._default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
+        self._context_window = context_window
         self._vitals_config: dict[str, Any] = {}
 
     @property
@@ -224,11 +228,14 @@ class SOMAEngine:
         except ValueError:
             default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
 
+        context_window = config.get("context_window", 200_000)
+
         engine = cls(
             budget=budget or {"tokens": 100_000},
             auto_export=True,
             custom_weights=custom_weights,
             custom_thresholds=custom_thresholds,
+            context_window=context_window,
         )
         engine._default_autonomy = default_autonomy
         engine._vitals_config = config.get("vitals", {})
@@ -500,6 +507,16 @@ class SOMAEngine:
         if spend_kwargs:
             self._budget.spend(**spend_kwargs)
 
+        # 7b. Context usage tracking (CTX-01)
+        s.cumulative_tokens += action.token_count
+        context_usage = s.cumulative_tokens / self._context_window if self._context_window > 0 else 0.0
+        context_usage = min(1.0, context_usage)
+
+        # Context degradation: at 70% usage, multiply success by 0.7; at 100%, multiply by 0.4
+        if context_usage > 0.0 and predicted_success_rate is not None:
+            context_factor = max(0.4, 1.0 - (context_usage * 0.6))
+            predicted_success_rate = predicted_success_rate * context_factor
+
         # 8. Graph — set both scalar and vector, then propagate
         self._graph.set_internal_pressure(agent_id, internal)
         self._graph.set_internal_pressure_vector(agent_id, pressure_vector)
@@ -594,6 +611,7 @@ class SOMAEngine:
                 half_life_warning=half_life_warning,
                 calibration_score=calibration_score,
                 verbal_behavioral_divergence=verbal_behavioral_divergence,
+                context_usage=context_usage,
             ),
             context_action=context_action,
             pressure_vector=pressure_vector,
