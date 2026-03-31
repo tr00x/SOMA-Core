@@ -24,7 +24,6 @@ from soma.types import Action
 
 try:
     from langchain_core.callbacks.base import BaseCallbackHandler
-    from langchain_core.outputs import LLMResult
     _LANGCHAIN_AVAILABLE = True
 except ImportError:
     # Stub so the class definition doesn't fail at import time
