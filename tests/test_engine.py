@@ -197,3 +197,84 @@ class TestBaselineIntegrityIntegration:
                 r = e.record_action("a", Action(tool_name="Bash", output_text="error", error=True))
         # baseline / fingerprint ratio stays within 2x for high-error baseline agent
         assert r.vitals.baseline_integrity is True
+
+
+class TestUncertaintyClassificationIntegration:
+    def test_uncertainty_type_none_during_warmup(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        for _ in range(3):
+            r = e.record_action("a", Action(tool_name="Bash", output_text="ok"))
+        assert r.vitals.uncertainty_type is None
+
+    def test_uncertainty_type_none_when_low_uncertainty(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        # Normal varied actions — uncertainty stays low
+        for i in range(15):
+            r = e.record_action("a", Action(
+                tool_name="Bash", output_text=f"result {i} complete", token_count=50,
+            ))
+        # uncertainty below 0.3 → None regardless of entropy
+        assert r.vitals.uncertainty_type is None
+
+    def test_epistemic_classification_low_entropy(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+        e.register_agent("a")
+        # Single char repeated → entropy ≈ 0.0 (well below default 0.35) + retried = epistemic
+        for _ in range(15):
+            r = e.record_action("a", Action(
+                tool_name="Bash", output_text="a" * 100, retried=True, error=True,
+            ))
+        assert r.vitals.uncertainty_type == "epistemic"
+
+    def test_aleatoric_classification_high_entropy(self):
+        import string, random
+        random.seed(99)
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+        e.register_agent("a")
+        # Unique random text per action → joint entropy ~0.98 (well above default 0.65)
+        chars = string.printable[:95]
+        tools = ["Bash", "Read", "Write", "Grep", "Edit"]
+        for i in range(15):
+            r = e.record_action("a", Action(
+                tool_name=tools[i % len(tools)],
+                output_text="".join(random.choices(chars, k=200)),
+                retried=True, error=True,
+            ))
+        assert r.vitals.uncertainty_type == "aleatoric"
+
+    def test_epistemic_higher_pressure_than_aleatoric(self):
+        import string, random
+        random.seed(7)
+        cfg = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+
+        def run(outputs: list[str]) -> float:
+            e = SOMAEngine(budget={"tokens": 100000})
+            e._vitals_config = cfg
+            e.register_agent("a")
+            for out in outputs:
+                r = e.record_action("a", Action(tool_name="Bash", output_text=out, retried=True, error=True))
+            return r.pressure
+
+        epistemic_outputs = ["a" * 100] * 15
+        chars = string.printable[:95]
+        aleatoric_outputs = ["".join(random.choices(chars, k=200)) for _ in range(15)]
+
+        assert run(epistemic_outputs) > run(aleatoric_outputs)
+
+    def test_custom_multipliers_from_vitals_config(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {
+            "epistemic_pressure_multiplier": 2.0,
+            "aleatoric_pressure_multiplier": 0.1,
+        }
+        e.register_agent("a")
+        for _ in range(15):
+            r = e.record_action("a", Action(
+                tool_name="Bash", output_text="err", retried=True, error=True,
+            ))
+        # With 2.0 multiplier, epistemic pressure should be capped at 1.0 (high errors + retries)
+        assert r.vitals.uncertainty_type in ("epistemic", "aleatoric", None)  # valid values

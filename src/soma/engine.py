@@ -13,6 +13,7 @@ from soma.vitals import (
     compute_uncertainty, compute_drift, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
     sigmoid_clamp, compute_goal_coherence, compute_baseline_integrity,
+    classify_uncertainty,
 )
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
@@ -324,6 +325,26 @@ class SOMAEngine:
         if retry_rate > 0.3:
             uncertainty_pressure = max(uncertainty_pressure, retry_rate)
 
+        # Uncertainty classification (VIT-02)
+        uncertainty_type: str | None = None
+        if actions:
+            task_entropy_text = " ".join(a.output_text for a in actions)
+            task_entropy = compute_output_entropy(task_entropy_text)
+            uc_cfg = {
+                k[len("uncertainty_classification_"):]: v
+                for k, v in vitals_cfg.items()
+                if k.startswith("uncertainty_classification_")
+            }
+            uncertainty_type = classify_uncertainty(uncertainty, task_entropy, uc_cfg or None)
+
+        # Apply epistemic/aleatoric pressure modulation
+        epistemic_multiplier = vitals_cfg.get("epistemic_pressure_multiplier", 1.3)
+        aleatoric_multiplier = vitals_cfg.get("aleatoric_pressure_multiplier", 0.7)
+        if uncertainty_type == "epistemic":
+            uncertainty_pressure = min(1.0, uncertainty_pressure * epistemic_multiplier)
+        elif uncertainty_type == "aleatoric":
+            uncertainty_pressure = uncertainty_pressure * aleatoric_multiplier
+
         signal_pressures = {
             "uncertainty": uncertainty_pressure,
             "drift": compute_signal_pressure(
@@ -453,6 +474,7 @@ class SOMAEngine:
                 token_usage=rv.token_usage, cost=rv.cost, error_rate=rv.error_rate,
                 goal_coherence=goal_coherence,
                 baseline_integrity=baseline_integrity,
+                uncertainty_type=uncertainty_type,
             ),
             context_action=context_action,
         )
