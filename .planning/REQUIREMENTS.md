@@ -58,10 +58,10 @@ Research basis: SOMA-RESEARCH.pdf — 10 open problems from academic literature 
 - [x] **ASYNC-01**: Async client support — `soma.wrap(AsyncAnthropic())`
 - [x] **ASYNC-02**: Streaming support — intercept `client.messages.stream()`
 - [ ] **PUB-01**: PyPI publish 0.5.0 — update published package
-- [ ] **TEST-01**: Real API testing — verified with live Anthropic + OpenAI calls
+- [x] **TEST-01**: Real API testing — verified with live Anthropic + OpenAI calls
 - [x] **CTX-01**: Context window tracking — monitor context consumption as degradation predictor
 - [x] **LOG-01**: Structured audit log (OTL-02) — JSON Lines per action, zero config
-- [ ] **DOC-01**: CONTRIBUTING.md — dev setup, test instructions, contribution guide
+- [x] **DOC-01**: CONTRIBUTING.md — dev setup, test instructions, contribution guide
 
 ---
 
