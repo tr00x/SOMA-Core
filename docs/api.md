@@ -139,13 +139,12 @@ pe = PolicyEngine.from_dict({
     ]
 })
 
-# Evaluate against current vitals
-results = pe.evaluate(vitals_dict)
+# Evaluate against current vitals snapshot and pressure
+results = pe.evaluate(vitals_snapshot, pressure=0.65)
 
 for result in results:
     result.action    # "guide", "warn", "block"
     result.message   # str — human-readable message
-    result.rule_id   # int — index of the matched rule
 ```
 
 ### Rule format
@@ -228,66 +227,68 @@ The classification affects how SOMA generates guidance:
 
 ### `compute_calibration_score`
 
-Measures alignment between agent confidence and actual outcomes.
+Measures alignment between verbal hedging and actual error rate.
 
 ```python
 from soma.reliability import compute_calibration_score
 
-score = compute_calibration_score(
-    predictions=[0.9, 0.8, 0.7, 0.6],
-    outcomes=[True, True, False, True],
-)
-# Returns: float [0, 1] where 1.0 = perfectly calibrated
+score = compute_calibration_score(hedging_rate=0.5, error_rate=0.0)
+# Returns: 0.75
+# High hedging + low errors = cautious and competent
 ```
 
 Parameters:
-- `predictions`: list[float] — predicted success probabilities
-- `outcomes`: list[bool] — actual success/failure outcomes
+- `hedging_rate`: float — fraction of outputs containing hedging language (0-1)
+- `error_rate`: float — fraction of actions that failed (0-1)
+
+Formula: `(1 - error_rate) * (0.5 + 0.5 * hedging_rate)`. Returns float in [0, 1].
 
 ### `detect_verbal_behavioral_divergence`
 
-Detects mismatch between stated intentions and actual actions.
+Detects when verbal confidence diverges from behavioral struggle.
 
 ```python
 from soma.reliability import detect_verbal_behavioral_divergence
 
-score = detect_verbal_behavioral_divergence(
-    stated_actions=["read config.py", "edit config.py"],
-    actual_actions=[
-        {"tool": "Edit", "file": "config.py"},
-        {"tool": "Bash", "command": "rm -rf tmp/"},
-    ],
+divergent = detect_verbal_behavioral_divergence(
+    hedging_rate=0.1,   # agent sounds confident
+    pressure=0.8,       # but behavioral pressure is high
 )
-# Returns: float [0, 1] where 0.0 = perfect alignment
+# Returns: True — (0.8 - 0.1) > 0.4 threshold
 ```
 
 Parameters:
-- `stated_actions`: list[str] — what the agent said it would do
-- `actual_actions`: list[dict] — what the agent actually did
+- `hedging_rate`: float — verbal caution level (0-1)
+- `pressure`: float — current behavioral pressure (0-1)
+- `threshold`: float — divergence threshold (default: 0.4)
 
-## Half-Life Predictor
+Returns `bool`. Fires when `(pressure - hedging_rate) > threshold`.
 
-Temporal success prediction using exponential decay weighting.
+## Half-Life Functions
+
+Temporal success prediction using exponential decay. No class — standalone functions.
 
 ```python
-from soma.halflife import HalfLifePredictor
+from soma.halflife import compute_half_life, predict_success_rate, predict_actions_to_threshold
 
-hlp = HalfLifePredictor(decay_constant=10)
+# Estimate half-life from agent history
+hl = compute_half_life(avg_session_length=90.0, avg_error_rate=0.15)
+# Returns: 76.5 (actions until P(success) = 50%)
 
-hlp.record(success=True)
-hlp.record(success=True)
-hlp.record(success=False)
+# Predict success rate at current action count
+p = predict_success_rate(action_count=45, half_life=hl)
+# Returns: 0.67
 
-pred = hlp.predict()
-pred.success_probability  # float [0, 1]
-pred.trend                # "rising", "falling", or "stable"
-pred.half_life            # float — actions until probability halves (if falling)
+# How many more actions until success drops below 50%?
+remaining = predict_actions_to_threshold(action_count=45, half_life=hl)
+# Returns: 31
 ```
 
-Parameters for constructor:
-- `decay_constant`: int — number of actions for half-weight decay (default: 10)
-
-The predictor integrates with the pressure model. Falling success probability contributes to increased pressure.
+Functions:
+- `compute_half_life(avg_session_length, avg_error_rate, min_half_life=10.0) -> float`
+- `predict_success_rate(action_count, half_life) -> float`
+- `predict_actions_to_threshold(action_count, half_life, threshold=0.5) -> int | None`
+- `generate_handoff_suggestion(agent_id, action_count, half_life, predicted_success) -> str`
 
 ## Core Modules
 

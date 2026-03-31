@@ -191,13 +191,13 @@ where v is a behavior feature vector containing tool-call statistics, output cha
 
 Each signal is converted to a pressure contribution via z-score normalization with sigmoid clamping:
 
-$$p_i = \sigma\left(\frac{x_i - \mu_i}{\max(\sigma_i, 0.1)}\right)$$
+$$p_i = \sigma\left(\frac{x_i - \mu_i}{\max(\sigma_i, 0.05)}\right)$$
 
 where μᵢ and σᵢ are the EMA baseline mean and standard deviation for signal i, and σ(·) is the sigmoid clamp:
 
 $$\sigma(z) = \begin{cases} 0 & z \leq 0 \\ \frac{1}{1 + e^{-z+3}} & 0 < z \leq 6 \\ 1 & z > 6 \end{cases}$$
 
-The minimum standard deviation of 0.1 prevents explosion when variance is near zero (common during cold start). The sigmoid center at z=3 means that a signal must deviate 3 standard deviations from baseline to reach 50% pressure — a deliberate choice to avoid false positives from normal variance.
+The minimum standard deviation of 0.05 prevents explosion when variance is near zero (common during cold start). The sigmoid center at z=3 means that a signal must deviate 3 standard deviations from baseline to reach 50% pressure — a deliberate choice to avoid false positives from normal variance.
 
 ### 4.3 Aggregation
 
@@ -465,7 +465,7 @@ The fingerprint requires ≥10 sessions of data before producing divergence scor
 
 ---
 
-### 12.5 Uncertainty Classification
+### 12.3 Uncertainty Classification
 
 SOMA classifies uncertainty into two categories based on output entropy analysis, enabling differential pressure modulation depending on the nature of the agent's confusion.
 
@@ -482,7 +482,7 @@ This distinction prevents false escalation when agents explore ambiguous problem
 
 ---
 
-### 12.6 Reliability Metrics
+### 12.4 Reliability Metrics
 
 SOMA tracks two reliability metrics that capture the gap between what an agent signals and what it delivers.
 
@@ -494,7 +494,7 @@ Together, these metrics provide a trust signal orthogonal to the core five behav
 
 ---
 
-### 12.7 Policy Engine
+### 12.5 Policy Engine
 
 SOMA includes a declarative policy engine that allows operators to define behavioral rules in YAML or TOML configuration files rather than writing code. Rules are evaluated on every action and can trigger guidance, warnings, or blocks.
 
@@ -699,6 +699,22 @@ As AI agents become more autonomous and more widely deployed, the gap between "a
 [7] Astrom, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008.
 
 [8] Bai, Y. et al. "Constitutional AI: Harmlessness from AI Feedback." arXiv:2212.08073, 2022.
+
+[9] Kendall, A. & Gal, Y. "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?" NeurIPS, 2017. *(Epistemic vs. aleatoric uncertainty decomposition — foundational framework for SOMA's uncertainty classification.)*
+
+[10] Kadavath, S. et al. "Language Models (Mostly) Know What They Know." arXiv:2207.05221, 2022. *(LLM self-calibration — shows models can estimate their own uncertainty; basis for SOMA's calibration score design.)*
+
+[11] Lin, S. et al. "TruthfulQA: Measuring How Models Mimic Human Falsehoods." ACL, 2022. *(Verbal-behavioral divergence in language models — motivates SOMA's deceptive behavior detection.)*
+
+[12] Valmeekam, K. et al. "On the Planning Abilities of Large Language Models." NeurIPS, 2023. *(Documents LLM planning failures in multi-step tasks — the class of failures SOMA's pressure model is designed to catch.)*
+
+[13] Shinn, N. et al. "Reflexion: Language Agents with Verbal Reinforcement Learning." NeurIPS, 2023. *(Self-reflective agents — demonstrates that agents respond to behavioral feedback loops, the core mechanism SOMA exploits.)*
+
+[14] Wang, L. et al. "A Survey on Large Language Model based Autonomous Agents." arXiv:2308.11432, 2023. *(Comprehensive survey of LLM agent architectures — categorizes the failure modes SOMA monitors.)*
+
+[15] Hubinger, E. et al. "Sleeper Agents: Training Deceptive LLMs That Persist Through Safety Training." arXiv:2401.05566, 2024. *(Deceptive alignment — motivates SOMA's verbal-behavioral divergence detection as a runtime defense.)*
+
+[16] Park, J.S. et al. "Generative Agents: Interactive Simulacra of Human Behavior." UIST, 2023. *(Multi-agent behavioral simulation — demonstrates cascading behavioral drift in agent populations, the problem SOMA's trust graph addresses.)*
 
 ---
 
