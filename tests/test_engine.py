@@ -246,24 +246,50 @@ class TestUncertaintyClassificationIntegration:
             ))
         assert r.vitals.uncertainty_type == "aleatoric"
 
-    def test_epistemic_higher_pressure_than_aleatoric(self):
+    def test_epistemic_classification_on_low_entropy_output(self):
+        """Low-entropy (repetitive) output is classified as epistemic."""
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+        e.register_agent("a")
+        for _ in range(15):
+            r = e.record_action("a", Action(tool_name="Bash", output_text="a" * 200, retried=True))
+        assert r.vitals.uncertainty_type == "epistemic"
+
+    def test_aleatoric_classification_on_high_entropy_output(self):
+        """High-entropy (random printable) output is classified as aleatoric."""
         import string, random
         random.seed(7)
-        cfg = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+        chars = string.printable[:95]
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
+        e.register_agent("a")
+        for _ in range(15):
+            out = "".join(random.choices(chars, k=200))
+            r = e.record_action("a", Action(tool_name="Bash", output_text=out, retried=True))
+        assert r.vitals.uncertainty_type == "aleatoric"
 
-        def run(outputs: list[str]) -> float:
+    def test_epistemic_multiplier_boosts_pressure(self):
+        """Epistemic multiplier > 1 raises aggregate pressure vs multiplier < 1.
+        Uses retried=True (no errors) so error_rate floor doesn't dominate.
+        vitals.uncertainty is the raw float; the multiplied pressure is in r.pressure.
+        """
+        def run_with_cfg(cfg):
             e = SOMAEngine(budget={"tokens": 100000})
             e._vitals_config = cfg
             e.register_agent("a")
-            for out in outputs:
-                r = e.record_action("a", Action(tool_name="Bash", output_text=out, retried=True, error=True))
-            return r.pressure
+            for _ in range(15):
+                r = e.record_action("a", Action(
+                    tool_name="Bash", output_text="a" * 200, retried=True
+                ))
+            return r.pressure  # aggregate reflects multiplied uncertainty_pressure
 
-        epistemic_outputs = ["a" * 100] * 15
-        chars = string.printable[:95]
-        aleatoric_outputs = ["".join(random.choices(chars, k=200)) for _ in range(15)]
-
-        assert run(epistemic_outputs) > run(aleatoric_outputs)
+        # uncertainty_classification_min_uncertainty=0.1 ensures uncertainty≈0.30 (from
+        # retry_rate component alone) clears the classification threshold, allowing the
+        # epistemic multiplier to actually differentiate the two runs.
+        base_cfg = {"uncertainty_classification_min_uncertainty": 0.1}
+        high = run_with_cfg({**base_cfg, "epistemic_pressure_multiplier": 3.0, "aleatoric_pressure_multiplier": 0.7})
+        low  = run_with_cfg({**base_cfg, "epistemic_pressure_multiplier": 0.1, "aleatoric_pressure_multiplier": 0.7})
+        assert high > low
 
     def test_custom_multipliers_from_vitals_config(self):
         e = SOMAEngine(budget={"tokens": 100000})

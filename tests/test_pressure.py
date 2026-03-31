@@ -100,12 +100,49 @@ class TestComputeAggregatePressure:
         assert result > 0.9
 
     def test_custom_weights(self):
-        """Custom weights are respected in weighted mean calculation."""
+        """Custom weights are respected; error_rate=1.0 triggers BLOCK-level floor."""
         signals = {"error_rate": 1.0, "cost": 0.0}
-        # With equal weights, mean = 0.5, max = 1.0 → 0.7*0.5 + 0.3*1.0 = 0.65
         custom_weights = {"error_rate": 1.0, "cost": 1.0}
         result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE, weights=custom_weights)
-        assert result == pytest.approx(0.65, abs=1e-6)
+        # error_rate=1.0 ≥ 0.50 → aggregate floor = 0.80 (BLOCK entry)
+        assert result == pytest.approx(0.80, abs=0.01)
+
+    def test_error_rate_floor_at_50_pct(self):
+        """error_rate signal ≥ 0.50 lifts aggregate to at least GUIDE (0.40)."""
+        signals = {"error_rate": 0.50, "uncertainty": 0.01, "drift": 0.01,
+                   "cost": 0.01, "token_usage": 0.01}
+        result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE)
+        assert result >= 0.40, f"Expected ≥ 0.40 (GUIDE), got {result:.3f}"
+
+    def test_error_rate_floor_at_75_pct(self):
+        """error_rate signal ≥ 0.75 lifts aggregate to at least WARN (0.60)."""
+        signals = {"error_rate": 0.75, "uncertainty": 0.01, "drift": 0.01,
+                   "cost": 0.01, "token_usage": 0.01}
+        result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE)
+        assert result >= 0.60, f"Expected ≥ 0.60 (WARN), got {result:.3f}"
+
+    def test_error_rate_floor_at_100_pct(self):
+        """error_rate signal = 1.0 lifts aggregate to at least BLOCK (0.80)."""
+        signals = {"error_rate": 1.0, "uncertainty": 0.01, "drift": 0.01,
+                   "cost": 0.01, "token_usage": 0.01}
+        result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE)
+        assert result >= 0.80, f"Expected ≥ 0.80 (BLOCK), got {result:.3f}"
+
+    def test_error_rate_floor_inactive_below_50_pct(self):
+        """error_rate < 0.50 — floor does not activate, old formula applies."""
+        signals = {"error_rate": 0.35, "uncertainty": 0.01, "drift": 0.01,
+                   "cost": 0.01, "token_usage": 0.01}
+        result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE)
+        # Without floor, aggregate ≈ 0.20; definitely below GUIDE
+        assert result < 0.40, f"Expected < 0.40, got {result:.3f}"
+
+    def test_error_rate_floor_skipped_when_weight_is_zero(self):
+        """Floor must not fire if error_rate weight is explicitly 0."""
+        signals = {"error_rate": 1.0, "uncertainty": 0.5}
+        weights_no_error = {"error_rate": 0.0, "uncertainty": 1.0}
+        result = compute_aggregate_pressure(signals, DriftMode.DIRECTIVE, weights=weights_no_error)
+        # error_rate excluded → aggregate based on uncertainty only, < 0.80
+        assert result < 0.80, f"Expected < 0.80 (floor skipped), got {result:.3f}"
 
     def test_empty_signals_returns_zero(self):
         """Empty signal dict → 0.0."""
