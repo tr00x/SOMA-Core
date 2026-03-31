@@ -184,3 +184,14 @@ Plans:
 **Depends on**: Phase 14
 **Requirements**: BEN-01, BEN-02, SAF-01
 **Plans**: TBD
+
+## Backlog
+
+### Phase 999.1: Degradation-Aware Checkpoint Recommendation (BACKLOG)
+
+**Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
