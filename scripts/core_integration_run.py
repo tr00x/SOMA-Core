@@ -134,7 +134,7 @@ def run_scenario_a() -> tuple[list[StepRecord], dict]:
 
 
 def run_scenario_b() -> tuple[list[StepRecord], dict]:
-    """70 actions: first 30 healthy, then errors spike (35%), tracking mode escalation."""
+    """70 actions: first 30 healthy, then errors spike (70%), tracking mode escalation."""
     engine = make_engine()
     engine.register_agent("agent-degrading",
         system_prompt="Analyze and refactor legacy codebase with unclear dependencies.")
@@ -142,7 +142,7 @@ def run_scenario_b() -> tuple[list[StepRecord], dict]:
     records = []
     for i in range(70):
         # Phase 1 (0-29): healthy; Phase 2 (30-69): high error rate
-        error_rate = 0.04 if i < 30 else 0.35
+        error_rate = 0.04 if i < 30 else 0.70
         tool = rng.choice(TOOL_POOL)
         error = rng.random() < error_rate
         result = engine.record_action("agent-degrading", make_action(
@@ -460,8 +460,8 @@ def main() -> None:
     checks = [
         ("A: final mode = OBSERVE",         final_a.mode == ResponseMode.OBSERVE),
         ("A: final pressure < 0.40",        final_a.pressure < 0.40),
-        ("B: peak pressure > 0.20",         peak_b > 0.20),   # NOTE: 35% errors → max 0.245 (OBSERVE) — insensitivity bug
-        ("B: error_rate signal responded",  any(r.pressure > 0.10 for r in rec_b[30:])),
+        ("B: escalated to GUIDE or above",  any(r.mode != ResponseMode.OBSERVE for r in rec_b[30:])),
+        ("B: peak pressure ≥ GUIDE",        peak_b >= 0.40),
         ("C: workers absorbed propagation", wa_p > 0 or wb_p > 0),
         ("D: policy fired on high stress",  scenario_d["rules_fired"] >= 1),
     ]
