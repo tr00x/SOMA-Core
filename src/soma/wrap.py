@@ -43,6 +43,190 @@ class SomaBudgetExhausted(Exception):
         super().__init__(f"SOMA budget exhausted: {dimension}")
 
 
+class SomaStreamContext:
+    """Sync context manager that wraps an Anthropic streaming response.
+
+    Accumulates text chunks and records a single Action when the stream
+    completes (or errors).
+    """
+
+    def __init__(self, stream: Any, wrapped_client: WrappedClient, tool_name: str) -> None:
+        self._stream = stream
+        self._wrapped = wrapped_client
+        self._tool_name = tool_name
+        self._accumulated_text = ""
+        self._start: float = 0.0
+        self._error = False
+
+    def __enter__(self) -> SomaStreamContext:
+        self._start = time.time()
+        self._stream.__enter__()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if exc_type is not None:
+            self._error = True
+        try:
+            self._stream.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._record_stream_action()
+
+    @property
+    def text_stream(self) -> Any:
+        """Yields text chunks from the underlying stream, accumulating text."""
+        try:
+            for chunk in self._stream.text_stream:
+                self._accumulated_text += chunk
+                yield chunk
+        except Exception:
+            self._error = True
+            raise
+
+    def get_final_message(self) -> Any:
+        """Delegate to underlying stream's get_final_message."""
+        return self._stream.get_final_message()
+
+    def _record_stream_action(self) -> None:
+        """Record the accumulated stream as a single Action."""
+        duration = time.time() - self._start
+        # Try to get token count from final message
+        token_count = 0
+        try:
+            final = self._stream.get_final_message()
+            _, token_count = self._wrapped._extract_response_data(final)
+        except Exception:
+            pass
+
+        text = self._accumulated_text or ""
+
+        # Fallback: estimate tokens from text
+        if token_count == 0 and text:
+            token_count = len(text) // 4
+
+        action = Action(
+            tool_name=self._tool_name,
+            output_text=text[:1000],
+            token_count=token_count,
+            cost=self._wrapped._estimate_cost(token_count),
+            error=self._error,
+            duration_sec=duration,
+        )
+        result = self._wrapped._engine.record_action(self._wrapped._agent_id, action)
+        self._wrapped._pending_context_action = result.context_action
+        self._wrapped._recorder.record(self._wrapped._agent_id, action)
+
+
+class AsyncSomaStreamContext:
+    """Async context manager that wraps an Anthropic async streaming response."""
+
+    def __init__(self, stream: Any, wrapped_client: WrappedClient, tool_name: str) -> None:
+        self._stream = stream
+        self._wrapped = wrapped_client
+        self._tool_name = tool_name
+        self._accumulated_text = ""
+        self._start: float = 0.0
+        self._error = False
+
+    async def __aenter__(self) -> AsyncSomaStreamContext:
+        self._start = time.time()
+        await self._stream.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if exc_type is not None:
+            self._error = True
+        try:
+            await self._stream.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._record_stream_action()
+
+    @property
+    def text_stream(self) -> Any:
+        """Returns an async generator that yields text chunks."""
+        return self._async_text_stream()
+
+    async def _async_text_stream(self) -> Any:
+        async for chunk in self._stream.text_stream:
+            self._accumulated_text += chunk
+            yield chunk
+
+    def get_final_message(self) -> Any:
+        return self._stream.get_final_message()
+
+    def _record_stream_action(self) -> None:
+        duration = time.time() - self._start
+        token_count = 0
+        try:
+            final = self._stream.get_final_message()
+            _, token_count = self._wrapped._extract_response_data(final)
+        except Exception:
+            pass
+
+        text = self._accumulated_text or ""
+        if token_count == 0 and text:
+            token_count = len(text) // 4
+
+        action = Action(
+            tool_name=self._tool_name,
+            output_text=text[:1000],
+            token_count=token_count,
+            cost=self._wrapped._estimate_cost(token_count),
+            error=self._error,
+            duration_sec=duration,
+        )
+        result = self._wrapped._engine.record_action(self._wrapped._agent_id, action)
+        self._wrapped._pending_context_action = result.context_action
+        self._wrapped._recorder.record(self._wrapped._agent_id, action)
+
+
+class SomaStreamIterator:
+    """Wraps an OpenAI streaming iterator, accumulates chunks, records Action when done."""
+
+    def __init__(self, iterator: Any, wrapped_client: WrappedClient, tool_name: str) -> None:
+        self._iterator = iterator
+        self._wrapped = wrapped_client
+        self._tool_name = tool_name
+        self._accumulated_text = ""
+        self._start = time.time()
+        self._recorded = False
+
+    def __iter__(self) -> SomaStreamIterator:
+        return self
+
+    def __next__(self) -> Any:
+        try:
+            chunk = next(self._iterator)
+            # Accumulate delta content
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    self._accumulated_text += delta.content
+            return chunk
+        except StopIteration:
+            self._record()
+            raise
+
+    def _record(self) -> None:
+        if self._recorded:
+            return
+        self._recorded = True
+        duration = time.time() - self._start
+        text = self._accumulated_text
+        token_count = len(text) // 4 if text else 0
+
+        action = Action(
+            tool_name=self._tool_name,
+            output_text=text[:1000],
+            token_count=token_count,
+            cost=self._wrapped._estimate_cost(token_count),
+            error=False,
+            duration_sec=duration,
+        )
+        result = self._wrapped._engine.record_action(self._wrapped._agent_id, action)
+        self._wrapped._pending_context_action = result.context_action
+        self._wrapped._recorder.record(self._wrapped._agent_id, action)
+
+
 class WrappedClient:
     """Proxy around an API client. Intercepts all LLM calls."""
 
@@ -103,6 +287,11 @@ class WrappedClient:
             else:
                 client.messages.create = self._make_wrapper(original_create, "messages.create")
 
+        # Anthropic SDK: client.messages.stream(...) — streaming context manager
+        if hasattr(client, "messages") and hasattr(client.messages, "stream"):
+            original_stream = client.messages.stream
+            client.messages.stream = self._wrap_stream_method(original_stream, "messages.stream")
+
         # OpenAI SDK: client.chat.completions.create(...)
         if hasattr(client, "chat") and hasattr(client.chat, "completions"):
             if hasattr(client.chat.completions, "create"):
@@ -147,7 +336,12 @@ class WrappedClient:
             if self._engine.budget.is_exhausted():
                 raise SomaBudgetExhausted("budget")
 
-            # 3. Execute the real API call
+            # 3. OpenAI streaming: detect stream=True in kwargs
+            if kwargs.get("stream"):
+                response = original_fn(*args, **kwargs)
+                return SomaStreamIterator(response, self, tool_name)
+
+            # 4. Execute the real API call (non-streaming)
             start = time.time()
             error = False
             output_text = ""
@@ -172,7 +366,7 @@ class WrappedClient:
                 raise
 
             finally:
-                # 4. Record the action in SOMA
+                # 5. Record the action in SOMA
                 action = Action(
                     tool_name=tool_name,
                     output_text=output_text[:1000],  # cap for vitals
@@ -255,6 +449,31 @@ class WrappedClient:
                 self._recorder.record(self._agent_id, action)
 
         return wrapper
+
+    def _wrap_stream_method(self, original_fn: Any, tool_name: str) -> Any:
+        """Wrap an Anthropic .stream() method to return a SOMA stream context."""
+
+        @functools.wraps(original_fn)
+        def stream_wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Pre-check: should we block?
+            level = self._engine.get_level(self._agent_id)
+            if level >= self._block_at:
+                snap = self._engine.get_snapshot(self._agent_id)
+                raise SomaBlocked(self._agent_id, level, snap["pressure"])
+
+            # Check budget
+            if self._engine.budget.is_exhausted():
+                raise SomaBudgetExhausted("budget")
+
+            # Call original stream and wrap it
+            underlying = original_fn(*args, **kwargs)
+
+            # Detect if the underlying stream is async (has __aenter__)
+            if hasattr(underlying, "__aenter__"):
+                return AsyncSomaStreamContext(underlying, self, tool_name)
+            return SomaStreamContext(underlying, self, tool_name)
+
+        return stream_wrapper
 
     def _extract_response_data(self, response: Any) -> tuple[str, int]:
         """Extract text and token count from API response."""
