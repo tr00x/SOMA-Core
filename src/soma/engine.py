@@ -12,7 +12,7 @@ from soma.ring_buffer import RingBuffer
 from soma.vitals import (
     compute_uncertainty, compute_drift, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
-    sigmoid_clamp,
+    sigmoid_clamp, compute_goal_coherence,
 )
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
@@ -245,6 +245,13 @@ class SOMAEngine:
         s._last_active = time.time()
         actions = list(s.ring_buffer)
 
+        # Capture initial task signature after warmup window (per D-01)
+        vitals_cfg = self._vitals_config or {}
+        warmup_actions = vitals_cfg.get("goal_coherence_warmup_actions", 5)
+        if s.action_count == warmup_actions and s.initial_task_vector is None:
+            s.initial_known_tools = list(s.known_tools)  # snapshot, not reference
+            s.initial_task_vector = compute_behavior_vector(actions, s.initial_known_tools)
+
         # 1. Behavioral vitals
         uncertainty = compute_uncertainty(
             actions,
@@ -325,6 +332,19 @@ class SOMAEngine:
             "cost": rv.cost,
             "token_usage": rv.token_usage,
         }
+
+        # Goal coherence (None during warmup)
+        goal_coherence: float | None = None
+        if s.initial_task_vector is not None and s.initial_known_tools is not None:
+            goal_coherence = compute_goal_coherence(actions, s.initial_task_vector, s.initial_known_tools)
+            # Invert: low coherence = high divergence = high pressure (per research pitfall 4)
+            goal_coherence_divergence = 1.0 - goal_coherence
+            signal_pressures["goal_coherence"] = compute_signal_pressure(
+                goal_coherence_divergence,
+                s.baseline.get("goal_coherence"),
+                s.baseline.get_std("goal_coherence"),
+            )
+            s.baseline.update("goal_coherence", goal_coherence_divergence)
 
         # Add burn rate pressure
         if self._budget.health() < 1.0:
@@ -409,7 +429,7 @@ class SOMAEngine:
             vitals=VitalsSnapshot(
                 uncertainty=uncertainty, drift=drift, drift_mode=drift_mode,
                 token_usage=rv.token_usage, cost=rv.cost, error_rate=rv.error_rate,
-                goal_coherence=None,      # Computed in Plan 02
+                goal_coherence=goal_coherence,
                 baseline_integrity=True,  # Computed in Plan 03
             ),
             context_action=context_action,

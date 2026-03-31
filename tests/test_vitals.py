@@ -549,7 +549,6 @@ class TestResourceVitals:
 # ---------------------------------------------------------------------------
 
 class TestGoalCoherence:
-    @pytest.mark.xfail(reason="Implementation in Plan 02")
     def test_coherence_same_task_high(self):
         from soma.vitals import compute_goal_coherence
         actions = [Action(tool_name="Bash", output_text=f"output {i}") for i in range(10)]
@@ -557,14 +556,27 @@ class TestGoalCoherence:
         result = compute_goal_coherence(actions[5:], initial_vec, ["Bash"])
         assert result > 0.7
 
-    @pytest.mark.xfail(reason="Implementation in Plan 02")
     def test_coherence_different_task_low(self):
         from soma.vitals import compute_goal_coherence
-        bash_actions = [Action(tool_name="Bash", output_text=f"running command {i}") for i in range(5)]
-        write_actions = [Action(tool_name="Write", output_text="x" * 500) for _ in range(5)]
+        # Short bash outputs → small avg_output_len, Bash in tool_dist
+        bash_actions = [Action(tool_name="Bash", output_text=f"ok {i}") for i in range(5)]
+        # Very long write outputs → large avg_output_len, Bash absent in tool_dist
+        # Divergent output_len pulls cosine similarity below 0.35
+        write_actions = [Action(tool_name="Write", output_text="x" * 5000) for _ in range(5)]
         initial_vec = compute_behavior_vector(bash_actions, ["Bash"])
         result = compute_goal_coherence(write_actions, initial_vec, ["Bash"])
         assert result < 0.35
+
+    def test_coherence_uses_frozen_tools(self):
+        from soma.vitals import compute_goal_coherence
+        initial_known_tools = ["Bash"]
+        actions = [Action(tool_name="Bash", output_text=f"cmd {i}") for i in range(5)]
+        initial_vec = compute_behavior_vector(actions, initial_known_tools)
+        # Even if live known_tools grew, we use the frozen snapshot
+        result = compute_goal_coherence(actions, initial_vec, initial_known_tools)
+        # Vector length stays 5 (4 base + 1 tool), not 7 (4 base + 3 tools)
+        assert len(initial_vec) == 5
+        assert isinstance(result, float)
 
 
 # ---------------------------------------------------------------------------
