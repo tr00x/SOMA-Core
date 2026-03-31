@@ -16,6 +16,7 @@ from soma.vitals import (
     classify_uncertainty, estimate_task_complexity,
 )
 from soma.halflife import compute_half_life, predict_success_rate, generate_handoff_suggestion
+from soma.reliability import compute_hedging_rate, compute_calibration_score, detect_verbal_behavioral_divergence
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
 from soma.budget import MultiBudget
@@ -521,7 +522,26 @@ class SOMAEngine:
         else:
             self._graph.recover_trust(agent_id, uncertainty)
 
-        # 10. Mode — apply task-complexity threshold adjustment (PRS-03)
+        # 10. Reliability metrics (REL-01, REL-02) — computed after effective pressure is known
+        calibration_score: float | None = None
+        verbal_behavioral_divergence = False
+        min_calibration_samples = vitals_cfg.get("calibration_min_samples", 3)
+        if s.action_count >= min_calibration_samples:
+            hedging_rate = compute_hedging_rate(actions)
+            calibration_score = compute_calibration_score(hedging_rate, rv.error_rate)
+            vbd_threshold = vitals_cfg.get("verbal_behavioral_divergence_threshold", 0.4)
+            verbal_behavioral_divergence = detect_verbal_behavioral_divergence(
+                hedging_rate, effective, vbd_threshold
+            )
+            if verbal_behavioral_divergence:
+                self._events.emit("verbal_behavioral_divergence", {
+                    "agent_id": agent_id,
+                    "hedging_rate": hedging_rate,
+                    "pressure": effective,
+                    "calibration_score": calibration_score,
+                })
+
+        # 10b. Mode — apply task-complexity threshold adjustment (PRS-03)
         # High complexity lowers thresholds so escalation happens faster.
         effective_thresholds = dict(self._custom_thresholds) if self._custom_thresholds else {}
         if s.task_complexity_score is not None and s.task_complexity_score > 0.5:
@@ -533,6 +553,9 @@ class SOMAEngine:
 
         old_mode = s.mode
         new_mode = pressure_to_mode(effective, effective_thresholds or None)
+        # Verbal-behavioral divergence forces mode to at least GUIDE (REL-02, criterion 4)
+        if verbal_behavioral_divergence and new_mode < ResponseMode.GUIDE:
+            new_mode = ResponseMode.GUIDE
         s.mode = new_mode
 
         # 11. Events + Learning
@@ -569,6 +592,8 @@ class SOMAEngine:
                 task_complexity=s.task_complexity_score,
                 predicted_success_rate=predicted_success_rate,
                 half_life_warning=half_life_warning,
+                calibration_score=calibration_score,
+                verbal_behavioral_divergence=verbal_behavioral_divergence,
             ),
             context_action=context_action,
             pressure_vector=pressure_vector,

@@ -123,6 +123,8 @@ class VitalsSnapshot:
     task_complexity: float | None = None       # None until first action sets it
     predicted_success_rate: float | None = None  # None when no fingerprint history
     half_life_warning: bool = False            # True when approaching/past half-life
+    calibration_score: float | None = None    # None during warmup (< 3 actions)
+    verbal_behavioral_divergence: bool = False  # True = confident language + high pressure
 
 
 @dataclass
