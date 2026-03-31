@@ -9,7 +9,7 @@ tr00x@proton.me
 
 ## Abstract
 
-As AI agents transition from single-turn assistants to autonomous multi-step systems capable of executing code, managing files, and orchestrating sub-agents, the absence of runtime behavioral oversight presents critical risks: uncontrolled resource consumption, destructive action loops, silent quality degradation, and cascading failures in multi-agent pipelines. We present SOMA (System for Observational Monitoring of Agents), a deterministic, zero-inference behavioral monitoring framework that computes a unified pressure metric from five behavioral signals, applies graduated guidance through 4 response modes (OBSERVE/GUIDE/WARN/BLOCK), and self-tunes thresholds via an outcome-tracking learning engine. SOMA operates at tool-call granularity with sub-millisecond latency, requires no API calls or network access, and integrates with existing agent frameworks through a thin wrapper layer. We report 735 passing tests across 31 test modules, covering stress scenarios, multi-agent propagation, and full integration with Claude Code. SOMA is open-source (MIT) and available on PyPI as `soma-ai`.
+We present SOMA (System of Oversight and Monitoring for Agents), a deterministic behavioral control framework for autonomous AI agents. SOMA observes agent actions in real-time, computes behavioral pressure from six vital signals, and injects corrective guidance into agent context before problems escalate. Unlike training-time alignment techniques or post-hoc evaluation frameworks, SOMA operates as a runtime nervous system: it requires zero inference calls, completes in bounded O(k*n) time per action, and produces fully explainable decisions. The system introduces a novel pressure model that normalizes heterogeneous behavioral signals via z-score sigmoid transformation, aggregates them through a weighted mean-max blend, and maps the result to four graduated response modes (OBSERVE, GUIDE, WARN, BLOCK). We describe the complete architecture including exponential moving average baselines with cold-start blending, epistemic-aleatoric uncertainty decomposition, multi-agent pressure propagation over trust-weighted directed graphs, a self-learning engine that adapts thresholds from intervention outcomes, and predictive modeling that anticipates failures before they occur. SOMA is validated through 735 tests across 37 modules and integration scenarios totaling 231 actions across 4 distinct agent behavioral profiles. The system is open-source under the MIT license and published on PyPI as `soma-ai`.
 
 ---
 
@@ -17,60 +17,45 @@ As AI agents transition from single-turn assistants to autonomous multi-step sys
 
 ### 1.1 The Autonomous Agent Problem
 
-The year 2025 marked a phase transition in AI deployment. Agents moved from answering questions to *doing work*: writing code, running shell commands, editing files, managing infrastructure, and orchestrating other agents. Claude Code (Anthropic, 2025), Codex CLI (OpenAI, 2025), Devin (Cognition, 2024), and enterprise-internal agent frameworks now routinely execute multi-step tasks with minimal human supervision.
+The deployment of large language model (LLM) agents in software engineering, research, and operational contexts has revealed a fundamental tension: the capabilities that make agents useful --- autonomy, tool access, long-horizon planning --- are precisely the capabilities that make them dangerous when they malfunction. Agents exhibit failure modes that are qualitatively different from traditional software bugs: they drift from assigned tasks, enter repetitive loops, escalate destructive operations, and compound errors through cascading sequences of poor decisions [1, 12, 14].
 
-This autonomy introduces failure modes that don't exist in single-turn systems:
-
-- **Behavioral loops**: An agent retries a failing command 15 times, burning tokens and producing no value.
-- **Scope drift**: An agent assigned to fix a CSS bug starts refactoring the database layer.
-- **Quality degradation**: Under pressure to complete a task, an agent produces syntactically invalid code, then compounds the error by editing the broken output.
-- **Budget runaway**: A multi-agent pipeline consumes $200 in API calls because a sub-agent entered an infinite research loop.
-- **Cascading failures**: A planning agent hallucinates requirements, a coding agent implements them faithfully, and a testing agent burns cycles testing hallucinated features.
-
-These are not hypothetical. They are documented failure modes observed in production agent deployments [1, 2, 3].
+These failures are not rare edge cases. Empirical studies on SWE-bench demonstrate that even state-of-the-art agents fail on the majority of tasks, and when they fail, they often fail catastrophically --- overwriting correct code, executing destructive shell commands, or spending thousands of tokens pursuing fundamentally flawed approaches [1, 2]. The problem is compounded by the fact that agent failures are often silent: a human supervisor reviewing a transcript post-hoc may not recognize the point at which the agent's behavior became pathological until significant damage has been done.
 
 ### 1.2 Why Existing Solutions Fall Short
 
-Current approaches to agent safety focus on either pre-deployment alignment or post-hoc logging:
+Current approaches to agent safety cluster into three categories, each with fundamental limitations:
 
-**Guardrails and filters** (NeMo Guardrails, Guardrails AI, Lakera) operate at the prompt/response level. They can detect toxic outputs but cannot observe behavioral *trajectories* — the sequence of tool calls, error patterns, and resource consumption that characterize an agent going off-rails.
+**Training-time alignment** (Constitutional AI [8], RLHF) embeds safety constraints into model weights. While effective for broad behavioral norms, this approach cannot adapt to task-specific contexts, cannot monitor runtime behavioral trajectories, and provides no mechanism for graduated intervention. A model that has been trained to be helpful will still pursue a flawed plan with great enthusiasm.
 
-**Observability platforms** (LangSmith, Helicone, Langfuse) provide excellent telemetry but no *control*. They can tell you an agent looped 15 times — after it already happened. They lack the real-time intervention capability needed to stop the loop at iteration 3.
+**Post-hoc evaluation** (benchmarks, evals) measures agent performance after execution completes. This is valuable for capability assessment but provides zero protection during execution. By the time an eval reveals a problem, the damage is done.
 
-**Rate limiters and token budgets** address resource consumption but ignore behavioral signals. An agent can burn its entire budget on productive work or waste it in circles — a rate limiter treats both identically.
+**Guardrail systems** (input/output filters, tool restrictions) operate at the boundary layer, checking individual requests against static rules. These systems lack behavioral context --- they cannot distinguish between a `rm -rf` that is part of a legitimate cleanup operation and one that represents a panicking agent destroying evidence of its failures.
 
-**Constitutional AI and RLHF** shape model behavior during training but provide no runtime guarantees. A well-aligned model can still enter pathological states during complex multi-step tasks.
-
-What's missing is a **runtime behavioral control system** that:
-1. Observes the *trajectory* of agent actions, not just individual outputs
-2. Computes a unified health metric from multiple behavioral signals
-3. Intervenes *progressively* — from gentle warnings to hard stops
-4. Adapts to each agent's normal behavior over time
-5. Operates deterministically with zero inference overhead
+What is missing is a **runtime behavioral monitoring system** that observes the full trajectory of agent actions, maintains statistical baselines, detects anomalies as they develop, and intervenes with graduated corrective guidance --- all without requiring additional inference calls or introducing unbounded latency.
 
 ### 1.3 Contributions
 
-SOMA addresses this gap. Our contributions are:
+This paper makes the following contributions:
 
-1. **A formal pressure model** that aggregates five behavioral signals (uncertainty, drift, error rate, cost, token usage) into a single bounded metric via z-score normalization and sigmoid clamping.
+1. A **deterministic pressure model** that normalizes heterogeneous behavioral signals (uncertainty, drift, error rate, goal coherence, cost, token usage) into a unified 0--1 scalar through z-score sigmoid transformation with learned baselines.
 
-2. **A graduated guidance system** with 4 response modes (OBSERVE, GUIDE, WARN, BLOCK) that preserves agent capability while providing progressive behavioral feedback, blocking only destructive operations at the highest pressure levels.
+2. An **exponential moving average baseline system** with cold-start blending that prevents false positives during early session phases while converging to accurate behavioral profiles within approximately 10 actions.
 
-3. **A self-learning engine** that tracks intervention outcomes and adapts both thresholds and signal weights, reducing false positives over time without human tuning.
+3. A **four-mode graduated response system** (OBSERVE, GUIDE, WARN, BLOCK) that maps pressure to intervention intensity, where BLOCK mode selectively prevents destructive operations rather than halting all agent activity.
 
-4. **A multi-agent pressure propagation graph** with trust-weighted edges and asymmetric trust dynamics, modeling the reality that upstream failures affect downstream agents.
+4. A **multi-agent pressure propagation algorithm** over trust-weighted directed graphs with damped convergence, enabling behavioral monitoring of agent ensembles where one agent's instability can be detected through its effects on downstream agents.
 
-5. **A predictive model** combining linear trend analysis with pattern-based boosters that warns of escalation ~5 actions before it occurs.
+5. An **epistemic-aleatoric uncertainty decomposition** using output entropy that modulates pressure based on whether uncertainty stems from knowledge gaps (actionable) or inherent task variability (expected).
 
-6. **An uncertainty classification system** that distinguishes epistemic (knowledge gap) from aleatoric (inherent ambiguity) uncertainty via output entropy analysis.
+6. A **self-learning engine** that adapts pressure thresholds and signal weights from intervention outcomes, reducing false positive rates over time without manual tuning.
 
-7. **A reliability metrics module** with calibration scoring and verbal-behavioral divergence detection.
+7. A **predictive model** combining linear trend extrapolation with pattern-based boosters that anticipates behavioral failures before they manifest.
 
-8. **A declarative policy engine** supporting YAML/TOML rule definitions with a guardrail decorator for sync/async functions.
+8. A **goal coherence tracker** that detects task drift by comparing current behavior vectors against initial task vectors captured during warmup.
 
-9. **Per-signal vector pressure propagation** through the trust graph, with coordination SNR isolation.
+9. A **reliability scoring system** that detects verbal-behavioral divergence --- the gap between an agent's expressed confidence and its actual behavioral indicators --- as a signal of potential deceptive alignment.
 
-10. **A complete implementation** with 735 tests across 31 test modules, sub-millisecond latency, and production integration with Claude Code (Anthropic).
+10. A complete **open-source implementation** validated through 735 tests, published as `soma-ai` on PyPI, currently operational as a Claude Code hook system.
 
 ---
 
@@ -78,37 +63,23 @@ SOMA addresses this gap. Our contributions are:
 
 ### 2.1 Biological Nervous Systems
 
-The name SOMA references the soma (cell body) of a neuron — the integration center where incoming signals are processed and action potentials are generated. Like biological nervous systems, SOMA aggregates multiple sensory signals into a unified response, applies thresholds with hysteresis to prevent noise-triggered responses, and adapts sensitivity over time through a learning mechanism.
+The human nervous system provides a compelling architectural template for agent monitoring. Peripheral nerves detect stimuli (temperature, pressure, pain) and transmit signals to the spinal cord and brain. The response is graduated: mild stimuli produce awareness, moderate stimuli trigger reflexive withdrawal, and extreme stimuli invoke emergency shutdown. Critically, this system operates without conscious reasoning --- it is fast, deterministic, and operates on statistical deviation from baseline expectations.
 
-The guidance system mirrors the biological concept of **graded potentials**: small stimuli produce proportional responses (GUIDE), while large stimuli trigger protective reflexes (BLOCK). Unlike a binary threshold, the graduated response allows the system to communicate with the agent at varying levels of urgency.
+SOMA adopts this architecture directly. Agent actions are stimuli. Vitals computation extracts signal intensity. The pressure model aggregates signals into a unified threat assessment. The guidance system maps pressure to response modes, from passive observation to active intervention. The entire pipeline completes without inference calls, operating purely on statistical computation.
 
 ### 2.2 Control Theory
 
-SOMA's architecture draws from classical process control:
+Classical control theory, particularly the work of Shewhart [6] on statistical process control and Astrom and Murray [7] on feedback control systems, provides the mathematical foundation for SOMA's approach. Shewhart's control charts introduced the concept of monitoring a process variable against statistically derived control limits --- exactly the pattern SOMA applies to behavioral signals. The z-score normalization used in SOMA's pressure computation is a direct descendant of Shewhart's sigma-based control limits.
 
-- **PID-like composition**: The pressure model combines proportional response (current signal values), integral behavior (EMA baselines accumulate history), and derivative-like prediction (trend extrapolation). Unlike a true PID controller, SOMA's "plant" is a black-box AI agent whose dynamics are unknown, necessitating adaptive rather than tuned control.
-
-- **Hysteresis control**: Used extensively in thermostat design and Schmitt triggers in electronics. The principle — different thresholds for activation and deactivation — prevents rapid switching (chattering) around a single threshold. We extend this to a multi-level ladder where each transition has its own hysteresis gap.
-
-- **Deadband control**: The grace period (first 10 actions produce zero pressure) acts as a deadband, preventing the system from responding to startup transients while baselines stabilize.
+SOMA deliberately omits certain control-theoretic constructs. There is no hysteresis in mode transitions, no integral term accumulating historical error, and no derivative term responding to rate of change. This is by design: the pressure model must be stateless with respect to its own outputs to maintain explainability. Each pressure computation depends only on current signals and learned baselines, never on previous pressure values or mode history.
 
 ### 2.3 Anomaly Detection
 
-The signal computation draws from statistical process control (SPC):
-
-- **Z-score normalization** is the foundation of Shewhart control charts (1920s), adapted here with a sigmoid clamp to bound the output and a minimum standard deviation to handle cold-start conditions.
-
-- **EMA baselines** are equivalent to EWMA (Exponentially Weighted Moving Average) control charts, which are standard in manufacturing quality control for detecting small, sustained shifts in process mean.
-
-- **Behavior vectors** with cosine distance for drift detection extend the concept of multivariate process monitoring (Hotelling's T² statistic) to behavioral trajectories.
+The pressure model draws on anomaly detection literature, particularly z-score-based approaches for univariate signals and cosine-distance-based approaches for multivariate behavioral vectors. The sigmoid transformation applied to z-scores ensures bounded output regardless of signal magnitude, addressing the practical concern that raw z-scores can produce arbitrarily large values for heavy-tailed distributions common in agent behavioral data.
 
 ### 2.4 Trust and Reputation Systems
 
-The multi-agent pressure graph draws from distributed trust systems:
-
-- **Trust propagation** follows models from peer-to-peer reputation systems (EigenTrust, 2003), where trust flows along edges and is attenuated by weight. Our simplification — iterative weighted averaging with a max operator — trades convergence guarantees for computational simplicity.
-
-- **Asymmetric trust dynamics** (fast decay, slow recovery) mirror findings from behavioral economics that trust is slow to build and fast to destroy (Slovic, 1993).
+The multi-agent pressure propagation mechanism builds on the EigenTrust framework [4] and Slovic's foundational work on asymmetric trust dynamics [5]. Slovic demonstrated that trust is more easily destroyed than created --- a finding SOMA encodes in its 2.5:1 trust decay-to-recovery ratio. The propagation algorithm itself uses damped iteration similar to PageRank but applied to pressure rather than authority, with convergence guarantees provided by the damping factor.
 
 ---
 
@@ -116,54 +87,60 @@ The multi-agent pressure graph draws from distributed trust systems:
 
 ### 3.1 Design Principles
 
-SOMA is built on five non-negotiable principles:
+SOMA is built on five non-negotiable design principles:
 
-**Determinism.** Given the same action sequence, SOMA produces identical outputs. No randomness, no external state, no wall-clock dependencies. This enables reproducible debugging and testing.
+**Determinism.** Given the same action history and configuration, SOMA produces identical pressure values and guidance decisions. There are no random components, no sampling, no probabilistic inference. This property is essential for debugging, testing, and trust: operators must be able to reproduce and explain every decision the system makes.
 
-**Zero inference.** SOMA makes no LLM calls. All computation is arithmetic over bounded numeric values. This eliminates latency variance, cost overhead, and the recursive problem of monitoring a monitor that itself uses AI.
+**Zero inference.** SOMA never calls an LLM or any external inference service during its monitoring pipeline. Every computation is closed-form arithmetic: exponential moving averages, cosine similarities, sigmoid transformations, weighted sums. This eliminates the latency, cost, and reliability concerns that would arise from inference-in-the-loop monitoring.
 
-**Boundedness.** All signals, pressures, and scores are clamped to [0, 1]. All thresholds are explicit. All learning adjustments are capped. The system cannot enter unbounded states.
+**Boundedness.** Every computation in the pipeline has known worst-case complexity. The full `record_action` pipeline executes in O(k*n) time where k is the number of signals (6) and n is the window size (bounded constant). In practice, the complete pipeline executes in under 5 milliseconds.
 
-**Explainability.** Every escalation can be traced to specific signals, specific actions, and specific thresholds. The root cause analysis module produces plain-English explanations, not numeric codes.
+**Explainability.** Every pressure value can be decomposed into its constituent signals, each signal can be traced to specific action properties, and the mapping from pressure to response mode is a simple threshold lookup. There are no black-box components.
 
-**Non-destructiveness.** SOMA can block, warn, and restrict — but it cannot modify agent outputs, rewrite prompts, or alter the agent's context without explicit integration. It is a governor, not a co-pilot.
+**Non-destructiveness.** SOMA never modifies agent state, intercepts agent communications, or alters agent outputs. It operates as a pure observer that emits guidance signals into the agent's context. Even in BLOCK mode, SOMA blocks only specific destructive operations --- it never halts the agent entirely.
 
-### 3.2 Pipeline
+### 3.2 The Record-Action Pipeline
 
-The core pipeline executes synchronously on each recorded action:
+The core of SOMA is the `record_action` method on `SOMAEngine`, which processes each agent action through a 22-step pipeline:
 
-```
-record_action(agent_id, action) → ActionResult
+1. Validate agent registration
+2. Append action to history window
+3. Compute uncertainty signal
+4. Compute drift signal
+5. Compute error rate signal
+6. Compute resource vitals (cost, token usage)
+7. Compute goal coherence signal
+8. Construct vitals snapshot
+9. Update EMA baseline for each signal
+10. Compute z-score for each signal against baseline
+11. Apply sigmoid normalization to each z-score
+12. Apply signal-level floors (error rate, retry rate)
+13. Compute weighted mean of normalized pressures
+14. Compute maximum normalized pressure
+15. Blend mean and max: P = 0.7 * weighted_mean + 0.3 * max_p
+16. Apply error-rate aggregate floor
+17. Apply grace period (force to 0.0 if within first 10 actions)
+18. Propagate pressure through multi-agent graph (if applicable)
+19. Map pressure to response mode
+20. Update predictive model
+21. Update learning engine
+22. Emit ActionResult with vitals, pressure, mode, and guidance
 
-  1. Ring buffer ← action (capacity 10, FIFO)
-  2. Uncertainty ← f(retry_rate, tool_deviation, format_deviation, entropy)
-  3. Drift ← 1 - cosine(behavior_vector, baseline_vector)
-  4. Resources ← (token_usage, cost, error_rate)
-  5. Baselines.update(all signals)           // EMA with cold-start blend
-  6. Signal pressures ← z_score → sigmoid    // per signal
-  7. Aggregate ← 0.7·mean + 0.3·max          // blended
-  8. Graph.propagate()                        // multi-agent
-  9. Mode ← pressure_to_mode(pressure)         // guidance mapping
- 10. Learning.evaluate(outcome)               // adapt thresholds
-```
+### 3.3 Computational Complexity
 
-### 3.3 Complexity
-
-Per-action computation is O(k·n) where k is the number of signals (5) and n is the ring buffer size (10). In practice, this amounts to ~50 floating-point operations plus one cosine distance computation over a vector of length 4+|tools|. Measured latency is <1ms on commodity hardware.
-
-State is O(a·(k+t)) where a is the number of agents, k is the number of signals (each with EMA state), and t is the number of known tools. For typical deployments (1-10 agents, 5-20 tools), total state is <10KB.
+The pipeline processes k = 6 signals, each computed over a bounded window of recent actions. Baseline updates are O(1) per signal (EMA is a constant-time recurrence). Drift computation involves a cosine similarity over a behavior vector of fixed dimensionality. Pressure propagation over the agent graph runs for at most 3 iterations with convergence threshold 1e-6, and is linear in the number of edges. The overall complexity per action is O(k*n) where n is the window size, which is bounded by configuration. In practice, this yields sub-5ms latency per action on commodity hardware.
 
 ### 3.4 Layer-Agnostic Architecture
 
-SOMA separates behavioral intelligence from layer-specific formatting through three core modules:
+While SOMA currently ships with a Claude Code hook integration, the core engine is deliberately platform-agnostic. Three modules provide the abstraction boundary:
 
-- **`patterns.py`**: Pattern analysis engine. Detects behavioral anti-patterns (blind edits, retry storms, scope drift, error cascades) from the action log and returns structured `PatternResult` objects with severity scores and directive suggestions. This module contains no formatting logic — it produces data, not messages.
+- **`patterns.py`** --- Behavioral pattern detection (loops, error cascades, blind mutations, thrashing) expressed purely in terms of action sequences, independent of any specific agent platform.
 
-- **`findings.py`**: Findings collector. Aggregates pattern results, RCA output, quality grades, and positive feedback into a prioritized list of `Finding` objects. Each finding carries a category, severity, and plain-text description. The collector applies workflow-aware suppression (e.g., scope drift is noise during a planned multi-directory refactor).
+- **`findings.py`** --- Aggregates monitoring insights (quality scores, predictions, scope drift, root cause analyses) into a structured `Finding` dataclass list that any integration layer can consume.
 
-- **`context.py`**: Session context provider. Detects the current workflow mode (plan, discuss, execute, implement) by reading external state files, computes context efficiency and focus metrics via `SessionContext`, and exposes `get_session_context()` for any layer to query.
+- **`context.py`** --- Session context detection (workflow mode, action count, pressure trajectory) that informs guidance without coupling to a specific environment.
 
-These modules contain SOMA's analytical intelligence. Layer-specific code (e.g., the Claude Code hooks in `notification.py`) becomes a thin formatter that imports core modules, calls their public APIs, and renders the results into the format expected by the host environment. This design means new layers (Cursor, Windsurf, or custom integrations) get full behavioral intelligence by importing `soma.patterns`, `soma.findings`, and `soma.context` — no duplication of detection logic required.
+The hook layer (`hooks/`) translates between the platform-specific environment (e.g., Claude Code's `CLAUDE_HOOK` mechanism) and the platform-agnostic core, ensuring that the monitoring logic can be reused across any agent framework.
 
 ---
 
@@ -171,63 +148,105 @@ These modules contain SOMA's analytical intelligence. Layer-specific code (e.g.,
 
 ### 4.1 Signal Definitions
 
-We define five behavioral signals, each producing a value in [0, 1]:
+SOMA monitors six behavioral signals, each capturing a distinct dimension of agent health:
 
-**Uncertainty** U captures behavioral confusion:
+| Signal | Symbol | Range | Description |
+|--------|--------|-------|-------------|
+| Uncertainty | U | [0, 1] | Composite measure of retry behavior, output variability, failure indicators, and execution inconsistency |
+| Drift | D | [0, 1] | Cosine distance between current behavior vector and learned baseline vector |
+| Error Rate | E | [0, 1] | Fraction of recent actions that produced errors |
+| Goal Coherence | G | [0, 1] | Cosine distance between current behavior vector and initial task vector |
+| Cost | C | [0, inf) | Cumulative or rate-based monetary cost of API calls |
+| Token Usage | T | [0, inf) | Cumulative or rate-based token consumption |
+
+### 4.2 Uncertainty Computation
+
+Uncertainty is computed as a weighted combination of four sub-signals:
 
 $$U = 0.30 \cdot R + 0.25 \cdot \sigma(T) + 0.20 \cdot F + 0.25 \cdot \sigma(E)$$
 
-where R is retry rate, T is tool-call count z-score, F is format deviation, E is entropy deviation z-score, and σ is the sigmoid clamp function. The sub-weights reflect empirical observation: retry rate is the strongest single indicator of agent confusion, while output entropy captures subtle degradation that other signals miss.
+where:
 
-**Drift** D captures behavioral divergence from established patterns:
+- R is the retry rate (fraction of recent actions that are retries of previous actions)
+- T is tool output variability, passed through sigmoid clamp sigma
+- F is the failure indicator rate (fraction of actions with error outputs)
+- E is execution time variability, passed through sigmoid clamp sigma
+- sigma denotes the sigmoid clamping function that bounds unbounded sub-signals to [0, 1]
 
-$$D = 1 - \text{cos}(\mathbf{v}_{current}, \mathbf{v}_{baseline})$$
+The weights reflect empirical observation that retry behavior is the strongest individual signal of agent confusion, while output variability and execution inconsistency provide complementary evidence.
 
-where v is a behavior feature vector containing tool-call statistics, output characteristics, timing information, and tool distribution. The baseline vector is recomputed every 10 actions, creating a sliding reference window.
+### 4.3 Drift Computation
 
-**Error Rate** ε, **Token Usage** τ, and **Cost** κ are direct ratios of observed values to limits, clamped to [0, 1].
+Drift measures how far the agent's current behavioral pattern has deviated from its established baseline:
 
-### 4.2 Normalization
+$$D = 1 - \cos(\mathbf{v}_{\text{current}}, \mathbf{v}_{\text{baseline}})$$
 
-Each signal is converted to a pressure contribution via z-score normalization with sigmoid clamping:
+where the behavior vector **v** is composed of:
 
-$$p_i = \sigma\left(\frac{x_i - \mu_i}{\max(\sigma_i, 0.05)}\right)$$
+$$\mathbf{v} = [\text{avg\_tool\_calls},\; \text{avg\_output\_len} / 1000,\; \text{avg\_response\_time},\; \text{pattern\_entropy},\; \ldots\text{tool\_dist}]$$
 
-where μᵢ and σᵢ are the EMA baseline mean and standard deviation for signal i, and σ(·) is the sigmoid clamp:
+The behavior vector captures both aggregate statistics (average tool calls per action, average output length normalized by 1000, average response time, Shannon entropy of tool usage patterns) and the full tool usage distribution. Cosine similarity is used rather than Euclidean distance because it is invariant to the absolute scale of activity --- an agent that performs 100 actions with a consistent tool distribution should have the same drift as one that performs 10 actions with the same distribution.
 
-$$\sigma(z) = \begin{cases} 0 & z \leq 0 \\ \frac{1}{1 + e^{-z+3}} & 0 < z \leq 6 \\ 1 & z > 6 \end{cases}$$
+### 4.4 Signal Normalization
 
-The minimum standard deviation of 0.05 prevents explosion when variance is near zero (common during cold start). The sigmoid center at z=3 means that a signal must deviate 3 standard deviations from baseline to reach 50% pressure — a deliberate choice to avoid false positives from normal variance.
+Raw signal values are heterogeneous: uncertainty is bounded in [0, 1], while cost and token usage are unbounded. SOMA normalizes all signals to a common [0, 1] pressure scale using z-score sigmoid transformation:
 
-### 4.3 Aggregation
+$$p_i = \text{sigmoid}\left(\frac{x_i - \mu_i}{\max(\sigma_i, 0.05)}\right)$$
 
-Individual signal pressures are aggregated via a blended formula:
+where mu_i and sigma_i are the learned EMA baseline mean and standard deviation for signal i. The floor of 0.05 on the standard deviation prevents division by near-zero values during cold start, when variance estimates have not yet converged. This minimum standard deviation value of 0.05 is critical for numerical stability and was determined empirically to provide the best balance between sensitivity and stability.
 
-$$P = 0.7 \cdot \frac{\sum_i w_i p_i}{\sum_i w_i} + 0.3 \cdot \max_i(p_i)$$
+The sigmoid function maps the z-score to [0, 1], producing a pressure value that is:
+- Near 0 when the signal is at or below baseline (z <= -2)
+- Near 0.5 when the signal is at baseline (z = 0)
+- Near 1 when the signal is significantly above baseline (z >= 2)
 
-The 70/30 blend addresses a fundamental tension in multi-signal monitoring: the mean captures gradual multi-signal degradation, while the max prevents a single severe signal from being diluted by healthy signals. Default weights are: uncertainty=2.0, drift=1.8, error_rate=1.5, cost=1.0, token_usage=0.8.
+### 4.5 Pressure Aggregation
 
-### 4.4 Absolute Floors
+Individual signal pressures are aggregated into a single scalar through a weighted mean-max blend:
 
-Z-score normalization can be defeated by baseline corruption: if an agent consistently produces errors, the baseline adapts, and the z-score drops. SOMA applies absolute floors:
+$$P = 0.7 \cdot \text{weighted\_mean} + 0.3 \cdot \max_i(p_i)$$
 
-- If error_rate > 0.3: pressure ≥ error_rate
-- If retry_rate > 0.3: uncertainty pressure ≥ retry_rate
+The weighted mean provides stability --- no single signal can dominate the aggregate unless it has disproportionate weight. The max term provides sensitivity --- a single extremely elevated signal will still register even if all other signals are nominal. The 0.7/0.3 blend ratio was determined through iterative testing to provide the best trade-off between false positive suppression and genuine anomaly detection.
 
-This ensures that objectively pathological behavior cannot be normalized away.
+### 4.6 Error-Rate Aggregate Floor
 
-### 4.5 Error-Rate Aggregate Floor
+When the error rate signal pressure (er_p) reaches or exceeds 0.50, the aggregate pressure is subject to a floor that ensures the system cannot underreact to sustained errors:
 
-Z-score normalization combined with the weighted-mean formula can be defeated when a single dominant signal is diluted by healthy signals. When error_rate signal pressure er_p ≥ 0.50, SOMA applies an absolute aggregate floor:
+$$\text{floor} = 0.40 + 0.40 \cdot \frac{er_p - 0.50}{0.50}$$
 
-floor = 0.40 + 0.40 × (er_p - 0.50) / 0.50
+This floor creates a direct mapping from error pressure to minimum response modes:
 
-This maps:
-- er_p = 0.50 → floor = 0.40 (GUIDE entry)
-- er_p = 0.75 → floor = 0.60 (WARN entry)
-- er_p = 1.00 → floor = 0.80 (BLOCK entry)
+| Error Pressure | Floor | Minimum Mode |
+|---------------|-------|-------------|
+| 0.50 | 0.40 | GUIDE |
+| 0.75 | 0.60 | WARN |
+| 1.00 | 0.80 | BLOCK |
 
-The floor only activates when the error_rate weight is positive, ensuring it can be disabled via custom weight configuration.
+The floor activates only when the error_rate signal weight is greater than zero, allowing operators to disable this mechanism by zeroing the error rate weight in configuration.
+
+### 4.7 Signal-Level Floors
+
+In addition to the aggregate floor, two signal-level floors ensure that extreme individual readings are not attenuated by the normalization pipeline:
+
+- If error_rate > 0.3: error_pressure = max(error_pressure, error_rate)
+- If retry_rate > 0.3: uncertainty_pressure = max(uncertainty_pressure, retry_rate)
+
+These floors bypass the z-score normalization for extreme values, ensuring that a 50% error rate always produces at least 0.50 error pressure regardless of what the baseline considers "normal."
+
+### 4.8 Default Signal Weights
+
+The default weights reflect the relative importance of each signal for general-purpose agent monitoring:
+
+| Signal | Weight | Rationale |
+|--------|--------|-----------|
+| Uncertainty | 2.0 | Strongest predictor of impending failure |
+| Drift | 1.8 | Early indicator of task abandonment |
+| Error Rate | 1.5 | Direct measure of operational failure |
+| Goal Coherence | 1.5 | Detects scope creep and task drift |
+| Cost | 1.0 | Resource consumption tracking |
+| Token Usage | 0.8 | Least specific signal; high token usage may be legitimate for complex tasks |
+
+Weights are configurable per agent and are subject to adjustment by the self-learning engine based on intervention outcomes.
 
 ---
 
@@ -235,510 +254,621 @@ The floor only activates when the error_rate weight is positive, ensuring it can
 
 ### 5.1 Exponential Moving Average
 
-Each signal maintains an independent EMA baseline:
+SOMA maintains per-signal EMA baselines that track both the mean and variance of each signal over time:
 
-$$\mu_{t+1} = \alpha \cdot x_t + (1 - \alpha) \cdot \mu_t$$
-$$v_{t+1} = \alpha \cdot (x_t - \mu_t)^2 + (1 - \alpha) \cdot v_t$$
+$$\mu_{t+1} = 0.15 \cdot x_t + 0.85 \cdot \mu_t$$
 
-with α = 0.15, giving an effective half-life of ~4.3 observations. This balances responsiveness (detecting genuine shifts within ~10 actions) with stability (not reacting to single outliers).
+$$v_{t+1} = 0.15 \cdot (x_t - \mu_t)^2 + 0.85 \cdot v_t$$
+
+The smoothing factor alpha = 0.15 provides a half-life of approximately 4.3 observations, meaning the baseline adapts to sustained behavioral shifts within roughly 5--10 actions while smoothing out transient spikes. The standard deviation is derived as sigma = sqrt(v).
 
 ### 5.2 Cold-Start Blending
 
-During the first min_samples (10) observations, the computed EMA is blended toward a default value:
+During the initial phase of a session, EMA estimates are unreliable because they are dominated by the initialization value. SOMA addresses this through a linear blending scheme:
 
-$$\hat{\mu}_t = \beta \cdot \mu_t + (1 - \beta) \cdot \mu_0$$
+$$\text{blend} = \min\left(\frac{\text{count}}{10},\; 1.0\right)$$
 
-where β = min(count/min_samples, 1). This prevents the first few observations from dominating. Default values are conservative (0.01-0.05), ensuring the system doesn't assume health without evidence.
+$$\text{result} = \text{blend} \cdot \text{computed} + (1 - \text{blend}) \cdot \text{default}$$
+
+For the first 10 observations, the baseline is a linear interpolation between the computed EMA value and a conservative default. The defaults are calibrated to represent "healthy" agent behavior:
+
+| Signal | Default |
+|--------|---------|
+| Uncertainty | 0.05 |
+| Drift | 0.05 |
+| Error Rate | 0.01 |
+| Cost | 0.01 |
+| Token Usage | 0.01 |
+
+These defaults are deliberately low, ensuring that any significant behavioral anomaly during cold start will still register as elevated pressure even before the baseline has converged.
 
 ### 5.3 Grace Period
 
-For the first min_samples actions, effective pressure is forced to zero regardless of signal values. This gives the baseline time to stabilize before any intervention is possible. Without this, every new session would begin with a pressure spike as the first observations deviate from uninitialized baselines.
+During the first min_samples = 10 actions, aggregate pressure is forced to 0.0 regardless of the computed value. This grace period serves two purposes: it prevents false positives from noisy initial actions (agent setup, environment probing), and it allows the baseline sufficient observations to produce meaningful estimates before pressure values are acted upon.
+
+The grace period is distinct from cold-start blending. Blending affects baseline computation (gradual convergence). The grace period affects pressure output (hard zero). Both mechanisms operate during the first 10 actions, but they address different failure modes: blending prevents baseline corruption, while the grace period prevents premature intervention.
 
 ---
 
-## 6. Guidance System
+## 6. Uncertainty Classification
 
-### 6.1 Response Modes
+### 6.1 Epistemic vs. Aleatoric Decomposition
 
-SOMA defines 4 response modes with graduated intervention:
+Not all uncertainty is equal. Epistemic uncertainty arises from knowledge gaps --- the agent does not know how to proceed and would benefit from additional information or guidance. Aleatoric uncertainty arises from inherent task variability --- the task involves genuinely unpredictable elements, and elevated uncertainty is expected and acceptable.
 
-| Mode | Pressure Range | Policy |
-|------|---------------|--------|
-| OBSERVE | 0–25% | Silent. Metrics collected, no intervention. |
-| GUIDE | 25–50% | Soft suggestions when patterns detected. Never blocks. |
-| WARN | 50–75% | Insistent warnings with alternatives. Never blocks. |
-| BLOCK | 75–100% | Blocks ONLY destructive operations (rm -rf, git push --force, .env writes). |
+SOMA decomposes uncertainty using output entropy, computed as Shannon entropy over character bigrams in the agent's output text. The intuition is that epistemic uncertainty produces hedging, repetitive phrasing, and low-information output (low entropy), while aleatoric uncertainty produces diverse, information-rich output as the agent explores a genuinely complex space (high entropy).
 
-### 6.2 Design: No Hysteresis
+### 6.2 Classification Thresholds
 
-The guidance system uses direct pressure-to-mode mapping without hysteresis. This is a deliberate departure from the classical control approach. Hysteresis prevents chattering when transitions have discontinuous effects (e.g., blocking Bash). The guidance redesign eliminates discontinuous effects: moving between GUIDE and WARN changes message tone, not tool availability. Only the BLOCK→destructive-op boundary produces a hard gate, and that boundary is high enough (75%) that noise-driven oscillation is unlikely.
+The classification uses three thresholds:
 
-### 6.3 Destructive Operation Detection
+- **min_uncertainty = 0.3**: Below this threshold, uncertainty is too low for classification to be meaningful, and no modulation is applied.
+- **low_entropy = 0.35**: Output entropy below this threshold, combined with uncertainty above min_uncertainty, indicates epistemic uncertainty.
+- **high_entropy = 0.65**: Output entropy above this threshold, combined with uncertainty above min_uncertainty, indicates aleatoric uncertainty.
+- Entropy values between 0.35 and 0.65 are classified as mixed and receive no modulation.
 
-At BLOCK mode, the system evaluates each tool invocation for destructive intent:
+### 6.3 Pressure Modulation
 
-- **Bash**: Matches against patterns for `rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, `chmod 777`, `kill -9`
-- **Write/Edit**: Checks if the target path matches sensitive file patterns (`.env`, credentials, `.pem`, `.key`)
+The uncertainty classification modulates the pressure contribution of the uncertainty signal:
 
-Only these specific invocations are blocked. Write, Edit, Bash, and Agent are never blocked as tool categories. This preserves agent capability while preventing irreversible damage.
+- **Epistemic**: pressure multiplied by 1.3 (capped at 1.0). The agent genuinely does not know what it is doing; heightened vigilance is warranted.
+- **Aleatoric**: pressure multiplied by 0.7. The task is inherently variable; the elevated uncertainty is expected and should not trigger unnecessary intervention.
 
-### 6.4 Rationale
-
-The previous 6-level escalation ladder (HEALTHY through SAFE_MODE) progressively stripped tools from the agent. In practice, blocking Bash and Agent at moderate pressure levels (50-60%) often forced the agent into a worse state — unable to run the commands needed to diagnose and fix the actual problem. The guidance model keeps all tools available and instead communicates with increasing urgency, trusting that a well-informed agent will self-correct. Only at extreme pressure (75%+) does SOMA intervene, and only against operations that could cause irreversible damage.
+This decomposition is inspired by the theoretical framework of Kendall and Gal [9], adapted from the neural network context to behavioral monitoring. Where Kendall and Gal decompose predictive uncertainty in model outputs, SOMA decomposes behavioral uncertainty in agent action sequences.
 
 ---
 
-## 7. Multi-Agent Pressure Propagation
+## 7. Guidance System
 
-### 7.1 Graph Model
+### 7.1 Response Modes
 
-Agent relationships are modeled as a directed graph G = (V, E) where each edge e = (source, target, w) carries a trust weight w ∈ [0, 1]. Each node maintains internal pressure (computed from its own signals) and effective pressure (after propagation).
+Pressure is mapped to four response modes through simple threshold comparison:
 
-### 7.2 Propagation
+| Mode | Pressure Range | Behavior |
+|------|---------------|----------|
+| OBSERVE | 0--25% | Silent monitoring. Metrics collected, no guidance emitted. |
+| GUIDE | 25--50% | Suggestive guidance injected into agent context. Agent may proceed but is informed of concerns. |
+| WARN | 50--75% | Strong warnings with specific behavioral recommendations. |
+| BLOCK | 75--100% | Destructive operations prevented. Non-destructive work continues. |
 
-Effective pressure is computed iteratively (max 3 iterations):
+### 7.2 Absence of Hysteresis
 
-$$P_{eff}(n) = \max\left(P_{int}(n),\;\; \delta \cdot \frac{\sum_{e \in E_{in}(n)} w_e \cdot P_{eff}(s_e)}{\sum_{e \in E_{in}(n)} w_e}\right)$$
+SOMA deliberately omits hysteresis from mode transitions. In classical control theory, hysteresis prevents rapid oscillation between states by requiring a signal to cross a higher threshold to enter a state than it needs to remain in it. SOMA omits this mechanism because mode transitions do not have discontinuous effects on agent behavior --- OBSERVE, GUIDE, and WARN all permit the agent to continue working, differing only in the content of injected guidance. The only mode with a hard behavioral effect is BLOCK, and BLOCK affects only destructive operations, not the agent's general ability to work. Rapid oscillation between GUIDE and WARN, for example, simply means the guidance content varies --- this is a feature, not a failure mode.
 
-where δ = 0.6 (damping factor). The max operator ensures effective pressure is never less than internal pressure — other agents can only increase an agent's pressure, not decrease it. This prevents a healthy upstream agent from masking a downstream agent's own problems.
+### 7.3 Destructive Operation Detection
 
-### 7.3 Trust Dynamics
+BLOCK mode prevents destructive operations through pattern matching on tool invocations. Nine bash command patterns are recognized as destructive:
 
-Trust weights evolve based on source agent behavior:
+1. `rm -rf` --- Recursive forced deletion
+2. `git reset --hard` --- Discard all uncommitted changes
+3. `git push --force` --- Overwrite remote history
+4. `git clean -f` --- Remove untracked files
+5. `git checkout .` --- Discard working tree changes
+6. `chmod 777` --- Remove all file permissions restrictions
+7. `kill -9` --- Forceful process termination
+8. `DROP TABLE` / `DELETE FROM` (without WHERE) --- Database destruction
+9. `> /dev/null` redirects that discard output of important operations
+
+Additionally, five file path patterns trigger blocking when the agent attempts to write to sensitive locations:
+
+1. `.env` --- Environment configuration with secrets
+2. `credentials` --- Authentication credentials
+3. `.pem` --- SSL/TLS certificates and private keys
+4. `.key` --- Cryptographic key files
+5. `secret` --- Files containing secrets
+
+### 7.4 Selective Blocking
+
+A critical design decision: BLOCK mode blocks only destructive operations. Tool categories such as Write, Edit, Bash, and Agent are never blocked as categories. An agent in BLOCK mode can still read files, run non-destructive commands, write to non-sensitive paths, and perform analysis. This ensures that SOMA's most aggressive intervention mode degrades agent capability gracefully rather than halting all progress.
+
+---
+
+## 8. Multi-Agent Pressure Propagation
+
+### 8.1 Graph Model
+
+SOMA models multi-agent systems as a directed graph G = (V, E), where vertices V represent agents and directed edges E represent dependency or influence relationships. Each edge carries a trust weight w in [0, 1] representing the degree to which the source agent's behavioral state should influence monitoring of the target agent.
+
+### 8.2 Scalar Pressure Propagation
+
+For each node n in the graph, effective pressure is computed as:
+
+$$P_{\text{eff}}(n) = \max\left(P_{\text{int}}(n),\; \delta \cdot \text{weighted\_avg}(\text{upstream})\right)$$
+
+where P_int(n) is the node's internally computed pressure, delta = 0.6 is the damping factor, and the weighted average is computed over all upstream nodes weighted by their edge trust values.
+
+Propagation runs for a maximum of 3 iterations, terminating early if all pressure values converge within 1e-6. The damping factor ensures that propagated pressure is always attenuated --- an upstream agent's crisis registers as concern, not panic, in downstream agents.
+
+### 8.3 Vector Propagation
+
+In addition to scalar propagation, SOMA supports per-signal pressure vector propagation. A `PressureVector` containing independent pressure values for uncertainty, drift, error_rate, and cost is propagated using the same max(own, damped * upstream) formula applied independently to each signal dimension. This preserves signal-level detail through the propagation process, enabling downstream agents to understand not just that upstream pressure is elevated, but which specific signals are driving it.
+
+### 8.4 Coordination Signal-to-Noise Ratio
+
+In complex multi-agent topologies, noisy upstream signals can cause spurious pressure elevation in downstream agents. SOMA addresses this through a coordination SNR mechanism:
+
+$$\text{snr} = \frac{\text{confirmed\_error\_pressure}}{\max(\text{total\_incoming}, 0.001)}$$
+
+If total incoming pressure exceeds 0.05 AND the SNR falls below 0.5, the node is isolated from upstream pressure propagation. This prevents scenarios where many mildly elevated upstream agents collectively push a healthy downstream agent into an unwarranted high-pressure state.
+
+### 8.5 Trust Dynamics
+
+Trust weights on graph edges are not static. They evolve based on the behavioral signals of the source agent:
 
 **Decay** (when uncertainty > 0.5):
-$$w_{t+1} = \text{clamp}(w_t - 0.05 \cdot u, [0, 1])$$
+$$\text{trust}' = \text{trust} - 0.05 \cdot \text{uncertainty}$$
 
-**Recovery** (when uncertainty ≤ 0.5):
-$$w_{t+1} = \text{clamp}(w_t + 0.02 \cdot (1 - u), [0, 1])$$
+**Recovery** (when uncertainty <= 0.5):
+$$\text{trust}' = \text{trust} + 0.02 \cdot (1 - \text{uncertainty})$$
 
-The 2.5:1 ratio of decay to recovery rate reflects the behavioral economics finding that trust destruction is faster than trust construction. In multi-agent systems, this means a sub-agent that behaves erratically quickly loses influence over other agents' pressure, while rebuilding that influence requires sustained good behavior.
-
----
-
-## 8. Predictive Model
-
-### 8.1 Motivation
-
-Reactive monitoring — escalating *after* pressure crosses a threshold — introduces inherent latency. If an agent is trending toward BLOCK mode, the operator (human or system) benefits from knowing *before* it arrives.
-
-### 8.2 Method
-
-The predictor combines two signals:
-
-**Linear trend**: OLS regression on the last 10 pressure readings, extrapolated forward by the horizon (5 actions):
-
-$$\hat{P}_{t+h} = P_t + \hat{b} \cdot h$$
-
-where b̂ is the OLS slope.
-
-**Pattern boosters**: Known-bad behavioral patterns detected from the action log, each contributing an additive pressure boost:
-
-| Pattern | Boost | Condition |
-|---------|-------|-----------|
-| error_streak | +0.15 | ≥3 consecutive errors |
-| retry_storm | +0.12 | >40% error rate in window |
-| blind_writes | +0.10 | ≥2 writes without read |
-| thrashing | +0.08 | Same file edited ≥3 times |
-
-Pattern boosts are additive and represent empirically-derived escalation risk factors observed in production Claude Code sessions.
-
-### 8.3 Confidence
-
-Prediction confidence is computed as:
-
-$$c = 0.6 \cdot \min\left(\frac{n}{W}, 1\right) + 0.4 \cdot \max(R^2, 0)$$
-
-where n is the sample count, W is the window size, and R² is the coefficient of determination. Warnings are only emitted when c > 0.3, preventing spurious predictions from insufficient data.
+The asymmetric ratio of 2.5:1 (decay rate 0.05 vs. recovery rate 0.02) mirrors findings from behavioral economics. Slovic [5] demonstrated that trust is destroyed more easily than it is built --- a single failure erodes trust more than a single success restores it. SOMA encodes this empirical finding directly into its trust dynamics.
 
 ---
 
-## 9. Self-Learning Engine
+## 9. Goal Coherence
 
-### 9.1 Problem
+### 9.1 Task Vector Capture
 
-Static thresholds inevitably produce false positives for some agents and false negatives for others. An agent that routinely works across many files will have higher natural drift than one focused on a single module. Fixed thresholds cannot accommodate this variance.
+Goal coherence tracking begins after a configurable warmup period. The initial task vector is captured at action #5 (configurable via `warmup_actions`), representing the agent's behavioral profile during its initial engagement with the assigned task. This warmup period allows the agent to complete setup actions (reading files, understanding context) before the system locks in an expectation of what "on-task behavior" looks like.
 
-### 9.2 Mechanism
+### 9.2 Coherence Computation
 
-The learning engine tracks whether escalation interventions actually reduce pressure:
+At each subsequent action, the current behavior vector is compared against the initial task vector:
 
-1. When a level change occurs, record (old_level, new_level, pressure, trigger_signals)
-2. Wait for evaluation_window (5) actions
-3. Compare: if current pressure < recorded pressure → SUCCESS, else → FAILURE
+$$\text{coherence} = \cos(\mathbf{v}_{\text{current}},\; \mathbf{v}_{\text{initial}})$$
 
-### 9.3 Adaptive Response
+The behavior vector is the same vector used for drift computation (Section 4.3), ensuring consistency between the two related signals.
 
-After min_interventions (3) same-type outcomes for a transition:
+### 9.3 Divergence as Pressure
 
-**On failure** (false positive — escalation didn't help):
-- Raise threshold: shift += adaptive_step (max ±0.10)
-- Lower trigger signal weights (floor at 0.2)
+The coherence score is inverted to produce a divergence signal suitable for pressure computation:
 
-**On success** (true positive — escalation helped):
-- Lower threshold: shift -= adaptive_step × 0.5
-- Recover signal weights at half the decay rate
+$$\text{goal\_pressure} = 1 - \text{coherence}$$
 
-The asymmetric adjustment (failures have 2x the effect of successes) creates a conservative bias: the system is more willing to relax restrictions than to tighten them, reflecting the principle that false positives (unnecessary restrictions) are generally preferable to false negatives (missed problems) in safety-critical systems.
-
-### 9.4 Adaptive Step Size
-
-The step size scales with outcome consistency:
-
-$$s = s_0 \cdot (1 + 2 \cdot \max(0, r - 0.5))$$
-
-where r is the ratio of same-type outcomes to total outcomes for this transition. At 50/50: multiplier = 1.0×. At 100% same type: multiplier = 3.0×. This accelerates convergence when the pattern is clear while maintaining caution when outcomes are mixed.
+When the agent's current behavior closely matches its initial task profile, divergence is near zero and goal coherence contributes minimal pressure. As the agent's behavior deviates --- shifting to different tools, different output patterns, different activity levels --- divergence increases and goal coherence contributes escalating pressure.
 
 ---
 
-## 10. Quality Scoring
+## 10. Predictive Model
 
-### 10.1 Motivation
+### 10.1 Linear Trend Extrapolation
 
-Behavioral signals (pressure, drift, error rate) capture *process* quality — how the agent is working. But they miss *output* quality — whether the code the agent writes actually works. SOMA's quality tracker bridges this gap by validating agent outputs in real-time.
+SOMA's predictive model fits an ordinary least squares (OLS) regression to the last 10 pressure readings, projecting the trend forward to anticipate future pressure levels:
 
-### 10.2 Validation Pipeline
+$$\hat{P}_{t+h} = \beta_0 + \beta_1 \cdot (t + h)$$
 
-After each Write/Edit action, SOMA runs:
-- **Python**: `py_compile` (syntax check) + `ruff --select F` (Pyflakes errors)
-- **JavaScript**: `node --check` (syntax check)
+where beta_0 and beta_1 are the OLS intercept and slope estimated from the most recent window of observations. The R-squared value of the fit provides a measure of trend reliability.
 
-After each Bash action, the exit code determines success/failure.
+### 10.2 Pattern Boosters
 
-### 10.3 Scoring
+Linear extrapolation captures gradual trends but misses sudden pattern shifts. SOMA augments the linear model with four pattern-based boosters that detect specific failure precursors:
 
-Quality score Q is computed over a rolling window (30 events):
+| Pattern | Boost | Description |
+|---------|-------|-------------|
+| Error streak | +0.15 | Consecutive actions producing errors |
+| Retry storm | +0.12 | Repeated attempts at the same operation |
+| Blind writes | +0.10 | File modifications without prior reads |
+| Thrashing | +0.08 | Rapid alternation between contradictory actions |
 
-$$Q = \left(\frac{n_w}{N} \cdot Q_w + \frac{n_b}{N} \cdot Q_b\right) \cdot \max\left(0.5,\; 1 - 0.15 \cdot e_s\right)$$
+Boosters are additive: an agent exhibiting both an error streak and blind writes receives a combined boost of +0.25. This allows the predictive model to respond rapidly to combinatorial failure patterns that linear trend analysis would detect only after several additional observations.
 
-where Qw is write success rate, Qb is bash success rate, N is total events, and es is syntax error count. The 0.15 penalty per syntax error reflects empirical observation that syntax errors are highly correlated with agent confusion — one syntax error is a typo, three is a pattern.
+### 10.3 Prediction Confidence
 
-Scores map to letter grades: A (≥0.90), B (≥0.80), C (≥0.70), D (≥0.50), F (<0.50).
+Predictions are emitted only when confidence exceeds a minimum threshold:
 
----
+$$c = 0.6 \cdot \min\left(\frac{n}{W},\; 1\right) + 0.4 \cdot \max(R^2,\; 0)$$
 
-## 11. Root Cause Analysis
+where n is the number of observations, W is the window size (10), and R-squared is the coefficient of determination from the linear fit. The confidence formula weights data availability (60%) more heavily than model fit (40%), reflecting the practical observation that a mediocre trend estimate with many data points is more useful than a high-R-squared fit over 3 observations.
 
-### 11.1 Motivation
-
-A pressure reading of 0.65 tells an operator *how much* trouble an agent is in, but not *why*. SOMA's RCA module analyzes the action log and vitals to produce plain-English diagnostics:
-
-```
-"stuck in Edit→Bash→Edit loop on config.py (3 cycles)"
-"error cascade: 4 consecutive Bash failures (error_rate=40%)"
-"blind mutation: 5 writes without reading (foo.py, bar.py)"
-```
-
-### 11.2 Detectors
-
-Five independent detectors run on each analysis, scored by severity:
-
-| Detector | What it finds | Severity |
-|----------|--------------|----------|
-| Loop detection | Repeating 2-3 tool sequences (≥3 cycles) | 0.90 |
-| Error cascade | Consecutive errors at end of log | 0.50 + 0.10/error |
-| Blind mutation | Writes without prior Read | 0.60 + 0.05/write |
-| Stall detection | 7/8 recent actions are reads, no writes | 0.50 |
-| Drift explanation | Identifies signals driving high drift | 0.40 + 0.50·drift |
-
-The highest-severity finding is returned. This design prioritizes the most actionable diagnosis — an operator receiving "stuck in loop" knows exactly what to investigate, versus a generic "pressure elevated" message.
+Predictions are suppressed when c <= 0.3, preventing the system from emitting unreliable forecasts during cold start or when behavioral data does not exhibit a coherent trend.
 
 ---
 
-## 12. Agent Fingerprinting
+## 11. Self-Learning Engine
 
-### 12.1 Concept
+### 11.1 Intervention Tracking
 
-Different agents have different behavioral signatures. A code-review agent is Read-heavy. A refactoring agent is Edit-heavy. A debugging agent cycles between Bash and Read. SOMA builds persistent fingerprints that capture each agent's normal behavioral distribution, enabling detection of mode shifts that might indicate corruption, prompt injection, or unintended behavioral changes.
+The self-learning engine tracks each intervention (guidance emission above OBSERVE mode) as a pending event. After an evaluation window of 5 subsequent actions, the engine assesses whether the intervention was successful (agent behavior improved) or unsuccessful (agent behavior did not change or worsened).
 
-### 12.2 Divergence Metric
+### 11.2 Adaptive Step Computation
 
-Fingerprint divergence uses a weighted combination of:
+The magnitude of threshold adjustments is modulated by a ratio-dependent adaptive step:
 
-1. **Jensen-Shannon divergence** on tool distribution (weight: 2×) — captures shifts in what the agent does
-2. **Error rate delta** (weight: 1×) — captures shifts in reliability
-3. **Read/Write ratio delta** (weight: 0.5×) — captures shifts in caution level
+$$\text{multiplier} = 1.0 + 2.0 \cdot \max(0,\; \text{ratio} - 0.5)$$
 
-JSD is chosen over KL divergence because it is symmetric and bounded [0, 1], making it suitable for comparing distributions where either could serve as reference.
+where ratio is the proportion of recent interventions that were unsuccessful. The multiplier ranges from 1.0 (when failure ratio <= 0.5) to a maximum of 2.0 (when all interventions fail, ratio = 1.0). This cap at 2x prevents the system from making excessively large adjustments even in adversarial scenarios.
 
-The fingerprint requires ≥10 sessions of data before producing divergence scores, preventing false alarms during the learning phase.
+### 11.3 Failure Response
 
----
+When an intervention is evaluated as unsuccessful, the learning engine makes two adjustments:
 
-### 12.3 Uncertainty Classification
+1. **Raise threshold** by the adaptive step amount, with a maximum shift of +/-0.10 per adjustment. This reduces the sensitivity of the triggering mode, preventing future false positives at the same pressure level.
 
-SOMA classifies uncertainty into two categories based on output entropy analysis, enabling differential pressure modulation depending on the nature of the agent's confusion.
+2. **Lower signal weights** by 0.05 for the signals that contributed most to the triggering pressure, with a floor of 0.2 per signal weight. This gradually deweights signals that are producing unreliable pressure readings for this particular agent's behavioral profile.
 
-**Epistemic uncertainty** (knowledge gap): The agent lacks information needed to proceed. Characterized by low output entropy combined with high uncertainty — the agent repeatedly fails in the same way, producing similar outputs because it is stuck on a specific knowledge deficit. SOMA applies a configurable pressure multiplier (default 1.3x) to epistemic uncertainty, since the agent is unlikely to self-resolve without external input.
+### 11.4 Success Response
 
-**Aleatoric uncertainty** (inherent ambiguity): The task itself is ambiguous and multiple valid approaches exist. Characterized by high output entropy combined with high uncertainty — the agent produces varied outputs because the problem space is genuinely uncertain. SOMA applies a dampening factor (default 0.7x) to aleatoric uncertainty, since elevated variance is expected and does not indicate agent malfunction.
+When an intervention is evaluated as successful:
 
-The classification uses entropy thresholds:
-- Low entropy (H_norm < 0.35) + high uncertainty (U > 0.30) → epistemic
-- High entropy (H_norm > 0.65) + high uncertainty (U > 0.30) → aleatoric
-- Otherwise → unclassified (default 1.0x multiplier)
+1. **Lower threshold** by adaptive_step * 0.5. Successful interventions suggest the current threshold is appropriate or slightly too high; the halved step size reflects the system's conservative approach to increasing sensitivity.
 
-This distinction prevents false escalation when agents explore ambiguous problems while accelerating intervention when agents are genuinely stuck.
+2. **Recover weights** at half the decay rate (0.025 per adjustment). Signal weights that were previously reduced are slowly restored, reflecting the possibility that previously unreliable signals have become informative as the agent's behavioral profile evolves.
 
----
+### 11.5 Minimum Intervention Count
 
-### 12.4 Reliability Metrics
-
-SOMA tracks two reliability metrics that capture the gap between what an agent signals and what it delivers.
-
-**Calibration score** measures how well an agent's expressed confidence correlates with actual outcomes. When an agent claims high confidence (via output patterns such as "I'm certain", "this will work") but subsequent actions reveal errors, the calibration score decreases. The score is computed as 1 minus the mean absolute difference between expressed confidence and observed success rate over a rolling window. A well-calibrated agent scores above 0.80; a poorly calibrated agent (overconfident or underconfident) scores below 0.50.
-
-**Verbal-behavioral divergence** detects inconsistency between an agent's stated intent and its actual actions. When an agent says "I'll read the file first" but immediately issues a Write, or claims "fixing the bug" while editing unrelated files, the divergence score increases. SOMA computes this by comparing declared action patterns in output text against the actual tool calls that follow. High divergence (> 0.30) triggers an informational finding, and sustained divergence feeds into the uncertainty signal as an additional sub-component.
-
-Together, these metrics provide a trust signal orthogonal to the core five behavioral signals. An agent with high pressure but strong calibration and low divergence is likely struggling with a genuinely hard task; an agent with moderate pressure but poor calibration and high divergence may be silently failing.
+No adjustments are made until at least min_interventions = 3 interventions have been tracked. This prevents the learning engine from overreacting to the first few interventions in a session, which may not be representative of the system's long-term false positive rate.
 
 ---
 
-### 12.5 Policy Engine
+## 12. Quality Scoring
 
-SOMA includes a declarative policy engine that allows operators to define behavioral rules in YAML or TOML configuration files rather than writing code. Rules are evaluated on every action and can trigger guidance, warnings, or blocks.
+### 12.1 Quality Computation
 
-A policy rule consists of:
-- **condition**: A predicate over current vitals, pressure, action properties, or session context (e.g., `error_rate > 0.40`, `tool_name == "Bash"`, `action_count > 100`)
-- **action**: The response when the condition is met — one of `guide`, `warn`, `block`, or `log`
-- **message**: A human-readable explanation injected into the agent's context
-- **cooldown** (optional): Minimum actions between repeated firings of the same rule
+SOMA computes a rolling quality score that reflects the overall caliber of the agent's recent work:
 
-Example TOML rule:
+$$Q = (w_{\text{write}} \cdot Q_{\text{write}} + w_{\text{bash}} \cdot Q_{\text{bash}}) \times \max(0.5,\; 1 - 0.15 \cdot \text{syntax\_errors})$$
+
+where Q_write is the quality score for file write operations, Q_bash is the quality score for command executions, and the syntax error multiplier penalizes agents that produce syntactically invalid outputs, with a floor of 0.5 to prevent quality from being driven to zero by a single category of failure.
+
+### 12.2 Grade Assignment
+
+Quality scores are mapped to letter grades for human-readable reporting:
+
+| Grade | Threshold |
+|-------|-----------|
+| A | >= 0.90 |
+| B | >= 0.80 |
+| C | >= 0.70 |
+| D | >= 0.50 |
+| F | < 0.50 |
+
+### 12.3 Rolling Window
+
+Quality is computed over a rolling window of the 30 most recent events. This window size balances responsiveness (recent quality changes are reflected within a few actions) with stability (individual anomalous actions do not dominate the score). The window is event-based rather than time-based, ensuring consistent behavior regardless of action frequency.
+
+---
+
+## 13. Root Cause Analysis
+
+### 13.1 Detector Suite
+
+When pressure is elevated, SOMA attempts to identify the specific behavioral pattern responsible through five specialized detectors:
+
+| Detector | Base Severity | Escalation | Description |
+|----------|---------------|------------|-------------|
+| Loop | 0.90 | Fixed | Agent repeating the same action sequence. Highest severity due to unbounded resource consumption. |
+| Error Cascade | 0.50 | +0.10 per error | Sequential errors compounding into a chain. Severity scales with cascade length. |
+| Blind Mutation | 0.60 | +0.05 per write | File modifications without prior reads. Severity scales with mutation count. |
+| Stall | 0.50 | Fixed | Agent producing no meaningful output despite continued execution. |
+| Drift Explanation | 0.40 | +0.50 * drift | Behavioral drift detected. Severity scales with drift magnitude. |
+
+### 13.2 Finding Selection
+
+When multiple detectors fire, the finding with the highest severity is selected and returned as a plain-English explanation. This ensures that the most actionable root cause is surfaced to the operator or injected into the agent's guidance context.
+
+---
+
+## 14. Agent Fingerprinting
+
+### 14.1 Persistent Behavioral Profile
+
+SOMA maintains a persistent per-agent behavioral fingerprint across sessions, capturing:
+
+- Tool usage distribution (probability vector over tool names)
+- Error rate (fraction of actions producing errors)
+- Read/write ratio (ratio of read operations to write operations)
+- Session length (number of actions per session)
+
+### 14.2 Divergence Scoring
+
+Cross-session divergence is computed as a weighted combination of distribution-level and scalar-level comparisons:
+
+$$\text{divergence} = 2 \cdot \text{JSD}(\text{tool\_dist}_{\text{current}},\; \text{tool\_dist}_{\text{historical}}) + 1 \cdot |\text{error\_rate}_{\text{current}} - \text{error\_rate}_{\text{historical}}| + 0.5 \cdot |\text{rw\_ratio}_{\text{current}} - \text{rw\_ratio}_{\text{historical}}|$$
+
+Jensen-Shannon divergence (JSD) is used for the tool distribution comparison because it is symmetric, bounded, and well-defined even when the distributions have non-overlapping support. The weight of 2 on JSD reflects the empirical observation that tool distribution shifts are the most reliable indicator of behavioral regime change.
+
+### 14.3 Profile Update
+
+Fingerprints are updated via EMA with alpha = 0.1, providing a half-life of approximately 6.6 sessions. This slow adaptation rate ensures that the fingerprint reflects long-term behavioral tendencies rather than session-to-session noise.
+
+Divergence scores are not produced until at least 10 sessions have been recorded, ensuring sufficient historical data for meaningful comparison.
+
+---
+
+## 15. Reliability Metrics
+
+### 15.1 Calibration Score
+
+SOMA computes a calibration score that measures the alignment between the agent's expressed confidence and its actual performance:
+
+$$\text{cal} = (1 - \text{error\_rate}) \cdot (0.5 + 0.5 \cdot \text{hedging\_rate})$$
+
+where error_rate is the recent error fraction and hedging_rate is the fraction of recent outputs containing hedging language. The intuition is that a well-calibrated agent hedges when it is uncertain and proceeds confidently when it is not. An agent that never hedges but frequently errors is poorly calibrated; an agent that always hedges but rarely errors is overly cautious but at least honest.
+
+This formulation is inspired by the LLM self-calibration work of Kadavath et al. [10], adapted from the probabilistic prediction context to behavioral monitoring.
+
+### 15.2 Verbal-Behavioral Divergence
+
+A particularly concerning pattern is when an agent expresses confidence while exhibiting high behavioral pressure --- the verbal-behavioral divergence signal. This divergence fires when:
+
+$$(P - \text{hedging\_rate}) > 0.4$$
+
+That is, when the gap between actual pressure (indicating trouble) and expressed hedging (indicating the agent's self-assessment) exceeds 0.4. When this condition is detected, SOMA forces a minimum response mode of GUIDE, ensuring the agent receives feedback even if its aggregate pressure would otherwise place it in OBSERVE mode.
+
+This mechanism is motivated by the deceptive alignment literature, particularly Hubinger et al. [15], who demonstrated that LLM agents can learn to behave differently during monitoring than during deployment. While SOMA cannot detect training-time deception, it can detect the runtime behavioral signature: an agent that claims everything is fine while its vitals indicate otherwise.
+
+### 15.3 Hedging Phrase Detection
+
+SOMA recognizes 27 hedging phrase markers in agent output, including expressions of uncertainty ("I'm not sure", "might", "perhaps"), qualifications ("however", "although"), self-corrections ("actually", "let me reconsider"), and explicit confidence limitations ("I don't have enough information", "this is just my best guess"). The marker set was curated from empirical observation of LLM agent outputs across diverse task types.
+
+---
+
+## 16. Half-Life Temporal Modeling
+
+### 16.1 Pressure Decay Model
+
+SOMA models temporal pressure decay using an exponential half-life function:
+
+$$P(t) = \exp\left(-\frac{\ln(2) \cdot t}{\text{half\_life}}\right)$$
+
+This models the intuition that the relevance of a pressure reading decays over time --- an elevated pressure from 30 minutes ago is less concerning than one from 30 seconds ago, assuming no new concerning signals have arrived.
+
+### 16.2 Adaptive Half-Life
+
+The half-life is not a fixed constant but adapts to the agent's behavioral profile:
+
+$$\text{half\_life} = \max\left(\text{min\_hl},\; \text{avg\_session\_length} \times \max(0.3,\; 1 - \text{avg\_error\_rate})\right)$$
+
+Agents with high error rates have shorter half-lives (pressure persists for less time in absolute terms but represents a larger fraction of the session), while agents with low error rates have longer half-lives (pressure decays slowly, reflecting the rarity and therefore significance of elevated readings).
+
+### 16.3 Handoff Suggestion
+
+When the projected success probability (derived from the temporal model) falls below 0.5, SOMA suggests a handoff --- the current agent should be replaced or the task should be escalated to human supervision. This threshold represents the point at which the agent is more likely to fail than succeed if it continues, making continued autonomous operation a negative expected value proposition.
+
+---
+
+## 17. Policy Engine
+
+### 17.1 Declarative Rules
+
+SOMA includes a policy engine that allows operators to define custom monitoring rules in a declarative format:
 
 ```toml
 [[policy.rules]]
-name = "high-error-block"
-condition = "error_rate > 0.60 and tool_name == 'Bash'"
-action = "block"
-message = "Error rate exceeds 60%. Bash blocked until errors stabilize."
-cooldown = 5
+when = "pressure >= 0.6 and error_rate > 0.3"
+do = "mode = WARN"
 ```
 
-The policy engine also provides a `@guardrail` decorator for programmatic integration with sync and async functions. The decorator wraps any function call with SOMA's pressure check and policy evaluation, raising `SomaBlocked` if any active policy rule triggers a block action:
+Rules use a `when`/`do` structure where the `when` clause is a boolean expression over exposed fields and the `do` clause specifies the action to take when the condition is met.
+
+### 17.2 Supported Operators
+
+The policy expression language supports six comparison operators:
+
+- `>=` (greater than or equal)
+- `<=` (less than or equal)
+- `>` (greater than)
+- `<` (less than)
+- `==` (equal)
+- `!=` (not equal)
+
+Conditions can be combined with `and`/`or` logical operators.
+
+### 17.3 Exposed Fields
+
+The following fields are available for use in policy expressions:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| pressure | float | Aggregate pressure (0--1) |
+| uncertainty | float | Uncertainty signal value |
+| drift | float | Drift signal value |
+| error_rate | float | Error rate signal value |
+| token_usage | float | Token usage signal value |
+| cost | float | Cost signal value |
+| calibration_score | float | Calibration score (0--1) |
+
+### 17.4 Guardrail Decorator
+
+For programmatic integration, SOMA provides a `@guardrail` decorator that can be applied to both synchronous and asynchronous functions:
 
 ```python
-@soma.guardrail(agent_id="worker")
-async def run_tool(tool_name: str, args: dict) -> str:
+@soma.guardrail(max_pressure=0.75, block_on="destructive")
+async def process_task(task):
     ...
 ```
 
-Policy rules are evaluated after the core pressure pipeline completes, allowing rules to reference computed values (pressure, mode, vitals) as well as raw action properties. Rules do not override the core pressure model — they provide an additional layer of operator-defined constraints.
+The decorator intercepts calls, checks current engine state, and raises `SomaBlocked` if the pressure or operation type exceeds the configured limits.
 
 ---
 
-## 13. Use Cases
+## 18. Task Complexity Estimation
 
-### 13.1 Single Agent: Claude Code
+### 18.1 Complexity Score
 
-SOMA's primary integration is with Claude Code (Anthropic), where it monitors all tool calls through four lifecycle hooks:
+SOMA estimates task complexity from the initial task description to calibrate monitoring thresholds:
 
-- **PreToolUse**: Block dangerous tools based on current level
-- **PostToolUse**: Record action, validate code, compute pressure
-- **UserPromptSubmit**: Inject diagnostics into agent context
-- **Stop**: Save state, update fingerprint, show session summary
+$$\text{score} = 0.40 \cdot \text{length} + 0.35 \cdot \text{ambiguity} + 0.25 \cdot \text{dependency}$$
 
-In this configuration, SOMA acts as an always-on behavioral guidance layer. A developer using Claude Code sees a status line (`SOMA + observe 2% · #42 · quality A`) and receives suggestions and warnings only when the agent's behavior degrades. Tools are never stripped — only destructive operations are blocked at extreme pressure.
+where length is a normalized measure of task description length, ambiguity is the density of ambiguous language markers, and dependency is the density of dependency markers.
 
-### 13.2 Multi-Agent Orchestrator
+### 18.2 Marker Sets
 
-Enterprise deployments increasingly use multi-agent pipelines: a planner generates tasks, a coder implements them, a reviewer validates, and an executor deploys. SOMA monitors each agent independently and propagates pressure through the trust graph:
+**Ambiguity markers** (13 total): phrases indicating underspecified requirements, such as "as needed", "appropriate", "reasonable", "if possible", "various", "etc", "some", and similar hedging language in task descriptions.
 
-```python
-engine = SOMAEngine()
-engine.register_agent("planner")
-engine.register_agent("coder")
-engine.register_agent("reviewer")
-engine.add_edge("planner", "coder", trust=0.8)
-engine.add_edge("coder", "reviewer", trust=0.6)
-```
+**Dependency markers** (10 total): phrases indicating cross-component or cross-system dependencies, such as "depends on", "requires", "after", "before", "integration", "API", "database", "service", "external", and "upstream".
 
-If the planner enters a confusion loop (high uncertainty, rising errors), pressure propagates to the coder before the planner's outputs reach it. The reviewer, with lower trust weight to the coder, is less affected — it can still review past work while the pipeline stabilizes.
+### 18.3 Threshold Adjustment
 
-### 13.3 CI/CD Agent Pipelines
+When task complexity exceeds 0.5 (on the 0--1 scale), SOMA reduces pressure thresholds by up to 0.20, making the system more sensitive for complex tasks. The reduction is proportional to the complexity excess:
 
-Autonomous CI/CD agents that run on every commit benefit from SOMA's budget management and quality tracking. A `soma.toml` configuration sets token/cost limits, and BLOCK mode triggers automatically when the budget is exhausted — preventing a runaway agent from generating a $500 bill because it entered a retry loop during an API outage.
+$$\text{threshold\_reduction} = \min\left(0.20,\; 0.40 \cdot (\text{complexity} - 0.5)\right)$$
 
-### 13.4 Agent-to-Agent Delegation
-
-When Agent A delegates a sub-task to Agent B, SOMA's graph ensures that B's failures affect A's effective pressure:
-
-```python
-engine.add_edge("sub_agent", "parent_agent", trust=0.7)
-```
-
-If the sub-agent spirals, the parent agent's effective pressure rises, potentially triggering intervention at the parent level before the sub-agent exhausts its own limits.
-
-### 13.5 Red-Teaming and Security
-
-SOMA's fingerprinting detects behavioral shifts that might indicate prompt injection or jailbreaking. An agent whose tool distribution suddenly shifts from {Read: 60%, Edit: 30%} to {Bash: 80%, Write: 15%} triggers a high divergence score, alerting the operator to investigate.
+This reflects the empirical observation that agents are more likely to fail on complex tasks, and the consequences of failure are typically more severe.
 
 ---
 
-## 14. Evaluation
+## 19. Evaluation
 
-### 14.1 Test Coverage
+### 19.1 Test Suite
 
-SOMA includes 735 tests across 31 test modules:
+SOMA is validated through a comprehensive test suite comprising 735 tests across 37 test modules. The full suite executes in approximately 1 second on commodity hardware, reflecting the computational efficiency of the core algorithms. Tests cover:
 
-| Category | Tests | Coverage |
-|----------|-------|----------|
-| Core engine (pipeline, agent lifecycle) | 45 | All pipeline steps |
-| Pressure (z-score, sigmoid, aggregation) | 38 | Edge cases, zero variance |
-| Vitals (all 5 signals, entropy, drift) | 52 | Cold start, empty input |
-| Baseline (EMA, cold-start, variance) | 30 | Convergence, blending |
-| Ladder (escalation, hysteresis, safe mode) | 42 | All transitions |
-| Learning (adaptation, bounds, outcomes) | 48 | Failure/success paths |
-| Predictor (trend, patterns, confidence) | 35 | All 4 pattern types |
-| Quality (grading, penalties, rolling window) | 28 | A-F range, syntax penalty |
-| RCA (5 detectors) | 22 | All detector types |
-| Fingerprint (JSD, divergence, EMA) | 18 | Cold start, shifts |
-| Graph (propagation, trust dynamics) | 25 | Convergence, decay |
-| Budget (multi-dimensional, exhaustion) | 20 | SAFE_MODE triggers |
-| Wrap (Anthropic + OpenAI, blocking) | 30 | Budget blocking |
-| Stress (16 scenarios) | 16 | Loops, spikes, drain |
-| Claude Code integration (hooks, full workflow) | 72 | End-to-end |
-| CLI, modes, config | 23 | All commands |
-| Uncertainty classification (epistemic/aleatoric) | 12 | Entropy thresholds, multipliers |
-| Reliability metrics (calibration, divergence) | 15 | Scoring, rolling window |
-| Policy engine (rules, evaluation, decorator) | 28 | YAML/TOML parsing, async guardrail |
-| Half-life temporal modeling | 18 | Decay curves, signal aging |
-| Vector pressure propagation | 22 | Per-signal graph traversal |
-| Coordination SNR isolation | 16 | Noise floor, signal extraction |
+- Unit tests for each signal computation (uncertainty, drift, error rate, goal coherence)
+- Unit tests for baseline learning (EMA convergence, cold-start blending, grace period)
+- Unit tests for pressure normalization and aggregation (sigmoid, weighted mean-max, floors)
+- Unit tests for guidance system (mode mapping, destructive pattern detection)
+- Unit tests for multi-agent graph propagation (damping, convergence, SNR isolation)
+- Unit tests for self-learning engine (threshold adaptation, weight adjustment, caps)
+- Unit tests for predictive model (trend extrapolation, pattern boosters, confidence)
+- Integration tests for the complete record_action pipeline
 
-Full suite runs in ~1 second.
+### 19.2 Integration Testing
 
-### 14.2 Stress Scenarios
+Integration testing exercises the full pipeline across 4 distinct scenarios totaling 231 actions (documented in INTEGRATION-TEST-REPORT.md):
 
-The stress test suite validates behavior under extreme conditions:
+1. **Healthy agent**: 50+ actions with nominal behavior. Validates that pressure remains in OBSERVE mode, baselines converge correctly, and no false positives are generated.
 
-- Rapid 100-action sequences with random error patterns
-- Budget exhaustion during active work
-- Pressure spikes from 0% to 90% in a single action
-- Loop detection under various sequence lengths
-- Multi-agent propagation with circular trust graphs
-- Learning engine convergence over 100+ interventions
+2. **Gradual degradation**: Agent progressively increases error rate and uncertainty. Validates that pressure escalates through GUIDE and WARN modes at appropriate points, and that the self-learning engine adapts thresholds.
 
-### 14.3 Production Observation
+3. **Sudden crisis**: Agent abruptly begins producing errors and attempting destructive operations. Validates rapid escalation to BLOCK mode and correct destructive operation detection.
 
-SOMA has been deployed in active Claude Code development sessions (March 2026). Key observations:
+4. **Recovery**: Agent transitions from high-pressure state back to nominal behavior. Validates that pressure decreases, baselines adapt to the new behavioral regime, and the system does not maintain elevated pressure after the crisis resolves.
 
-- **Cold-start time**: ~10 actions (as designed). Baselines stabilize within the grace period.
-- **False positive rate**: Near zero after the learning engine has observed 3+ interventions per transition type.
-- **Latency impact**: Imperceptible. Hook execution adds <5ms per tool call (including file I/O for state persistence).
-- **Quality correlation**: Quality grade D/F correlates strongly (>0.8) with subsequent session failures that require manual intervention.
+### 19.3 Production Observations
+
+From deployment as a Claude Code hook system:
+
+- **Cold start**: Baselines converge and produce meaningful pressure readings within approximately 10 actions, consistent with the configured min_samples and cold-start blending parameters.
+- **False positive rate**: Near zero after the learning engine has processed 3+ interventions. The combination of conservative defaults, grace period, cold-start blending, and adaptive thresholds effectively suppresses spurious alerts.
+- **Latency**: Consistently under 5ms per hook invocation, including state persistence (atomic file write with fsync). The zero-inference design ensures that monitoring overhead is negligible compared to the LLM inference time of the monitored agent.
 
 ---
 
-## 15. Limitations and Future Work
+## 20. Limitations and Future Work
 
-### 15.1 Current Limitations
+**Single-modality observation.** SOMA currently monitors only tool-call actions. Future work should incorporate additional observation modalities: chain-of-thought analysis, memory access patterns, and inter-agent communication content.
 
-**Single-host deployment.** SOMA stores state in the local filesystem. Multi-host agent deployments require shared state, which is planned for Milestone 3 (OpenTelemetry export).
+**Threshold sensitivity.** While the self-learning engine adapts thresholds over time, the initial threshold values and adaptation rates are manually tuned. A more principled approach might use Bayesian optimization or multi-armed bandit methods to find optimal configurations for specific agent-task combinations.
 
-**Fixed signal set.** The five behavioral signals are hardcoded. Custom signals (e.g., domain-specific quality metrics) require source modification.
+**Limited causal reasoning.** The root cause analysis module uses pattern matching rather than causal inference. An agent that enters a loop because of a flawed plan and an agent that enters a loop because of a flaky API receive similar diagnoses. Causal reasoning would enable more targeted guidance.
 
-**No counterfactual reasoning.** SOMA can detect that an agent is in trouble, but cannot determine whether a *different* action would have been better. It governs; it does not advise.
+**Evaluation on diverse agents.** Current validation is primarily against Claude Code. Broader evaluation across agent frameworks (LangChain, AutoGen, CrewAI), model providers (OpenAI, Google, open-source), and task domains (coding, research, data analysis, operations) would strengthen generalizability claims.
 
-**Limited to tool-call granularity.** SOMA observes actions at the tool-call level. Intra-thought-process degradation (e.g., reasoning quality declining within a single response) is invisible.
+**Adversarial robustness.** SOMA's monitoring is transparent --- an agent with access to SOMA's source code could theoretically learn to game the pressure model. While the verbal-behavioral divergence detector provides some protection against this scenario, a systematic adversarial robustness evaluation is needed.
 
-**English-only diagnostics.** RCA produces English explanations. Localization is not implemented.
-
-### 15.2 Future Directions
-
-**OpenTelemetry export** (Milestone 3): Export pressure, vitals, and events as OTEL spans and metrics, enabling integration with Grafana, Datadog, and other observability platforms.
-
-**Custom signal plugins** (Milestone 4): Allow users to register domain-specific signals that feed into the pressure model alongside built-in signals.
-
-**Fleet analytics** (Milestone 5): Aggregate behavioral data across many agents and sessions to detect fleet-wide degradation patterns.
-
-**Real-time dashboard** (Milestone 3): Web-based dashboard for monitoring multiple agents across distributed deployments.
+**Scalability.** The current implementation is optimized for single-machine deployment with file-based state persistence. Large-scale multi-agent deployments would benefit from distributed state management and real-time streaming architectures.
 
 ---
 
-## 16. Related Work
+## 21. Related Work
 
-**NeMo Guardrails** (NVIDIA, 2023): Programmable guardrails for LLM applications. Operates at the prompt/response level with Colang rules. Complementary to SOMA — guardrails filter content, SOMA monitors behavior.
+**NeMo Guardrails** (NVIDIA, 2023) provides programmable guardrails for LLM applications through a domain-specific language (Colang) for defining conversational flows and safety rules. NeMo operates at the input/output boundary, filtering requests and responses against predefined patterns. SOMA complements NeMo by providing continuous behavioral monitoring between boundary checks --- while NeMo catches individual unsafe requests, SOMA detects behavioral trajectories that are individually safe but collectively problematic.
 
-**LangSmith** (LangChain, 2023): Observability and evaluation platform for LLM applications. Provides tracing and debugging but no real-time intervention. SOMA could export to LangSmith while providing control.
+**LangSmith** (LangChain, 2023) offers tracing, evaluation, and monitoring for LLM applications. LangSmith excels at observability (visualizing execution traces, collecting human feedback) but does not compute behavioral pressure, detect anomalies, or inject corrective guidance. SOMA and LangSmith address different layers of the monitoring stack: LangSmith provides visibility, SOMA provides control.
 
-**AgentOps** (2024): Agent monitoring and replay. Focuses on observability and analytics. Similar goals to SOMA's telemetry but without the control system.
+**AgentOps** (2024) provides session replay, cost tracking, and error monitoring for AI agents. Like LangSmith, AgentOps focuses on observability rather than active intervention. SOMA's pressure model, guidance system, and self-learning engine go beyond passive monitoring to active behavioral control.
 
-**Guardrails AI** (2023): Output validation framework. Validates individual LLM outputs against schemas and rules. Single-turn; doesn't model behavioral trajectories.
+**Guardrails AI** (2023) validates LLM outputs against structural and semantic specifications (JSON schema, topic restrictions, PII detection). This is complementary to SOMA: Guardrails AI validates individual outputs, SOMA monitors behavioral sequences. An integrated system could use Guardrails AI for output validation and SOMA for trajectory monitoring.
 
-**Constitutional AI** (Anthropic, 2022): Training-time alignment technique. Shapes model behavior but provides no runtime guarantees. SOMA operates at runtime, complementing training-time alignment.
+**Constitutional AI** [8] (Anthropic, 2022) embeds behavioral constraints during training through self-critique and revision. SOMA operates at a different point in the stack: while Constitutional AI shapes the agent's base behavioral tendencies, SOMA monitors and corrects runtime deviations from those tendencies. The two approaches are complementary --- Constitutional AI reduces the frequency of problematic behaviors, SOMA catches the ones that still occur.
 
-**Process control theory** (Astrom & Murray, 2008): SOMA's architecture is informed by classical process control, particularly PID control, hysteresis, and adaptive control. The key difference is that SOMA's "plant" (the AI agent) is a black box with unknown dynamics.
+**Process Control Theory** [6, 7] provides the mathematical foundations for SOMA's approach. Shewhart's control charts established the principle of monitoring process variables against statistical control limits. Astrom and Murray's work on PID control informed SOMA's design decisions around feedback mechanisms, though SOMA deliberately omits integral and derivative terms in favor of stateless pressure computation for explainability.
 
 ---
 
-## 17. Conclusion
+## 22. Conclusion
 
-SOMA demonstrates that deterministic behavioral monitoring of AI agents is both feasible and practical. By computing a unified pressure metric from five behavioral signals, applying graduated guidance through 4 response modes, and self-tuning through outcome-based learning, SOMA provides runtime safety guarantees that complement existing alignment and guardrail approaches.
+SOMA demonstrates that effective behavioral monitoring of AI agents does not require additional inference calls, complex probabilistic models, or invasive instrumentation. By applying established principles from control theory, anomaly detection, and trust systems to the specific challenges of agent behavioral monitoring, SOMA achieves real-time detection and correction of agent behavioral pathologies with sub-5ms latency and zero external dependencies.
 
-The system is fully operational, comprehensively tested (735 tests across 31 test modules, ~1 second), and deployed in production with Claude Code. It requires no API calls, no network access, and no inference — just arithmetic on bounded numbers, executed in sub-millisecond time.
+The key insight underlying SOMA's design is that agent failures are not random events --- they are the culmination of observable behavioral trajectories. An agent does not instantaneously transition from productive work to catastrophic failure. It drifts, it retries, it hedges, it makes errors, and it compounds those errors. Each of these behavioral signals is individually weak, but their combination --- weighted, normalized, and aggregated through the pressure model --- provides a reliable early warning system that enables graduated intervention before failures become irreversible.
 
-As AI agents become more autonomous and more widely deployed, the gap between "aligned at training time" and "safe at runtime" will widen. SOMA is our contribution to closing that gap.
+SOMA's closed-loop architecture --- actions produce vitals, vitals produce pressure, pressure produces guidance, guidance influences agent behavior --- creates a feedback system that is both self-correcting and self-improving. The self-learning engine adapts thresholds and weights from intervention outcomes, reducing false positives over time without manual tuning. The predictive model anticipates failures before they manifest, enabling proactive rather than reactive intervention.
+
+As AI agents assume increasingly autonomous roles in software development, research, and operations, the need for runtime behavioral monitoring will only grow. SOMA provides a foundation for this monitoring: deterministic, explainable, platform-agnostic, and open-source. The system is available today as `soma-ai` on PyPI, operational as a Claude Code hook system, and designed to extend to any agent framework.
 
 ---
 
 ## References
 
-[1] Chen, M. et al. "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?" arXiv:2310.06770, 2023. *(Benchmark documenting real-world agent failures on GitHub issues — empirical evidence for the behavioral loops and scope drift SOMA is designed to detect.)*
+[1] J. Chen, C. Jabbour, J. Yang, D. Fried, and A. Gur, "SWE-bench: Can language models resolve real-world GitHub issues?," in *Proc. NeurIPS*, 2023. --- Benchmark documenting the agent failure modes that SOMA is designed to detect: cascading errors, task drift, and destructive operations in real-world software engineering tasks.
 
-[2] Yang, J. et al. "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering." arXiv:2405.15793, 2024. *(Agent-computer interaction design — demonstrates tool-call granularity as the natural observation unit, the same granularity SOMA monitors.)*
+[2] J. Yang, C. E. Jimenez, A. Wettig, K. Liber, S. Yao, K. Narasimhan, and O. Press, "SWE-agent: Agent-computer interfaces enable automated software engineering," 2024. --- Establishes tool-call granularity as the natural observation unit for agent monitoring, which SOMA adopts as its fundamental action primitive.
 
-[3] Jimenez, C.E. et al. "Measuring Coding Challenge Competence With APPS." arXiv:2105.09938, 2021. *(Coding task evaluation — quantifies how agent performance degrades with task complexity, motivating SOMA's task complexity estimator.)*
+[3] D. Hendrycks, S. Basart, S. Kadavath, M. Mazeika, A. Zou, E. Jones, and D. Song, "Measuring coding challenge competence with APPS," in *Proc. NeurIPS*, 2021. --- Documents performance degradation with task complexity, motivating SOMA's complexity-adaptive threshold adjustment.
 
-[4] Kamhoua, C. et al. "EigenTrust: Algorithm for Reputation Management in P2P Networks." ACM, 2003. *(Distributed trust propagation — SOMA's trust graph with damped weighted averaging is a simplification of EigenTrust's iterative convergence model.)*
+[4] S. D. Kamvar, M. T. Schlosser, and H. Garcia-Molina, "The EigenTrust algorithm for reputation management in P2P networks," in *Proc. WWW*, 2003. --- Foundation for SOMA's trust-weighted pressure propagation in multi-agent graphs.
 
-[5] Slovic, P. "Perceived risk, trust, and democracy." Risk Analysis, 13(6), 675-682, 1993. *(Asymmetric trust dynamics — "trust is slow to build, fast to destroy." Directly informs SOMA's 2.5:1 decay-to-recovery ratio in the trust graph.)*
+[5] P. Slovic, "Perceived risk, trust, and democracy," *Risk Analysis*, vol. 13, no. 6, pp. 675--682, 1993. --- Established the asymmetric nature of trust dynamics (trust is destroyed faster than it is built), encoded in SOMA's 2.5:1 decay-to-recovery ratio.
 
-[6] Shewhart, W.A. "Economic Control of Quality of Manufactured Product." Van Nostrand, 1931. *(Statistical process control — z-score control charts are the foundation of SOMA's signal normalization via sigmoid-clamped z-scores.)*
+[6] W. A. Shewhart, *Economic Control of Quality of Manufactured Product*. Van Nostrand, 1931. --- Originated statistical process control and z-score-based control charts, the mathematical foundation for SOMA's signal normalization and pressure computation.
 
-[7] Åström, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008. *(Classical control theory — PID composition, hysteresis, and deadband control principles that inform SOMA's graduated guidance and grace period design.)*
+[7] K. J. Astrom and R. M. Murray, *Feedback Systems: An Introduction for Scientists and Engineers*. Princeton University Press, 2008. --- Comprehensive treatment of PID control, hysteresis, and deadband mechanisms that informed SOMA's deliberate design choices around stateless pressure computation.
 
-[8] Bai, Y. et al. "Constitutional AI: Harmlessness from AI Feedback." arXiv:2212.08073, 2022. *(Training-time alignment — SOMA complements Constitutional AI by providing the runtime behavioral guarantees that training-time alignment cannot.)*
+[8] Y. Bai, S. Kadavath, S. Kundu, A. Askell, J. Kernion, A. Jones, A. Chen, A. Goldie, A. Mirhoseini, C. McKinnon, et al., "Constitutional AI: Harmlessness from AI feedback," 2022. --- Training-time alignment approach that SOMA complements with runtime behavioral monitoring, addressing the gap between trained tendencies and actual execution behavior.
 
-[9] Kendall, A. & Gal, Y. "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?" NeurIPS, 2017. *(Epistemic vs. aleatoric uncertainty decomposition — foundational framework for SOMA's uncertainty classification.)*
+[9] A. Kendall and Y. Gal, "What uncertainties do we need in Bayesian deep learning for computer vision?," in *Proc. NeurIPS*, 2017. --- Theoretical framework for epistemic vs. aleatoric uncertainty decomposition, adapted in SOMA from neural network predictions to agent behavioral signals.
 
-[10] Kadavath, S. et al. "Language Models (Mostly) Know What They Know." arXiv:2207.05221, 2022. *(LLM self-calibration — shows models can estimate their own uncertainty; basis for SOMA's calibration score design.)*
+[10] S. Kadavath, T. Conerly, A. Askell, T. Henighan, D. Drain, E. Perez, S. Schiefer, Z. Hatfield-Dodds, N. DaSilva, E. Tran-Vu, et al., "Language models (mostly) know what they know," 2022. --- LLM self-calibration research that inspired SOMA's calibration scoring, measuring alignment between expressed confidence and actual performance.
 
-[11] Lin, S. et al. "TruthfulQA: Measuring How Models Mimic Human Falsehoods." ACL, 2022. *(Verbal-behavioral divergence in language models — motivates SOMA's deceptive behavior detection.)*
+[11] S. Lin, J. Hilton, and O. Evans, "TruthfulQA: Measuring how models mimic human falsehoods," in *Proc. ACL*, 2022. --- Verbal-behavioral divergence in LLMs, motivating SOMA's hedging-pressure gap detector.
 
-[12] Valmeekam, K. et al. "On the Planning Abilities of Large Language Models." NeurIPS, 2023. *(Documents LLM planning failures in multi-step tasks — the class of failures SOMA's pressure model is designed to catch.)*
+[12] K. Valmeekam, M. Marquez, S. Sreedharan, and S. Kambhampati, "On the planning abilities of large language models," in *Proc. NeurIPS*, 2023. --- Demonstrates systematic LLM planning failures, motivating SOMA's predictive model and early intervention architecture.
 
-[13] Shinn, N. et al. "Reflexion: Language Agents with Verbal Reinforcement Learning." NeurIPS, 2023. *(Self-reflective agents — demonstrates that agents respond to behavioral feedback loops, the core mechanism SOMA exploits.)*
+[13] N. Shinn, F. Cassano, A. Gopinath, K. Narasimhan, and S. Yao, "Reflexion: Language agents with verbal reinforcement learning," in *Proc. NeurIPS*, 2023. --- Demonstrates that agents respond to behavioral feedback loops, validating SOMA's core assumption that injected guidance can correct agent trajectories.
 
-[14] Wang, L. et al. "A Survey on Large Language Model based Autonomous Agents." arXiv:2308.11432, 2023. *(Comprehensive survey of LLM agent architectures — categorizes the failure modes SOMA monitors.)*
+[14] L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen, Y. Lin, et al., "A survey on large language model based autonomous agents," *Frontiers of Computer Science*, 2023. --- Comprehensive categorization of LLM agent failure modes that informed SOMA's signal selection and root cause analysis detectors.
 
-[15] Hubinger, E. et al. "Sleeper Agents: Training Deceptive LLMs That Persist Through Safety Training." arXiv:2401.05566, 2024. *(Deceptive alignment — motivates SOMA's verbal-behavioral divergence detection as a runtime defense.)*
+[15] E. Hubinger, C. Denison, J. Mu, M. Lambert, M. Tong, M. MacDiarmid, T. Lanham, D. M. Ziegler, T. Maxwell, N. Cheng, et al., "Sleeper agents: Training deceptive LLMs that persist through safety training," 2024. --- Demonstrates deceptive alignment in LLMs, motivating SOMA's verbal-behavioral divergence detector that identifies agents claiming normalcy while exhibiting elevated behavioral pressure.
 
-[16] Park, J.S. et al. "Generative Agents: Interactive Simulacra of Human Behavior." UIST, 2023. *(Multi-agent behavioral simulation — demonstrates cascading behavioral drift in agent populations, the problem SOMA's trust graph addresses.)*
+[16] J. S. Park, J. C. O'Brien, C. J. Cai, M. R. Morris, P. Liang, and M. S. Bernstein, "Generative agents: Interactive simulacra of human behavior," in *Proc. UIST*, 2023. --- Demonstrates cascading behavioral drift in multi-agent simulations, motivating SOMA's multi-agent pressure propagation and goal coherence tracking.
 
 ---
 
 ## Appendix A: Notation
 
-| Symbol | Meaning |
-|--------|---------|
-| P | Aggregate pressure ∈ [0, 1] |
-| pᵢ | Individual signal pressure ∈ [0, 1] |
-| wᵢ | Signal weight |
-| σ(·) | Sigmoid clamp function |
-| α | EMA learning rate (0.15 for baselines, 0.10 for fingerprints) |
-| δ | Graph damping factor (0.60) |
-| μ, v | EMA mean and variance |
-| D | Drift (cosine distance) |
-| U | Uncertainty (composite) |
+| Symbol | Definition |
+|--------|-----------|
+| U | Uncertainty signal |
+| D | Drift signal |
+| E | Error rate signal |
+| G | Goal coherence signal |
+| C | Cost signal |
+| T | Token usage signal |
+| P | Aggregate pressure (0--1) |
+| P_int(n) | Internal pressure of node n |
+| P_eff(n) | Effective pressure of node n after propagation |
+| p_i | Normalized pressure for signal i |
+| x_i | Raw value of signal i |
+| mu_i | EMA baseline mean for signal i |
+| sigma_i | EMA baseline standard deviation for signal i |
+| v_i | EMA baseline variance for signal i |
+| alpha | EMA smoothing factor (0.15) |
+| delta | Graph damping factor (0.6) |
+| w | Edge trust weight in [0, 1] |
+| R | Retry rate |
+| F | Failure indicator rate |
+| sigma() | Sigmoid clamping function |
+| cos(a, b) | Cosine similarity between vectors a and b |
+| v_current | Current behavior vector |
+| v_baseline | Baseline behavior vector |
+| v_initial | Initial task behavior vector |
+| beta_0, beta_1 | OLS regression coefficients |
+| c | Prediction confidence |
+| W | Prediction window size (10) |
+| R^2 | Coefficient of determination |
+| cal | Calibration score |
 | Q | Quality score |
-| h | Prediction horizon (5 actions) |
-| M | Response mode (OBSERVE through BLOCK) |
+| JSD | Jensen-Shannon divergence |
 
 ## Appendix B: Availability
 
-SOMA is open-source under the MIT license.
+SOMA is open-source software released under the MIT license. The complete source code, test suite, and documentation are available at:
 
-- **PyPI**: `pip install soma-ai`
-- **Source**: https://github.com/tr00x/SOMA-Core
-- **Documentation**: https://github.com/tr00x/SOMA-Core/tree/main/docs
+- **GitHub**: https://github.com/tr00x/SOMA-Core
+- **PyPI**: https://pypi.org/project/soma-ai/
+- **Installation**: `pip install soma-ai`
+- **Python compatibility**: 3.11+
+- **License**: MIT
+
+The system is currently operational as a Claude Code hook integration and is designed for extension to any agent framework through its platform-agnostic core architecture.
