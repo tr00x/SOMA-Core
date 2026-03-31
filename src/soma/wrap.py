@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import time
+import inspect
 import functools
 from typing import Any
 
@@ -97,15 +98,23 @@ class WrappedClient:
         # Anthropic SDK: client.messages.create(...)
         if hasattr(client, "messages") and hasattr(client.messages, "create"):
             original_create = client.messages.create
-            client.messages.create = self._make_wrapper(original_create, "messages.create")
+            if inspect.iscoroutinefunction(original_create):
+                client.messages.create = self._make_async_wrapper(original_create, "messages.create")
+            else:
+                client.messages.create = self._make_wrapper(original_create, "messages.create")
 
         # OpenAI SDK: client.chat.completions.create(...)
         if hasattr(client, "chat") and hasattr(client.chat, "completions"):
             if hasattr(client.chat.completions, "create"):
                 original_create = client.chat.completions.create
-                client.chat.completions.create = self._make_wrapper(
-                    original_create, "chat.completions.create"
-                )
+                if inspect.iscoroutinefunction(original_create):
+                    client.chat.completions.create = self._make_async_wrapper(
+                        original_create, "chat.completions.create"
+                    )
+                else:
+                    client.chat.completions.create = self._make_wrapper(
+                        original_create, "chat.completions.create"
+                    )
 
     def _make_wrapper(self, original_fn: Any, tool_name: str) -> Any:
         """Create a wrapped version of an API method."""
@@ -177,6 +186,73 @@ class WrappedClient:
                 self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
                 # export_state() is now handled by engine.record_action() when auto_export=True
+
+        return wrapper
+
+    def _make_async_wrapper(self, original_fn: Any, tool_name: str) -> Any:
+        """Create an async wrapped version of an API method."""
+
+        @functools.wraps(original_fn)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # 0. Apply pending context action to messages
+            if self._pending_context_action and self._pending_context_action != "pass":
+                messages = kwargs.get("messages", [])
+                if messages and self._pending_context_action == "truncate_20":
+                    keep = max(1, int(len(messages) * 0.80))
+                    kwargs["messages"] = messages[-keep:]
+                elif self._pending_context_action == "truncate_50_block_tools":
+                    keep = max(1, int(len(messages) * 0.50))
+                    kwargs["messages"] = messages[-keep:]
+                elif self._pending_context_action in ("block_destructive", "quarantine", "restart", "safe_mode"):
+                    kwargs["messages"] = [m for m in messages if m.get("role") == "system"][:1] or messages[-1:]
+                self._pending_context_action = "pass"
+
+            # 1. Pre-check: should we block?
+            level = self._engine.get_level(self._agent_id)
+            if level >= self._block_at:
+                snap = self._engine.get_snapshot(self._agent_id)
+                raise SomaBlocked(self._agent_id, level, snap["pressure"])
+
+            # 2. Check budget
+            if self._engine.budget.is_exhausted():
+                raise SomaBudgetExhausted("budget")
+
+            # 3. Execute the real async API call
+            start = time.time()
+            error = False
+            output_text = ""
+            token_count = 0
+
+            try:
+                response = await original_fn(*args, **kwargs)
+                duration = time.time() - start
+
+                output_text, token_count = self._extract_response_data(response)
+
+                return response
+
+            except (SomaBlocked, SomaBudgetExhausted):
+                raise
+
+            except Exception:
+                duration = time.time() - start
+                error = True
+                raise
+
+            finally:
+                # 4. Record the action in SOMA
+                action = Action(
+                    tool_name=tool_name,
+                    output_text=output_text[:1000],
+                    token_count=token_count,
+                    cost=self._estimate_cost(token_count),
+                    error=error,
+                    duration_sec=duration,
+                )
+
+                result = self._engine.record_action(self._agent_id, action)
+                self._pending_context_action = result.context_action
+                self._recorder.record(self._agent_id, action)
 
         return wrapper
 
