@@ -125,6 +125,7 @@ class VitalsSnapshot:
     half_life_warning: bool = False            # True when approaching/past half-life
     calibration_score: float | None = None    # None during warmup (< 3 actions)
     verbal_behavioral_divergence: bool = False  # True = confident language + high pressure
+    context_usage: float = 0.0                 # cumulative tokens / context window size
 
 
 @dataclass
