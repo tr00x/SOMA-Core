@@ -65,7 +65,11 @@ Plans:
   2. Low task entropy + high uncertainty classifies as epistemic and escalates to WARN faster than an equivalent aleatoric case
   3. High task entropy + high uncertainty classifies as aleatoric and produces GUIDE-level guidance without pressure escalation
   4. Classification logic has test coverage with synthetic task entropy scenarios
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Wave 1: Add uncertainty_type to VitalsSnapshot + classify_uncertainty function + unit tests
+- [ ] 02-02-PLAN.md — Wave 2: Wire classification into engine + pressure modulation (epistemic 1.3x, aleatoric 0.7x) + integration tests
 
 ### Phase 3: Vector Pressure
 **Goal**: Downstream agents in the trust graph receive a pressure vector (uncertainty, drift, error, cost components) instead of a scalar, enabling them to react precisely to upstream failure causes
@@ -175,7 +179,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Vitals Accuracy | M1 | 0/3 | Planning complete | - |
-| 2. Uncertainty Classification | M1 | 0/TBD | Not started | - |
+| 2. Uncertainty Classification | M1 | 0/2 | Planning complete | - |
 | 3. Vector Pressure | M1 | 0/TBD | Not started | - |
 | 4. Coordination Intelligence | M1 | 0/TBD | Not started | - |
 | 5. Temporal Modeling | M1 | 0/TBD | Not started | - |
