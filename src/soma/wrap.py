@@ -60,7 +60,7 @@ class SomaStreamContext:
 
     def __enter__(self) -> SomaStreamContext:
         self._start = time.time()
-        self._stream.__enter__()
+        self._inner_stream = self._stream.__enter__()
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -74,8 +74,9 @@ class SomaStreamContext:
     @property
     def text_stream(self) -> Any:
         """Yields text chunks from the underlying stream, accumulating text."""
+        source = getattr(self, "_inner_stream", self._stream)
         try:
-            for chunk in self._stream.text_stream:
+            for chunk in source.text_stream:
                 self._accumulated_text += chunk
                 yield chunk
         except Exception:
@@ -84,7 +85,8 @@ class SomaStreamContext:
 
     def get_final_message(self) -> Any:
         """Delegate to underlying stream's get_final_message."""
-        return self._stream.get_final_message()
+        source = getattr(self, "_inner_stream", self._stream)
+        return source.get_final_message()
 
     def _record_stream_action(self) -> None:
         """Record the accumulated stream as a single Action."""
@@ -92,7 +94,8 @@ class SomaStreamContext:
         # Try to get token count from final message
         token_count = 0
         try:
-            final = self._stream.get_final_message()
+            source = getattr(self, "_inner_stream", self._stream)
+            final = source.get_final_message()
             _, token_count = self._wrapped._extract_response_data(final)
         except Exception:
             pass
@@ -129,7 +132,7 @@ class AsyncSomaStreamContext:
 
     async def __aenter__(self) -> AsyncSomaStreamContext:
         self._start = time.time()
-        await self._stream.__aenter__()
+        self._inner_stream = await self._stream.__aenter__()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -146,18 +149,21 @@ class AsyncSomaStreamContext:
         return self._async_text_stream()
 
     async def _async_text_stream(self) -> Any:
-        async for chunk in self._stream.text_stream:
+        source = getattr(self, "_inner_stream", self._stream)
+        async for chunk in source.text_stream:
             self._accumulated_text += chunk
             yield chunk
 
     def get_final_message(self) -> Any:
-        return self._stream.get_final_message()
+        source = getattr(self, "_inner_stream", self._stream)
+        return source.get_final_message()
 
     def _record_stream_action(self) -> None:
         duration = time.time() - self._start
         token_count = 0
         try:
-            final = self._stream.get_final_message()
+            source = getattr(self, "_inner_stream", self._stream)
+            final = source.get_final_message()
             _, token_count = self._wrapped._extract_response_data(final)
         except Exception:
             pass
