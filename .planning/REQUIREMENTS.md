@@ -97,42 +97,42 @@ Research basis: SOMA-RESEARCH.pdf — 10 open problems from academic literature 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | VIT-01 | Phase 1 | Pending |
-| VIT-02 | Phase 1 | Pending |
 | VIT-03 | Phase 1 | Pending |
-| PRS-01 | Phase 2 | Pending |
-| PRS-02 | Phase 2 | Pending |
-| PRS-03 | Phase 2 | Pending |
-| HLF-01 | Phase 3 | Pending |
-| HLF-02 | Phase 3 | Pending |
-| REL-01 | Phase 4 | Pending |
-| REL-02 | Phase 4 | Pending |
-| SDK-01 | Phase 5 | Pending |
-| SDK-02 | Phase 5 | Pending |
-| SDK-03 | Phase 5 | Pending |
-| SDK-04 | Phase 5 | Pending |
-| SDK-05 | Phase 6 | Pending |
-| POL-01 | Phase 6 | Pending |
-| POL-02 | Phase 6 | Pending |
-| POL-03 | Phase 7 | Pending |
-| OTL-01 | Phase 7 | Pending |
-| OTL-02 | Phase 7 | Pending |
-| RPT-01 | Phase 7 | Pending |
-| DSH-01 | Phase 8 | Pending |
-| DSH-02 | Phase 8 | Pending |
-| DSH-03 | Phase 8 | Pending |
-| DSH-04 | Phase 8 | Pending |
-| ALT-01 | Phase 9 | Pending |
-| FLT-01 | Phase 9 | Pending |
-| FLT-02 | Phase 9 | Pending |
-| BEN-01 | Phase 10 | Pending |
-| BEN-02 | Phase 10 | Pending |
-| SAF-01 | Phase 10 | Pending |
+| VIT-02 | Phase 2 | Pending |
+| PRS-01 | Phase 3 | Pending |
+| PRS-02 | Phase 4 | Pending |
+| PRS-03 | Phase 4 | Pending |
+| HLF-01 | Phase 5 | Pending |
+| HLF-02 | Phase 5 | Pending |
+| REL-01 | Phase 6 | Pending |
+| REL-02 | Phase 6 | Pending |
+| SDK-01 | Phase 7 | Pending |
+| SDK-02 | Phase 7 | Pending |
+| SDK-03 | Phase 7 | Pending |
+| SDK-04 | Phase 7 | Pending |
+| SDK-05 | Phase 8 | Pending |
+| POL-01 | Phase 8 | Pending |
+| POL-02 | Phase 8 | Pending |
+| POL-03 | Phase 8 | Pending |
+| OTL-01 | Phase 9 | Pending |
+| OTL-02 | Phase 9 | Pending |
+| RPT-01 | Phase 9 | Pending |
+| DSH-01 | Phase 10 | Pending |
+| DSH-02 | Phase 10 | Pending |
+| DSH-03 | Phase 10 | Pending |
+| DSH-04 | Phase 10 | Pending |
+| ALT-01 | Phase 11 | Pending |
+| FLT-01 | Phase 11 | Pending |
+| FLT-02 | Phase 11 | Pending |
+| BEN-01 | Phase 11 | Pending |
+| BEN-02 | Phase 11 | Pending |
+| SAF-01 | Phase 11 | Pending |
 
 **Coverage:**
-- Milestone 1 (core engine): 10 requirements
-- Milestone 2 (platform): 11 requirements
-- Milestone 3 (ecosystem): 10 requirements
-- Total: 31 requirements across 10 phases
+- Milestone 1 (core engine): 10 requirements across Phases 1-6
+- Milestone 2 (platform): 11 requirements across Phases 7-9
+- Milestone 3 (ecosystem): 10 requirements across Phases 10-11
+- Total: 31 requirements across 11 phases
 
 ---
 *Requirements defined: 2026-03-30*
