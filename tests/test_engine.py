@@ -230,7 +230,8 @@ class TestUncertaintyClassificationIntegration:
         assert r.vitals.uncertainty_type == "epistemic"
 
     def test_aleatoric_classification_high_entropy(self):
-        import string, random
+        import random
+        import string
         random.seed(99)
         e = SOMAEngine(budget={"tokens": 100000})
         e._vitals_config = {"epistemic_pressure_multiplier": 1.3, "aleatoric_pressure_multiplier": 0.7}
@@ -257,7 +258,8 @@ class TestUncertaintyClassificationIntegration:
 
     def test_aleatoric_classification_on_high_entropy_output(self):
         """High-entropy (random printable) output is classified as aleatoric."""
-        import string, random
+        import random
+        import string
         random.seed(7)
         chars = string.printable[:95]
         e = SOMAEngine(budget={"tokens": 100000})

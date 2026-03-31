@@ -150,7 +150,8 @@ class TestCrewAIAdapter:
         assert SomaCrewObserver is not None
 
     def test_import_without_crewai_raises(self):
-        import sys, importlib
+        import importlib
+        import sys
         crew_mods = {k: v for k, v in sys.modules.items() if "crewai" in k}
         for mod in crew_mods:
             sys.modules.pop(mod, None)
@@ -179,7 +180,8 @@ class TestAutoGenAdapter:
         assert SomaAutoGenMonitor is not None
 
     def test_import_without_autogen_raises(self):
-        import sys, importlib
+        import importlib
+        import sys
         ag_mods = {k: v for k, v in sys.modules.items() if "autogen" in k}
         for mod in ag_mods:
             sys.modules.pop(mod, None)
