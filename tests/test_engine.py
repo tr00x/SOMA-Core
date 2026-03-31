@@ -1,7 +1,7 @@
 import pytest
 
 from soma.engine import SOMAEngine, ActionResult
-from soma.types import Action, ResponseMode, AutonomyMode
+from soma.types import Action, ResponseMode, AutonomyMode, PressureVector
 
 
 class TestSOMAEngine:
@@ -278,3 +278,95 @@ class TestUncertaintyClassificationIntegration:
             ))
         # With 2.0 multiplier, epistemic pressure should be capped at 1.0 (high errors + retries)
         assert r.vitals.uncertainty_type in ("epistemic", "aleatoric", None)  # valid values
+
+
+class TestPressureVectorIntegration:
+    def test_action_result_has_pressure_vector(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        r = e.record_action("a", Action(tool_name="Bash", output_text="ok", token_count=50))
+        assert isinstance(r.pressure_vector, PressureVector)
+        assert 0.0 <= r.pressure_vector.uncertainty <= 1.0
+        assert 0.0 <= r.pressure_vector.error_rate <= 1.0
+        assert 0.0 <= r.pressure_vector.drift <= 1.0
+        assert 0.0 <= r.pressure_vector.cost <= 1.0
+
+    def test_downstream_error_pressure_boosted_by_upstream(self):
+        """Downstream agent's error_rate pressure rises when upstream has many errors."""
+        e = SOMAEngine(budget={"tokens": 500000})
+        e.register_agent("bad")
+        e.register_agent("good")
+        e.add_edge("bad", "good", trust_weight=1.0)
+
+        # Drive bad agent past grace period with high errors
+        for _ in range(20):
+            e.record_action("bad", Action(
+                tool_name="Bash", output_text="error",
+                token_count=50, error=True, retried=True,
+            ))
+
+        # Baseline good result without upstream influence (no edge — isolated agent)
+        e2 = SOMAEngine(budget={"tokens": 500000})
+        e2.register_agent("good_isolated")
+        r_isolated = e2.record_action("good_isolated", Action(
+            tool_name="search", output_text="ok", token_count=50,
+        ))
+
+        r_downstream = e.record_action("good", Action(
+            tool_name="search", output_text="ok", token_count=50,
+        ))
+
+        # Downstream error_rate component should be >= isolated (upstream pushes it up)
+        assert r_downstream.pressure_vector.error_rate >= r_isolated.pressure_vector.error_rate
+
+    def test_upstream_error_does_not_affect_unconnected_agent(self):
+        """Agents without edges are not influenced by upstream vectors."""
+        e = SOMAEngine(budget={"tokens": 500000})
+        e.register_agent("bad")
+        e.register_agent("independent")
+        # No edge between bad and independent
+
+        for _ in range(20):
+            e.record_action("bad", Action(
+                tool_name="Bash", output_text="error",
+                token_count=50, error=True, retried=True,
+            ))
+
+        r = e.record_action("independent", Action(
+            tool_name="search", output_text="all good", token_count=50,
+        ))
+        # Independent agent: no upstream boost, low pressure
+        assert r.pressure_vector.error_rate < 0.5
+
+    def test_pressure_vector_fields_are_floats_in_range(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        for i in range(5):
+            r = e.record_action("a", Action(
+                tool_name="Bash", output_text=f"output {i}", token_count=100,
+            ))
+        assert all(0.0 <= v <= 1.0 for v in [
+            r.pressure_vector.uncertainty,
+            r.pressure_vector.drift,
+            r.pressure_vector.error_rate,
+            r.pressure_vector.cost,
+        ])
+
+    def test_graph_vector_serialization_roundtrip(self):
+        """PressureVector survives graph to_dict/from_dict roundtrip."""
+        from soma.graph import PressureGraph
+
+        g = PressureGraph()
+        g.add_agent("a")
+        g.add_agent("b")
+        g.add_edge("a", "b")
+        vec = PressureVector(uncertainty=0.4, drift=0.2, error_rate=0.6, cost=0.1)
+        g.set_internal_pressure_vector("a", vec)
+        g.propagate()
+
+        d = g.to_dict()
+        g2 = PressureGraph.from_dict(d)
+        vec_a = g2._nodes["a"].internal_pressure_vector
+        assert vec_a is not None
+        assert abs(vec_a.error_rate - 0.6) < 1e-6
+        assert abs(vec_a.uncertainty - 0.4) < 1e-6

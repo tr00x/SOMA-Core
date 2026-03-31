@@ -4,7 +4,7 @@ __version__ = "0.4.12"
 
 from soma.types import (
     Action, ResponseMode, AutonomyMode, DriftMode,
-    VitalsSnapshot, AgentConfig, InterventionOutcome,
+    VitalsSnapshot, AgentConfig, InterventionOutcome, PressureVector,
 )
 # Deprecated alias — import from soma.types if needed
 from soma.types import Level  # noqa: F401
@@ -39,7 +39,7 @@ def quickstart(budget=None, agents=None):
 __all__ = [
     "SOMAEngine", "Action", "ActionResult", "ResponseMode", "Level",
     "AutonomyMode", "DriftMode", "VitalsSnapshot", "AgentConfig",
-    "InterventionOutcome", "MultiBudget", "EventBus",
+    "InterventionOutcome", "PressureVector", "MultiBudget", "EventBus",
     "SessionRecorder", "replay_session",
     "wrap", "WrappedClient", "SomaBlocked", "SomaBudgetExhausted",
     "quickstart",

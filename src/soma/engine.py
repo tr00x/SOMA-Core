@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from soma.types import Action, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig
+from soma.types import Action, ResponseMode, AutonomyMode, VitalsSnapshot, AgentConfig, PressureVector
 from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
@@ -30,6 +30,7 @@ class ActionResult:
     pressure: float
     vitals: VitalsSnapshot
     context_action: str = "pass"
+    pressure_vector: PressureVector | None = None
 
     @property
     def level(self) -> ResponseMode:
@@ -407,10 +408,35 @@ class SOMAEngine:
             adj = self._learning.get_weight_adjustment(signal)
             adjusted_weights[signal] = max(0.2, adjusted_weights[signal] + adj)
 
-        # 6. Aggregate with adjusted weights
+        # 6. Apply upstream vector influence (PRS-01): if this agent has incoming edges,
+        # boost per-signal pressures based on the upstream effective_pressure_vector
+        # from the previous propagation round. This lets downstream agents react
+        # precisely to the *cause* of upstream pressure, not just its magnitude.
+        upstream_vec = self._graph.get_effective_pressure_vector(agent_id)
+        if upstream_vec is not None and self._graph._edges.get(agent_id):
+            signal_pressures["uncertainty"] = max(
+                signal_pressures["uncertainty"], self._graph.damping * upstream_vec.uncertainty
+            )
+            signal_pressures["drift"] = max(
+                signal_pressures["drift"], self._graph.damping * upstream_vec.drift
+            )
+            signal_pressures["error_rate"] = max(
+                signal_pressures["error_rate"], self._graph.damping * upstream_vec.error_rate
+            )
+            signal_pressures["cost"] = max(
+                signal_pressures["cost"], self._graph.damping * upstream_vec.cost
+            )
+
+        # 6b. Aggregate with adjusted weights
         internal = compute_aggregate_pressure(signal_pressures, drift_mode, weights=adjusted_weights)
 
-
+        # Build pressure vector from (possibly upstream-boosted) signal pressures
+        pressure_vector = PressureVector(
+            uncertainty=signal_pressures.get("uncertainty", 0.0),
+            drift=signal_pressures.get("drift", 0.0),
+            error_rate=signal_pressures.get("error_rate", 0.0),
+            cost=signal_pressures.get("cost", 0.0),
+        )
 
         # 7. Budget
         spend_kwargs = {}
@@ -421,8 +447,9 @@ class SOMAEngine:
         if spend_kwargs:
             self._budget.spend(**spend_kwargs)
 
-        # 8. Graph
+        # 8. Graph — set both scalar and vector, then propagate
         self._graph.set_internal_pressure(agent_id, internal)
+        self._graph.set_internal_pressure_vector(agent_id, pressure_vector)
         self._graph.propagate()
         effective = self._graph.get_effective_pressure(agent_id)
 
@@ -432,6 +459,9 @@ class SOMAEngine:
             effective = 0.0
             self._graph.set_internal_pressure(agent_id, 0.0)
             self._graph._nodes[agent_id].effective_pressure = 0.0
+            zero_vec = PressureVector()
+            self._graph.set_internal_pressure_vector(agent_id, zero_vec)
+            self._graph._nodes[agent_id].effective_pressure_vector = zero_vec
 
         # 9. Trust
         if uncertainty > 0.5:
@@ -477,6 +507,7 @@ class SOMAEngine:
                 uncertainty_type=uncertainty_type,
             ),
             context_action=context_action,
+            pressure_vector=pressure_vector,
         )
 
         if self._auto_export:

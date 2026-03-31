@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+from soma.types import PressureVector
 
 
 @dataclass
@@ -11,6 +13,8 @@ class _Node:
     agent_id: str
     internal_pressure: float = 0.0
     effective_pressure: float = 0.0
+    internal_pressure_vector: PressureVector | None = None
+    effective_pressure_vector: PressureVector | None = None
 
 
 @dataclass
@@ -66,6 +70,12 @@ class PressureGraph:
     def get_effective_pressure(self, agent_id: str) -> float:
         return self._nodes[agent_id].effective_pressure
 
+    def set_internal_pressure_vector(self, agent_id: str, vector: PressureVector) -> None:
+        self._nodes[agent_id].internal_pressure_vector = vector
+
+    def get_effective_pressure_vector(self, agent_id: str) -> PressureVector | None:
+        return self._nodes[agent_id].effective_pressure_vector
+
     # ------------------------------------------------------------------
     # Graph properties
     # ------------------------------------------------------------------
@@ -85,12 +95,20 @@ class PressureGraph:
     # ------------------------------------------------------------------
 
     def propagate(self, max_iterations: int = 3) -> None:
-        """Multi-pass propagation until stable or max iterations."""
+        """Multi-pass propagation until stable or max iterations.
+
+        Propagates both scalar effective_pressure and per-signal
+        effective_pressure_vector independently. Scalar is used for
+        ResponseMode mapping; vector enables downstream agents to react
+        precisely to the cause of upstream pressure.
+        """
         for _ in range(max_iterations):
             changed = False
             for node_id, node in self._nodes.items():
                 old_effective = node.effective_pressure
                 incoming_edges = self._edges[node_id]
+
+                # --- scalar propagation (unchanged) ---
                 if not incoming_edges:
                     node.effective_pressure = node.internal_pressure
                 else:
@@ -102,10 +120,36 @@ class PressureGraph:
                             e.trust_weight * self._nodes[e.source].effective_pressure
                             for e in incoming_edges
                         ) / total_weight
-
                     node.effective_pressure = max(
                         node.internal_pressure, self.damping * weighted_avg
                     )
+
+                # --- vector propagation ---
+                if node.internal_pressure_vector is not None:
+                    if not incoming_edges:
+                        node.effective_pressure_vector = node.internal_pressure_vector
+                    else:
+                        total_weight = sum(e.trust_weight for e in incoming_edges)
+                        upstream = [
+                            (e.trust_weight, self._nodes[e.source].effective_pressure_vector)
+                            for e in incoming_edges
+                            if self._nodes[e.source].effective_pressure_vector is not None
+                        ]
+                        if not upstream or total_weight == 0.0:
+                            node.effective_pressure_vector = node.internal_pressure_vector
+                        else:
+                            def _blend(own: float, vals: list[tuple[float, float]]) -> float:
+                                weighted_sum = sum(w * v for w, v in vals)
+                                return max(own, self.damping * weighted_sum / total_weight)
+
+                            iv = node.internal_pressure_vector
+                            node.effective_pressure_vector = PressureVector(
+                                uncertainty=_blend(iv.uncertainty, [(w, v.uncertainty) for w, v in upstream]),
+                                drift=_blend(iv.drift, [(w, v.drift) for w, v in upstream]),
+                                error_rate=_blend(iv.error_rate, [(w, v.error_rate) for w, v in upstream]),
+                                cost=_blend(iv.cost, [(w, v.cost) for w, v in upstream]),
+                            )
+
                 if abs(node.effective_pressure - old_effective) > 1e-6:
                     changed = True
             if not changed:
@@ -151,6 +195,8 @@ class PressureGraph:
                     "agent_id": n.agent_id,
                     "internal_pressure": n.internal_pressure,
                     "effective_pressure": n.effective_pressure,
+                    "internal_pressure_vector": n.internal_pressure_vector.to_dict() if n.internal_pressure_vector else None,
+                    "effective_pressure_vector": n.effective_pressure_vector.to_dict() if n.effective_pressure_vector else None,
                 }
                 for n in self._nodes.values()
             ],
@@ -169,6 +215,14 @@ class PressureGraph:
             obj.add_agent(agent_id)
             obj._nodes[agent_id].internal_pressure = node_data.get("internal_pressure", 0.0)
             obj._nodes[agent_id].effective_pressure = node_data.get("effective_pressure", 0.0)
+            if node_data.get("internal_pressure_vector"):
+                obj._nodes[agent_id].internal_pressure_vector = PressureVector.from_dict(
+                    node_data["internal_pressure_vector"]
+                )
+            if node_data.get("effective_pressure_vector"):
+                obj._nodes[agent_id].effective_pressure_vector = PressureVector.from_dict(
+                    node_data["effective_pressure_vector"]
+                )
         for edge_data in data.get("edges", []):
             obj.add_edge(edge_data["source"], edge_data["target"], edge_data.get("trust_weight", 1.0))
         return obj
