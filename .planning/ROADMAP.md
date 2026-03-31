@@ -137,7 +137,11 @@ Plans:
   6. Audit log is zero-config (on by default), rotatable, and parseable by standard tools (jq, etc.)
   7. `pip install soma-ai` installs version 0.5.0+ with all Phase 1-10 features
   8. CONTRIBUTING.md exists with dev setup, test instructions, and contribution guidelines
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 10-01-PLAN.md — Context window tracking + structured audit log (CTX-01, LOG-01)
+- [ ] 10-02-PLAN.md — Real API integration tests (TEST-01)
+- [ ] 10-03-PLAN.md — CONTRIBUTING.md + PyPI publish readiness (DOC-01, PUB-01)
 
 ### Phase 11: Observability
 **Goal**: SOMA emits structured observability data to any OTel collector and produces session reports
