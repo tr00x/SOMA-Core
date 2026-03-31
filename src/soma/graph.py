@@ -32,15 +32,19 @@ class PressureGraph:
         damping: float = 0.6,
         decay_rate: float = 0.05,
         recovery_rate: float = 0.02,
+        snr_threshold: float = 0.5,
     ) -> None:
         self.damping = damping
         self.decay_rate = decay_rate
         self.recovery_rate = recovery_rate
+        self.snr_threshold = snr_threshold
         self._nodes: dict[str, _Node] = {}
         # edges[target] = list of _Edge leading into that target
         self._edges: dict[str, list[_Edge]] = {}
         # outgoing edges keyed by source for trust mutation helpers
         self._out_edges: dict[str, list[_Edge]] = {}
+        # Coordination SNR per agent (updated during propagate)
+        self._snr: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Graph construction
@@ -76,6 +80,10 @@ class PressureGraph:
     def get_effective_pressure_vector(self, agent_id: str) -> PressureVector | None:
         return self._nodes[agent_id].effective_pressure_vector
 
+    def get_snr(self, agent_id: str) -> float:
+        """Coordination SNR for agent: 1.0 if no incoming edges or not yet computed."""
+        return self._snr.get(agent_id, 1.0)
+
     # ------------------------------------------------------------------
     # Graph properties
     # ------------------------------------------------------------------
@@ -101,6 +109,12 @@ class PressureGraph:
         effective_pressure_vector independently. Scalar is used for
         ResponseMode mapping; vector enables downstream agents to react
         precisely to the cause of upstream pressure.
+
+        Coordination SNR (PRS-02): before propagating into a node, compute the
+        ratio of error-backed incoming pressure to total incoming pressure. If
+        SNR < snr_threshold and incoming pressure is non-trivial (> 0.05), the
+        node is isolated — it uses only its own internal pressure rather than
+        absorbing potentially-noisy upstream signals.
         """
         for _ in range(max_iterations):
             changed = False
@@ -108,47 +122,79 @@ class PressureGraph:
                 old_effective = node.effective_pressure
                 incoming_edges = self._edges[node_id]
 
-                # --- scalar propagation (unchanged) ---
                 if not incoming_edges:
+                    # No incoming edges — use internal pressure, SNR=1.0
                     node.effective_pressure = node.internal_pressure
+                    if node.internal_pressure_vector is not None:
+                        node.effective_pressure_vector = node.internal_pressure_vector
+                    self._snr[node_id] = 1.0
                 else:
                     total_weight = sum(e.trust_weight for e in incoming_edges)
-                    if total_weight == 0.0:
-                        weighted_avg = 0.0
-                    else:
-                        weighted_avg = sum(
+
+                    # --- Coordination SNR (PRS-02) ---
+                    isolated = False
+                    # Only compute SNR when upstream sources have pressure vectors;
+                    # without vectors we cannot distinguish signal from noise.
+                    sources_with_vector = [
+                        e for e in incoming_edges
+                        if self._nodes[e.source].effective_pressure_vector is not None
+                    ]
+                    if total_weight > 0.0 and sources_with_vector:
+                        total_incoming = sum(
                             e.trust_weight * self._nodes[e.source].effective_pressure
                             for e in incoming_edges
                         ) / total_weight
-                    node.effective_pressure = max(
-                        node.internal_pressure, self.damping * weighted_avg
-                    )
-
-                # --- vector propagation ---
-                if node.internal_pressure_vector is not None:
-                    if not incoming_edges:
-                        node.effective_pressure_vector = node.internal_pressure_vector
+                        confirmed_incoming = sum(
+                            e.trust_weight * self._nodes[e.source].effective_pressure_vector.error_rate
+                            for e in sources_with_vector
+                        ) / total_weight
+                        snr = confirmed_incoming / max(total_incoming, 0.001)
+                        self._snr[node_id] = snr
+                        # Only isolate when there is meaningful incoming pressure
+                        if total_incoming > 0.05 and snr < self.snr_threshold:
+                            isolated = True
                     else:
-                        total_weight = sum(e.trust_weight for e in incoming_edges)
-                        upstream = [
-                            (e.trust_weight, self._nodes[e.source].effective_pressure_vector)
-                            for e in incoming_edges
-                            if self._nodes[e.source].effective_pressure_vector is not None
-                        ]
-                        if not upstream or total_weight == 0.0:
-                            node.effective_pressure_vector = node.internal_pressure_vector
-                        else:
-                            def _blend(own: float, vals: list[tuple[float, float]]) -> float:
-                                weighted_sum = sum(w * v for w, v in vals)
-                                return max(own, self.damping * weighted_sum / total_weight)
+                        self._snr[node_id] = 1.0
 
-                            iv = node.internal_pressure_vector
-                            node.effective_pressure_vector = PressureVector(
-                                uncertainty=_blend(iv.uncertainty, [(w, v.uncertainty) for w, v in upstream]),
-                                drift=_blend(iv.drift, [(w, v.drift) for w, v in upstream]),
-                                error_rate=_blend(iv.error_rate, [(w, v.error_rate) for w, v in upstream]),
-                                cost=_blend(iv.cost, [(w, v.cost) for w, v in upstream]),
-                            )
+                    if isolated:
+                        # Isolation: use internal pressure only; skip upstream influence
+                        node.effective_pressure = node.internal_pressure
+                        if node.internal_pressure_vector is not None:
+                            node.effective_pressure_vector = node.internal_pressure_vector
+                    else:
+                        # --- scalar propagation ---
+                        if total_weight == 0.0:
+                            weighted_avg = 0.0
+                        else:
+                            weighted_avg = sum(
+                                e.trust_weight * self._nodes[e.source].effective_pressure
+                                for e in incoming_edges
+                            ) / total_weight
+                        node.effective_pressure = max(
+                            node.internal_pressure, self.damping * weighted_avg
+                        )
+
+                        # --- vector propagation ---
+                        if node.internal_pressure_vector is not None:
+                            upstream = [
+                                (e.trust_weight, self._nodes[e.source].effective_pressure_vector)
+                                for e in incoming_edges
+                                if self._nodes[e.source].effective_pressure_vector is not None
+                            ]
+                            if not upstream or total_weight == 0.0:
+                                node.effective_pressure_vector = node.internal_pressure_vector
+                            else:
+                                def _blend(own: float, vals: list[tuple[float, float]]) -> float:
+                                    weighted_sum = sum(w * v for w, v in vals)
+                                    return max(own, self.damping * weighted_sum / total_weight)
+
+                                iv = node.internal_pressure_vector
+                                node.effective_pressure_vector = PressureVector(
+                                    uncertainty=_blend(iv.uncertainty, [(w, v.uncertainty) for w, v in upstream]),
+                                    drift=_blend(iv.drift, [(w, v.drift) for w, v in upstream]),
+                                    error_rate=_blend(iv.error_rate, [(w, v.error_rate) for w, v in upstream]),
+                                    cost=_blend(iv.cost, [(w, v.cost) for w, v in upstream]),
+                                )
 
                 if abs(node.effective_pressure - old_effective) > 1e-6:
                     changed = True
@@ -190,6 +236,7 @@ class PressureGraph:
             "damping": self.damping,
             "decay_rate": self.decay_rate,
             "recovery_rate": self.recovery_rate,
+            "snr_threshold": self.snr_threshold,
             "nodes": [
                 {
                     "agent_id": n.agent_id,
@@ -209,6 +256,7 @@ class PressureGraph:
             damping=data.get("damping", 0.6),
             decay_rate=data.get("decay_rate", 0.05),
             recovery_rate=data.get("recovery_rate", 0.02),
+            snr_threshold=data.get("snr_threshold", 0.5),
         )
         for node_data in data.get("nodes", []):
             agent_id = node_data["agent_id"]

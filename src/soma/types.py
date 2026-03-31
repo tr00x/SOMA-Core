@@ -120,6 +120,7 @@ class VitalsSnapshot:
     goal_coherence: float | None = None   # None during warmup (< 5 actions)
     baseline_integrity: bool = True       # True = baseline is healthy
     uncertainty_type: str | None = None  # "epistemic", "aleatoric", or None
+    task_complexity: float | None = None  # None until first action sets it
 
 
 @dataclass

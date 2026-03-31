@@ -299,6 +299,65 @@ def compute_baseline_integrity(
 
 
 # ---------------------------------------------------------------------------
+# Task complexity estimation
+# ---------------------------------------------------------------------------
+
+_AMBIGUITY_MARKERS = frozenset({
+    "maybe", "might", "could", "unclear", "unsure", "uncertain", "depends",
+    "possibly", "perhaps", "ambiguous", "complex", "complicated", "not sure",
+})
+
+_DEPENDENCY_MARKERS = (
+    "depends on", "requires", "need to", "need a", "first ", "after ",
+    "before ", "prerequisite", "blocked by", "waiting for",
+)
+
+
+def estimate_task_complexity(text: str, config: dict[str, float] | None = None) -> float:
+    """Estimate task complexity as a float in [0, 1].
+
+    Components (weighted sum):
+      - length_score: log-normalized character count (reference: 2000 chars)
+      - ambiguity_score: density of hedging/ambiguity words
+      - dependency_score: count of dependency indicator phrases
+
+    Config keys (with defaults):
+        complexity_weight_length: 0.40
+        complexity_weight_ambiguity: 0.35
+        complexity_weight_dependency: 0.25
+    """
+    if not text:
+        return 0.0
+
+    cfg = config or {}
+
+    # Length component: log-normalize, reference = 2000 chars
+    length_score = min(1.0, math.log1p(len(text)) / math.log1p(2000))
+
+    # Ambiguity component: fraction of words that are ambiguity markers × scale
+    words = text.lower().split()
+    if words:
+        ambiguity_hits = sum(1 for w in words if w.rstrip(".,!?;:") in _AMBIGUITY_MARKERS)
+        # Also count multi-word markers
+        text_lower = text.lower()
+        ambiguity_hits += sum(1 for m in ("not sure", "not clear") if m in text_lower)
+        ambiguity_score = min(1.0, ambiguity_hits / max(len(words), 1) * 20)
+    else:
+        ambiguity_score = 0.0
+
+    # Dependency component: count distinct dependency marker occurrences
+    text_lower = text.lower()
+    dep_count = sum(1 for m in _DEPENDENCY_MARKERS if m in text_lower)
+    dependency_score = min(1.0, dep_count / 5.0)
+
+    w_len = cfg.get("complexity_weight_length", 0.40)
+    w_amb = cfg.get("complexity_weight_ambiguity", 0.35)
+    w_dep = cfg.get("complexity_weight_dependency", 0.25)
+
+    return min(1.0, max(0.0, w_len * length_score + w_amb * ambiguity_score + w_dep * dependency_score))
+
+
+# ---------------------------------------------------------------------------
 # Drift
 # ---------------------------------------------------------------------------
 

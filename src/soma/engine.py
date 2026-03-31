@@ -13,7 +13,7 @@ from soma.vitals import (
     compute_uncertainty, compute_drift, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
     sigmoid_clamp, compute_goal_coherence, compute_baseline_integrity,
-    classify_uncertainty,
+    classify_uncertainty, estimate_task_complexity,
 )
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
@@ -41,7 +41,7 @@ class ActionResult:
 class _AgentState:
     __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
                  "baseline_vector", "action_count", "_last_active",
-                 "initial_task_vector", "initial_known_tools")
+                 "initial_task_vector", "initial_known_tools", "task_complexity_score")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -54,6 +54,7 @@ class _AgentState:
         self._last_active: float = time.time()
         self.initial_task_vector: list[float] | None = None
         self.initial_known_tools: list[str] | None = None
+        self.task_complexity_score: float | None = None
 
 
 class SOMAEngine:
@@ -247,8 +248,19 @@ class SOMAEngine:
         s._last_active = time.time()
         actions = list(s.ring_buffer)
 
-        # Capture initial task signature after warmup window (per D-01)
+        # Capture task complexity on first action (PRS-03)
         vitals_cfg = self._vitals_config or {}
+        if s.action_count == 1 and s.task_complexity_score is None:
+            complexity_cfg = {
+                k[len("complexity_"):]: v
+                for k, v in vitals_cfg.items()
+                if k.startswith("complexity_")
+            }
+            s.task_complexity_score = estimate_task_complexity(
+                action.output_text, complexity_cfg or None
+            )
+
+        # Capture initial task signature after warmup window (per D-01)
         warmup_actions = vitals_cfg.get("goal_coherence_warmup_actions", 5)
         if s.action_count == warmup_actions and s.initial_task_vector is None:
             s.initial_known_tools = list(s.known_tools)  # snapshot, not reference
@@ -469,9 +481,19 @@ class SOMAEngine:
         else:
             self._graph.recover_trust(agent_id, uncertainty)
 
-        # 10. Mode (replaces old Ladder evaluation)
+        # 10. Mode — apply task-complexity threshold adjustment (PRS-03)
+        # High complexity lowers thresholds so escalation happens faster.
+        effective_thresholds = dict(self._custom_thresholds) if self._custom_thresholds else {}
+        if s.task_complexity_score is not None and s.task_complexity_score > 0.5:
+            # Complexity in (0.5, 1.0] → reduce thresholds by up to 0.20
+            reduction = 0.4 * (s.task_complexity_score - 0.5)  # up to 0.20
+            from soma.guidance import DEFAULT_THRESHOLDS
+            for key in ("guide", "warn", "block"):
+                base = effective_thresholds.get(key, DEFAULT_THRESHOLDS[key])
+                effective_thresholds[key] = max(0.10, base - reduction)
+
         old_mode = s.mode
-        new_mode = pressure_to_mode(effective, self._custom_thresholds)
+        new_mode = pressure_to_mode(effective, effective_thresholds or None)
         s.mode = new_mode
 
         # 11. Events + Learning
@@ -505,6 +527,7 @@ class SOMAEngine:
                 goal_coherence=goal_coherence,
                 baseline_integrity=baseline_integrity,
                 uncertainty_type=uncertainty_type,
+                task_complexity=s.task_complexity_score,
             ),
             context_action=context_action,
             pressure_vector=pressure_vector,
