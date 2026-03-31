@@ -35,7 +35,7 @@ SOMA v0.5.0 is a fully operational behavioral monitoring system with 735 tests, 
 **Milestone Goal:** Remove every blocker preventing real production usage. Async/streaming support, real API validation, structured logging, and PyPI publish.
 
 - [ ] **Phase 9: Async + Streaming** - Async client wrapper + streaming interception
-- [ ] **Phase 10: Production Hardening** - Real API testing, context window tracking, structured audit log, PyPI 0.5.0
+- [x] **Phase 10: Production Hardening** - Real API testing, context window tracking, structured audit log, PyPI 0.5.0 (completed 2026-03-31)
 
 ### 📋 Milestone 4 — Observability
 
@@ -137,11 +137,12 @@ Plans:
   6. Audit log is zero-config (on by default), rotatable, and parseable by standard tools (jq, etc.)
   7. `pip install soma-ai` installs version 0.5.0+ with all Phase 1-10 features
   8. CONTRIBUTING.md exists with dev setup, test instructions, and contribution guidelines
-**Plans:** 1/3 plans executed
+**Plans:** 4 plans (3 complete, 1 gap closure)
 Plans:
 - [x] 10-01-PLAN.md — Context window tracking + structured audit log (CTX-01, LOG-01)
-- [ ] 10-02-PLAN.md — Real API integration tests (TEST-01)
-- [ ] 10-03-PLAN.md — CONTRIBUTING.md + PyPI publish readiness (DOC-01, PUB-01)
+- [x] 10-02-PLAN.md — Real API integration tests (TEST-01)
+- [x] 10-03-PLAN.md — CONTRIBUTING.md + PyPI publish readiness (DOC-01, PUB-01)
+- [ ] 10-04-PLAN.md — Gap closure: API test verification + PyPI publish (TEST-01, PUB-01)
 
 ### Phase 11: Observability
 **Goal**: SOMA emits structured observability data to any OTel collector and produces session reports
