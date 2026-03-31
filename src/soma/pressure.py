@@ -11,6 +11,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "error_rate": 1.5,
     "cost": 1.0,
     "token_usage": 0.8,
+    "goal_coherence": 1.5,
 }
 
 

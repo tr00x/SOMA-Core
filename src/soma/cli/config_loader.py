@@ -36,11 +36,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "error_rate": 1.5,
         "cost": 1.0,
         "token_usage": 0.8,
+        "goal_coherence": 1.5,
     },
     "graph": {
         "damping": 0.6,
         "trust_decay_rate": 0.05,
         "trust_recovery_rate": 0.02,
+    },
+    "vitals": {
+        "goal_coherence_threshold": 0.35,
+        "goal_coherence_warmup_actions": 5,
+        "baseline_integrity_error_ratio": 2.0,
+        "baseline_integrity_min_error_rate": 0.20,
+        "baseline_integrity_min_samples": 10,
     },
 }
 
@@ -93,11 +101,19 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
         "error_rate": 2.5,
         "cost": 1.0,
         "token_usage": 0.6,
+        "goal_coherence": 1.5,
     },
     "graph": {
         "damping": 0.6,
         "trust_decay_rate": 0.03,
         "trust_recovery_rate": 0.04,
+    },
+    "vitals": {
+        "goal_coherence_threshold": 0.35,
+        "goal_coherence_warmup_actions": 5,
+        "baseline_integrity_error_ratio": 2.0,
+        "baseline_integrity_min_error_rate": 0.20,
+        "baseline_integrity_min_samples": 10,
     },
 }
 

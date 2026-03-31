@@ -87,6 +87,8 @@ class VitalsSnapshot:
     token_usage: float = 0.0
     cost: float = 0.0
     error_rate: float = 0.0
+    goal_coherence: float | None = None   # None during warmup (< 5 actions)
+    baseline_integrity: bool = True       # True = baseline is healthy
 
 
 @dataclass

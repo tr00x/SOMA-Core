@@ -1,3 +1,5 @@
+import pytest
+
 from soma.engine import SOMAEngine, ActionResult
 from soma.types import Action, ResponseMode, AutonomyMode
 
@@ -128,3 +130,50 @@ class TestSOMAEngine:
             assert False, "Should not allow mutation"
         except AttributeError:
             pass
+
+
+class TestGoalCoherenceIntegration:
+    def test_goal_coherence_none_during_warmup(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        for _ in range(3):
+            r = e.record_action("a", Action(tool_name="Bash", output_text="ok"))
+        assert r.vitals.goal_coherence is None
+
+    @pytest.mark.xfail(reason="Implementation in Plan 02")
+    def test_goal_coherence_computed_after_warmup(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        for _ in range(6):
+            r = e.record_action("a", Action(tool_name="Bash", output_text="running bash command"))
+        assert r.vitals.goal_coherence is not None
+        assert r.vitals.goal_coherence > 0.5
+
+
+class TestBaselineIntegrityIntegration:
+    def test_baseline_integrity_true_by_default(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        for _ in range(5):
+            r = e.record_action("a", Action(tool_name="Bash", output_text="ok"))
+        assert r.vitals.baseline_integrity is True
+
+    @pytest.mark.xfail(reason="Implementation in Plan 03")
+    def test_baseline_integrity_false_after_corruption(self):
+        from unittest.mock import patch, MagicMock
+        e = SOMAEngine(budget={"tokens": 100000})
+        e._vitals_config = {
+            "baseline_integrity_error_ratio": 2.0,
+            "baseline_integrity_min_error_rate": 0.20,
+            "baseline_integrity_min_samples": 10,
+        }
+        e.register_agent("a")
+        mock_fp = MagicMock()
+        mock_fp.avg_error_rate = 0.05
+        mock_fp.sample_count = 20
+        mock_fp_engine = MagicMock()
+        mock_fp_engine.get.return_value = mock_fp
+        with patch("soma.state.get_fingerprint_engine", return_value=mock_fp_engine):
+            for _ in range(25):
+                r = e.record_action("a", Action(tool_name="Bash", output_text="error", error=True))
+        assert r.vitals.baseline_integrity is False

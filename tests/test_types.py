@@ -41,3 +41,15 @@ def test_vitals_snapshot_defaults():
     v = VitalsSnapshot()
     assert v.uncertainty == 0.0
     assert v.drift_mode == DriftMode.INFORMATIONAL
+
+
+class TestVitalsAccuracyFields:
+    def test_goal_coherence_field_exists(self):
+        snap = VitalsSnapshot(goal_coherence=0.8)
+        assert snap.goal_coherence == 0.8
+        assert VitalsSnapshot().goal_coherence is None
+
+    def test_baseline_integrity_field_exists(self):
+        snap = VitalsSnapshot(baseline_integrity=False)
+        assert snap.baseline_integrity is False
+        assert VitalsSnapshot().baseline_integrity is True
