@@ -124,12 +124,12 @@ from soma.sdk.langchain import SomaLangChainCallback
 chain.invoke(input, config={"callbacks": [SomaLangChainCallback(engine, "agent")]})
 
 # CrewAI
-from soma.sdk.crewai import SomaCrewMiddleware
-crew = SomaCrewMiddleware(engine, "crew-agent").wrap(crew)
+from soma.sdk.crewai import SomaCrewObserver
+SomaCrewObserver(engine).attach(crew)
 
 # AutoGen
-from soma.sdk.autogen import SomaAutoGenObserver
-agent.register_observer(SomaAutoGenObserver(engine, "autogen-agent"))
+from soma.sdk.autogen import SomaAutoGenMonitor
+SomaAutoGenMonitor(engine).attach(agent)
 ```
 
 </td>
@@ -613,7 +613,7 @@ soma/
 └── cli/               Terminal UI and commands
 ```
 
-59 modules. ~15,000 lines of Python. 3 dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
+59 modules. ~10,000 lines of Python. 3 dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
 
 ---
 
