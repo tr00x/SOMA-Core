@@ -542,3 +542,60 @@ class TestResourceVitals:
             actions_in_window=10,
         )
         assert rv.error_rate == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Goal coherence (VIT-01) — stubs, implemented in Plan 02
+# ---------------------------------------------------------------------------
+
+class TestGoalCoherence:
+    @pytest.mark.xfail(reason="Implementation in Plan 02")
+    def test_coherence_same_task_high(self):
+        from soma.vitals import compute_goal_coherence
+        actions = [Action(tool_name="Bash", output_text=f"output {i}") for i in range(10)]
+        initial_vec = compute_behavior_vector(actions[:5], ["Bash"])
+        result = compute_goal_coherence(actions[5:], initial_vec, ["Bash"])
+        assert result > 0.7
+
+    @pytest.mark.xfail(reason="Implementation in Plan 02")
+    def test_coherence_different_task_low(self):
+        from soma.vitals import compute_goal_coherence
+        bash_actions = [Action(tool_name="Bash", output_text=f"running command {i}") for i in range(5)]
+        write_actions = [Action(tool_name="Write", output_text="x" * 500) for _ in range(5)]
+        initial_vec = compute_behavior_vector(bash_actions, ["Bash"])
+        result = compute_goal_coherence(write_actions, initial_vec, ["Bash"])
+        assert result < 0.35
+
+
+# ---------------------------------------------------------------------------
+# Baseline integrity (VIT-03) — stubs, implemented in Plan 03
+# ---------------------------------------------------------------------------
+
+class TestBaselineIntegrity:
+    @pytest.mark.xfail(reason="Implementation in Plan 03")
+    def test_integrity_intact_when_normal(self):
+        from soma.vitals import compute_baseline_integrity
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.05,
+            current_error_rate=0.05,
+            fingerprint_avg_error_rate=0.04,
+            fingerprint_sample_count=15,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is True
+
+    @pytest.mark.xfail(reason="Implementation in Plan 03")
+    def test_integrity_false_when_corrupted(self):
+        from soma.vitals import compute_baseline_integrity
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.50,
+            current_error_rate=0.40,
+            fingerprint_avg_error_rate=0.05,
+            fingerprint_sample_count=20,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is False

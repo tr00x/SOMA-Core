@@ -38,7 +38,8 @@ class ActionResult:
 
 class _AgentState:
     __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
-                 "baseline_vector", "action_count", "_last_active")
+                 "baseline_vector", "action_count", "_last_active",
+                 "initial_task_vector", "initial_known_tools")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -49,6 +50,8 @@ class _AgentState:
         self.baseline_vector: list[float] | None = None
         self.action_count = 0
         self._last_active: float = time.time()
+        self.initial_task_vector: list[float] | None = None
+        self.initial_known_tools: list[str] | None = None
 
 
 class SOMAEngine:
@@ -72,6 +75,7 @@ class SOMAEngine:
         self._custom_weights = custom_weights
         self._custom_thresholds = custom_thresholds
         self._default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
+        self._vitals_config: dict[str, Any] = {}
 
     @property
     def events(self) -> EventBus:
@@ -208,6 +212,7 @@ class SOMAEngine:
             custom_thresholds=custom_thresholds,
         )
         engine._default_autonomy = default_autonomy
+        engine._vitals_config = config.get("vitals", {})
         return engine
 
     def evict_stale_agents(self, ttl_seconds: float = 3600) -> list[str]:
@@ -404,6 +409,8 @@ class SOMAEngine:
             vitals=VitalsSnapshot(
                 uncertainty=uncertainty, drift=drift, drift_mode=drift_mode,
                 token_usage=rv.token_usage, cost=rv.cost, error_rate=rv.error_rate,
+                goal_coherence=None,      # Computed in Plan 02
+                baseline_integrity=True,  # Computed in Plan 03
             ),
             context_action=context_action,
         )
