@@ -157,6 +157,41 @@ def compute_uncertainty(
 
 
 # ---------------------------------------------------------------------------
+# Uncertainty classification
+# ---------------------------------------------------------------------------
+
+def classify_uncertainty(
+    uncertainty: float,
+    task_entropy: float,
+    config: dict[str, float] | None = None,
+) -> str | None:
+    """Classify uncertainty as epistemic or aleatoric based on task entropy.
+
+    Returns:
+        "epistemic" — agent lacks knowledge (low task entropy + high uncertainty)
+        "aleatoric" — task is inherently ambiguous (high task entropy + high uncertainty)
+        None — uncertainty too low to classify, or entropy in ambiguous zone
+
+    Config keys (with defaults):
+        min_uncertainty: 0.3 — below this, no classification
+        low_entropy_threshold: 0.35 — below this, epistemic
+        high_entropy_threshold: 0.65 — above this, aleatoric
+    """
+    cfg = config or {}
+    min_uncertainty = cfg.get("min_uncertainty", 0.3)
+    low_entropy = cfg.get("low_entropy_threshold", 0.35)
+    high_entropy = cfg.get("high_entropy_threshold", 0.65)
+
+    if uncertainty <= min_uncertainty:
+        return None
+    if task_entropy < low_entropy:
+        return "epistemic"
+    if task_entropy > high_entropy:
+        return "aleatoric"
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Behavior vector
 # ---------------------------------------------------------------------------
 

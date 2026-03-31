@@ -89,6 +89,7 @@ class VitalsSnapshot:
     error_rate: float = 0.0
     goal_coherence: float | None = None   # None during warmup (< 5 actions)
     baseline_integrity: bool = True       # True = baseline is healthy
+    uncertainty_type: str | None = None  # "epistemic", "aleatoric", or None
 
 
 @dataclass

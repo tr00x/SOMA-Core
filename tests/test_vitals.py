@@ -9,6 +9,7 @@ import pytest
 from soma.types import Action, DriftMode
 from soma.vitals import (
     ResourceVitals,
+    classify_uncertainty,
     compute_behavior_vector,
     compute_drift,
     compute_format_deviation,
@@ -663,3 +664,48 @@ class TestBaselineIntegrity:
             min_current_error_rate=0.20,
         )
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Uncertainty classification (VIT-02)
+# ---------------------------------------------------------------------------
+
+class TestUncertaintyClassification:
+    def test_below_min_uncertainty_returns_none(self):
+        assert classify_uncertainty(0.1, 0.2) is None
+        assert classify_uncertainty(0.3, 0.2) is None  # exactly at threshold → None
+
+    def test_high_uncertainty_low_entropy_returns_epistemic(self):
+        assert classify_uncertainty(0.5, 0.2) == "epistemic"
+        assert classify_uncertainty(0.8, 0.1) == "epistemic"
+
+    def test_high_uncertainty_high_entropy_returns_aleatoric(self):
+        assert classify_uncertainty(0.5, 0.8) == "aleatoric"
+        assert classify_uncertainty(0.9, 0.9) == "aleatoric"
+
+    def test_ambiguous_middle_zone_returns_none(self):
+        # entropy between 0.35 and 0.65 — neither epistemic nor aleatoric
+        assert classify_uncertainty(0.5, 0.5) is None
+        assert classify_uncertainty(0.7, 0.4) is None
+
+    def test_custom_config_thresholds(self):
+        cfg = {"min_uncertainty": 0.5, "low_entropy_threshold": 0.2, "high_entropy_threshold": 0.8}
+        # Below new min_uncertainty → None
+        assert classify_uncertainty(0.4, 0.1, cfg) is None
+        # Above new min, below new low_entropy → epistemic
+        assert classify_uncertainty(0.6, 0.1, cfg) == "epistemic"
+        # Above new min, above new high_entropy → aleatoric
+        assert classify_uncertainty(0.6, 0.9, cfg) == "aleatoric"
+        # In new middle zone → None
+        assert classify_uncertainty(0.6, 0.5, cfg) is None
+
+    def test_vitals_snapshot_uncertainty_type_field(self):
+        from soma.types import VitalsSnapshot
+        v = VitalsSnapshot(uncertainty_type="epistemic")
+        assert v.uncertainty_type == "epistemic"
+        v2 = VitalsSnapshot(uncertainty_type="aleatoric")
+        assert v2.uncertainty_type == "aleatoric"
+
+    def test_vitals_snapshot_default_uncertainty_type_is_none(self):
+        from soma.types import VitalsSnapshot
+        assert VitalsSnapshot().uncertainty_type is None
