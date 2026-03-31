@@ -1,5 +1,7 @@
 # SOMA + Claude Code: The Behavioral Safety Layer
 
+*Version 0.5.0*
+
 SOMA integrates with Claude Code as a **closed-loop behavioral control system**. It's not a plugin you install and forget — it's a layer that fundamentally changes how the agent operates by giving it real-time awareness of its own behavior.
 
 ---
@@ -20,12 +22,14 @@ Agent reasons (with SOMA's feedback visible)
     ▼
 PreToolUse ────────► SOMA evaluates guidance: guide, warn, or block
     │                 (only blocks destructive ops at 75%+ pressure)
+    │                 Policy engine rules also evaluated here
     ▼
 Tool executes
     │
     ▼
 PostToolUse ───────► SOMA records action, validates code, computes new pressure
     │                 (py_compile, ruff, error detection, read-context tracking)
+    │                 Classifies uncertainty, updates reliability metrics
     ▼
 Next prompt ───────► cycle repeats
     │
@@ -38,9 +42,9 @@ Stop ──────────────► SOMA saves state, updates fin
 
 | Hook | When | What It Does |
 |:-----|:-----|:------------|
-| **UserPromptSubmit** | Before agent starts thinking | Injects: phase-aware header, pattern findings, actionable metrics, periodic check-ins |
-| **PreToolUse** | Before every tool call | Evaluates guidance threshold. Blocks only destructive ops (rm -rf, git push --force, .env writes) at 75%+ pressure. Never blocks Read/Grep/Glob/Write/Edit/Bash/Agent as tool categories. |
-| **PostToolUse** | After every tool call | Records the action. Validates written code (syntax + lint). Updates pressure, quality. Tracks read-context for smarter warnings. Reports level changes. |
+| **UserPromptSubmit** | Before agent starts thinking | Injects: phase-aware header, pattern findings, actionable metrics, uncertainty type, calibration score, periodic check-ins |
+| **PreToolUse** | Before every tool call | Evaluates guidance threshold and policy engine rules. Blocks only destructive ops (rm -rf, git push --force, .env writes) at 75%+ pressure. Never blocks Read/Grep/Glob/Write/Edit/Bash/Agent as tool categories. |
+| **PostToolUse** | After every tool call | Records the action. Validates written code (syntax + lint). Updates pressure, quality. Classifies uncertainty (epistemic/aleatoric). Computes calibration score. Updates half-life predictor. Tracks read-context for smarter warnings. Reports level changes. |
 | **Stop** | Session ends | Saves engine state for next session. Updates agent fingerprint. Cleans session files. Prints summary. |
 
 ---
@@ -70,6 +74,18 @@ SOMA: #67 [guide] ctx=58% focused
 The agent sees specific, actionable instructions prefixed with `[do]`. Not "pressure is elevated" — but "you wrote 3 files without reading them, here's what to do."
 
 SOMA is read-context aware: if the agent read a file before editing it, the blind-edit warning is suppressed.
+
+### Uncertainty and calibration feedback
+
+```
+SOMA: #35 [guide] ctx=65% focused
+[do] uncertainty=epistemic — read the target files to reduce uncertainty before making changes
+[+] calibration=0.88 — predictions tracking outcomes well
+```
+
+SOMA now tells the agent *why* it's uncertain. Epistemic uncertainty means the agent needs more information — read files, check documentation, ask the user. Aleatoric uncertainty means the situation is inherently unpredictable — add error handling, use retries, plan for failure cases.
+
+The calibration score shows whether the agent's confidence matches reality. When calibration drops, it means the agent is overconfident or underconfident, and SOMA adjusts its guidance accordingly.
 
 ### When things go wrong
 
@@ -115,6 +131,16 @@ Every 15 actions, SOMA provides a brief positive check-in when things are going 
 ### Workflow awareness
 
 SOMA is workflow-aware. During planning phases, mutation warnings are suppressed. During discuss phases, scope drift is less relevant. During execute phases, research paralysis patterns activate. Patterns fire only when they're meaningful for the current workflow context.
+
+---
+
+## Policy Engine Integration
+
+Custom rules defined in YAML or TOML fire alongside SOMA's built-in guidance. This lets teams enforce project-specific constraints beyond the default pressure model.
+
+For example, a team might define rules that warn when cost exceeds 80% even at low pressure, or block operations when drift is extreme regardless of the aggregate pressure level. Policy engine results appear in the agent's context alongside built-in findings — the agent sees them as additional `[do]` items.
+
+Rules are evaluated during PreToolUse (for blocking decisions) and during UserPromptSubmit (for guidance injection). See the [API Reference](api.md#policy-engine) for rule format and configuration.
 
 ---
 
@@ -196,8 +222,6 @@ Switch with `soma mode <name>` or `/soma:config mode <name>`:
 |:--------|:------------|
 | `/soma:status` | Full status: pressure, context, focus, quality report, budget, tips |
 | `/soma:config` | View and change settings live — modes, thresholds, weights, toggles |
-| `/soma:control quarantine` | Force the agent into block threshold immediately |
-| `/soma:control release` | Release from forced block, reset to guide |
 | `/soma:control reset` | Reset behavioral baseline (start learning from scratch) |
 | `/soma:help` | Full command reference with examples |
 
@@ -290,6 +314,11 @@ drift = 1.8
 error_rate = 1.5
 cost = 1.0
 token_usage = 0.8
+goal_coherence = 1.5
+
+[uncertainty]
+epistemic_multiplier = 1.2
+aleatoric_multiplier = 0.8
 ```
 
 ---

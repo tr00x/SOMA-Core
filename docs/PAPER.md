@@ -9,7 +9,7 @@ tr00x@proton.me
 
 ## Abstract
 
-As AI agents transition from single-turn assistants to autonomous multi-step systems capable of executing code, managing files, and orchestrating sub-agents, the absence of runtime behavioral oversight presents critical risks: uncontrolled resource consumption, destructive action loops, silent quality degradation, and cascading failures in multi-agent pipelines. We present SOMA (System for Observational Monitoring of Agents), a deterministic, zero-inference behavioral monitoring framework that computes a unified pressure metric from five behavioral signals, applies graduated guidance through 4 response modes (OBSERVE/GUIDE/WARN/BLOCK), and self-tunes thresholds via an outcome-tracking learning engine. SOMA operates at tool-call granularity with sub-millisecond latency, requires no API calls or network access, and integrates with existing agent frameworks through a thin wrapper layer. We report 524 passing tests across 29 test modules, covering stress scenarios, multi-agent propagation, and full integration with Claude Code. SOMA is open-source (MIT) and available on PyPI as `soma-ai`.
+As AI agents transition from single-turn assistants to autonomous multi-step systems capable of executing code, managing files, and orchestrating sub-agents, the absence of runtime behavioral oversight presents critical risks: uncontrolled resource consumption, destructive action loops, silent quality degradation, and cascading failures in multi-agent pipelines. We present SOMA (System for Observational Monitoring of Agents), a deterministic, zero-inference behavioral monitoring framework that computes a unified pressure metric from five behavioral signals, applies graduated guidance through 4 response modes (OBSERVE/GUIDE/WARN/BLOCK), and self-tunes thresholds via an outcome-tracking learning engine. SOMA operates at tool-call granularity with sub-millisecond latency, requires no API calls or network access, and integrates with existing agent frameworks through a thin wrapper layer. We report 735 passing tests across 31 test modules, covering stress scenarios, multi-agent propagation, and full integration with Claude Code. SOMA is open-source (MIT) and available on PyPI as `soma-ai`.
 
 ---
 
@@ -62,7 +62,15 @@ SOMA addresses this gap. Our contributions are:
 
 5. **A predictive model** combining linear trend analysis with pattern-based boosters that warns of escalation ~5 actions before it occurs.
 
-6. **A complete implementation** with 524 tests, sub-millisecond latency, and production integration with Claude Code (Anthropic).
+6. **An uncertainty classification system** that distinguishes epistemic (knowledge gap) from aleatoric (inherent ambiguity) uncertainty via output entropy analysis.
+
+7. **A reliability metrics module** with calibration scoring and verbal-behavioral divergence detection.
+
+8. **A declarative policy engine** supporting YAML/TOML rule definitions with a guardrail decorator for sync/async functions.
+
+9. **Per-signal vector pressure propagation** through the trust graph, with coordination SNR isolation.
+
+10. **A complete implementation** with 735 tests across 31 test modules, sub-millisecond latency, and production integration with Claude Code (Anthropic).
 
 ---
 
@@ -207,6 +215,19 @@ Z-score normalization can be defeated by baseline corruption: if an agent consis
 - If retry_rate > 0.3: uncertainty pressure ≥ retry_rate
 
 This ensures that objectively pathological behavior cannot be normalized away.
+
+### 4.5 Error-Rate Aggregate Floor
+
+Z-score normalization combined with the weighted-mean formula can be defeated when a single dominant signal is diluted by healthy signals. When error_rate signal pressure er_p ≥ 0.50, SOMA applies an absolute aggregate floor:
+
+floor = 0.40 + 0.40 × (er_p - 0.50) / 0.50
+
+This maps:
+- er_p = 0.50 → floor = 0.40 (GUIDE entry)
+- er_p = 0.75 → floor = 0.60 (WARN entry)
+- er_p = 1.00 → floor = 0.80 (BLOCK entry)
+
+The floor only activates when the error_rate weight is positive, ensuring it can be disabled via custom weight configuration.
 
 ---
 
@@ -444,6 +465,68 @@ The fingerprint requires ≥10 sessions of data before producing divergence scor
 
 ---
 
+### 12.5 Uncertainty Classification
+
+SOMA classifies uncertainty into two categories based on output entropy analysis, enabling differential pressure modulation depending on the nature of the agent's confusion.
+
+**Epistemic uncertainty** (knowledge gap): The agent lacks information needed to proceed. Characterized by low output entropy combined with high uncertainty — the agent repeatedly fails in the same way, producing similar outputs because it is stuck on a specific knowledge deficit. SOMA applies a configurable pressure multiplier (default 1.3x) to epistemic uncertainty, since the agent is unlikely to self-resolve without external input.
+
+**Aleatoric uncertainty** (inherent ambiguity): The task itself is ambiguous and multiple valid approaches exist. Characterized by high output entropy combined with high uncertainty — the agent produces varied outputs because the problem space is genuinely uncertain. SOMA applies a dampening factor (default 0.7x) to aleatoric uncertainty, since elevated variance is expected and does not indicate agent malfunction.
+
+The classification uses entropy thresholds:
+- Low entropy (H_norm < 0.35) + high uncertainty (U > 0.30) → epistemic
+- High entropy (H_norm > 0.65) + high uncertainty (U > 0.30) → aleatoric
+- Otherwise → unclassified (default 1.0x multiplier)
+
+This distinction prevents false escalation when agents explore ambiguous problems while accelerating intervention when agents are genuinely stuck.
+
+---
+
+### 12.6 Reliability Metrics
+
+SOMA tracks two reliability metrics that capture the gap between what an agent signals and what it delivers.
+
+**Calibration score** measures how well an agent's expressed confidence correlates with actual outcomes. When an agent claims high confidence (via output patterns such as "I'm certain", "this will work") but subsequent actions reveal errors, the calibration score decreases. The score is computed as 1 minus the mean absolute difference between expressed confidence and observed success rate over a rolling window. A well-calibrated agent scores above 0.80; a poorly calibrated agent (overconfident or underconfident) scores below 0.50.
+
+**Verbal-behavioral divergence** detects inconsistency between an agent's stated intent and its actual actions. When an agent says "I'll read the file first" but immediately issues a Write, or claims "fixing the bug" while editing unrelated files, the divergence score increases. SOMA computes this by comparing declared action patterns in output text against the actual tool calls that follow. High divergence (> 0.30) triggers an informational finding, and sustained divergence feeds into the uncertainty signal as an additional sub-component.
+
+Together, these metrics provide a trust signal orthogonal to the core five behavioral signals. An agent with high pressure but strong calibration and low divergence is likely struggling with a genuinely hard task; an agent with moderate pressure but poor calibration and high divergence may be silently failing.
+
+---
+
+### 12.7 Policy Engine
+
+SOMA includes a declarative policy engine that allows operators to define behavioral rules in YAML or TOML configuration files rather than writing code. Rules are evaluated on every action and can trigger guidance, warnings, or blocks.
+
+A policy rule consists of:
+- **condition**: A predicate over current vitals, pressure, action properties, or session context (e.g., `error_rate > 0.40`, `tool_name == "Bash"`, `action_count > 100`)
+- **action**: The response when the condition is met — one of `guide`, `warn`, `block`, or `log`
+- **message**: A human-readable explanation injected into the agent's context
+- **cooldown** (optional): Minimum actions between repeated firings of the same rule
+
+Example TOML rule:
+
+```toml
+[[policy.rules]]
+name = "high-error-block"
+condition = "error_rate > 0.60 and tool_name == 'Bash'"
+action = "block"
+message = "Error rate exceeds 60%. Bash blocked until errors stabilize."
+cooldown = 5
+```
+
+The policy engine also provides a `@guardrail` decorator for programmatic integration with sync and async functions. The decorator wraps any function call with SOMA's pressure check and policy evaluation, raising `SomaBlocked` if any active policy rule triggers a block action:
+
+```python
+@soma.guardrail(agent_id="worker")
+async def run_tool(tool_name: str, args: dict) -> str:
+    ...
+```
+
+Policy rules are evaluated after the core pressure pipeline completes, allowing rules to reference computed values (pressure, mode, vitals) as well as raw action properties. Rules do not override the core pressure model — they provide an additional layer of operator-defined constraints.
+
+---
+
 ## 13. Use Cases
 
 ### 13.1 Single Agent: Claude Code
@@ -496,7 +579,7 @@ SOMA's fingerprinting detects behavioral shifts that might indicate prompt injec
 
 ### 14.1 Test Coverage
 
-SOMA includes 524 tests across 29 test modules:
+SOMA includes 735 tests across 31 test modules:
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
@@ -516,8 +599,14 @@ SOMA includes 524 tests across 29 test modules:
 | Stress (16 scenarios) | 16 | Loops, spikes, drain |
 | Claude Code integration (hooks, full workflow) | 72 | End-to-end |
 | CLI, modes, config | 23 | All commands |
+| Uncertainty classification (epistemic/aleatoric) | 12 | Entropy thresholds, multipliers |
+| Reliability metrics (calibration, divergence) | 15 | Scoring, rolling window |
+| Policy engine (rules, evaluation, decorator) | 28 | YAML/TOML parsing, async guardrail |
+| Half-life temporal modeling | 18 | Decay curves, signal aging |
+| Vector pressure propagation | 22 | Per-signal graph traversal |
+| Coordination SNR isolation | 16 | Noise floor, signal extraction |
 
-Full suite runs in 0.70 seconds.
+Full suite runs in ~1 second.
 
 ### 14.2 Stress Scenarios
 
@@ -579,7 +668,7 @@ SOMA has been deployed in active Claude Code development sessions (March 2026). 
 
 **Constitutional AI** (Anthropic, 2022): Training-time alignment technique. Shapes model behavior but provides no runtime guarantees. SOMA operates at runtime, complementing training-time alignment.
 
-**Process control theory** (Åström & Murray, 2008): SOMA's architecture is informed by classical process control, particularly PID control, hysteresis, and adaptive control. The key difference is that SOMA's "plant" (the AI agent) is a black box with unknown dynamics.
+**Process control theory** (Astrom & Murray, 2008): SOMA's architecture is informed by classical process control, particularly PID control, hysteresis, and adaptive control. The key difference is that SOMA's "plant" (the AI agent) is a black box with unknown dynamics.
 
 ---
 
@@ -587,7 +676,7 @@ SOMA has been deployed in active Claude Code development sessions (March 2026). 
 
 SOMA demonstrates that deterministic behavioral monitoring of AI agents is both feasible and practical. By computing a unified pressure metric from five behavioral signals, applying graduated guidance through 4 response modes, and self-tuning through outcome-based learning, SOMA provides runtime safety guarantees that complement existing alignment and guardrail approaches.
 
-The system is fully operational, comprehensively tested (524 tests, <1 second), and deployed in production with Claude Code. It requires no API calls, no network access, and no inference — just arithmetic on bounded numbers, executed in sub-millisecond time.
+The system is fully operational, comprehensively tested (735 tests across 31 test modules, ~1 second), and deployed in production with Claude Code. It requires no API calls, no network access, and no inference — just arithmetic on bounded numbers, executed in sub-millisecond time.
 
 As AI agents become more autonomous and more widely deployed, the gap between "aligned at training time" and "safe at runtime" will widen. SOMA is our contribution to closing that gap.
 
@@ -607,7 +696,7 @@ As AI agents become more autonomous and more widely deployed, the gap between "a
 
 [6] Shewhart, W.A. "Economic Control of Quality of Manufactured Product." Van Nostrand, 1931.
 
-[7] Åström, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008.
+[7] Astrom, K.J. & Murray, R.M. "Feedback Systems: An Introduction for Scientists and Engineers." Princeton University Press, 2008.
 
 [8] Bai, Y. et al. "Constitutional AI: Harmlessness from AI Feedback." arXiv:2212.08073, 2022.
 

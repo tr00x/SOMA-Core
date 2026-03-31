@@ -1,5 +1,7 @@
 # SOMA Hook Reference
 
+*Version 0.5.0*
+
 ## Overview
 
 SOMA integrates with Claude Code through 4 hooks. Each runs as a subprocess:
@@ -16,7 +18,7 @@ All hooks are installed by `soma setup-claude` into `~/.claude/settings.json`.
 ## PreToolUse
 
 **When**: Before every tool call.
-**Purpose**: Evaluate guidance mode and block destructive ops at high pressure.
+**Purpose**: Evaluate guidance mode, check policy engine rules, and block destructive ops at high pressure.
 **Exit code**: 0 = allow, 2 = block.
 
 | Mode | Behavior |
@@ -33,7 +35,7 @@ When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p
 ## PostToolUse
 
 **When**: After every tool call completes.
-**Purpose**: Record action, validate code, compute pressure, predict.
+**Purpose**: Record action, validate code, compute pressure, classify uncertainty, update reliability metrics, update half-life predictor, and generate predictions.
 
 ### Pipeline
 
@@ -41,18 +43,23 @@ When blocking, prints to stderr: `SOMA blocked: destructive command: rm -rf / (p
 2. Append to action log (~/.soma/action_log.json, max 20)
 3. Update task tracker (phase detection, scope tracking)
 4. Create Action and feed to engine
-5. Validate written files:
+5. Classify uncertainty (epistemic vs aleatoric) based on action context and task entropy
+6. Validate written files:
    - Python: py_compile syntax check
    - Python: ruff check --select F (Pyflakes errors)
    - JS: node --check syntax
-6. Track quality (syntax errors, lint issues, bash failures)
-7. Report to stderr:
+7. Track quality (syntax errors, lint issues, bash failures)
+8. Update reliability metrics (calibration score, verbal-behavioral divergence)
+9. Update half-life predictor with success/failure outcome
+10. Report to stderr:
    - Mode transitions: `SOMA: OBSERVE -> GUIDE (p=28%) -- error cascade: 3 consecutive Bash failures`
    - Pressure spikes: `SOMA: pressure +15% (error_rate=0.30) after Bash`
    - Error rate: `SOMA: error_rate=40% after Bash failure`
    - Predictions: `SOMA: predicted escalation in ~5 actions (p=55%, error_streak)`
    - Syntax errors: `SOMA: syntax error in foo.py: SyntaxError: unexpected EOF`
-8. Save all state
+   - Uncertainty type: `SOMA: uncertainty=epistemic -- read relevant files before proceeding`
+   - Calibration: `SOMA: calibration=0.42 -- agent confidence diverging from outcomes`
+11. Save all state
 
 ### Configurable features
 
@@ -75,8 +82,8 @@ The notification module (`soma.notification` or equivalent) is a thin formatter.
 
 SOMA is always present after 3 actions. Findings are prioritized:
 - **Priority 0** (critical): Mode warnings (WARN/BLOCK), quality grade D/F
-- **Priority 1** (important): Predictions, patterns, scope drift, RCA
-- **Priority 2** (informational): Fingerprint divergence, positive patterns
+- **Priority 1** (important): Predictions, patterns, scope drift, RCA, uncertainty classification, calibration alerts
+- **Priority 2** (informational): Fingerprint divergence, positive patterns, half-life trend
 
 Notifications use the `[do]` prefix for actionable items and `[+]` for positive observations. The current phase appears in the header.
 
@@ -120,6 +127,12 @@ SOMA warn p=65% #30 debug
 ```
 SOMA observe p=8% #22 implement
 [+] read-before-edit maintained (4 pairs)
+```
+
+```
+SOMA guide p=35% #18 implement
+[do] uncertainty=epistemic -- read target files before making changes
+[+] calibration=0.91 -- predictions tracking well
 ```
 
 ### Silence conditions

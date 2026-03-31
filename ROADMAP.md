@@ -12,7 +12,7 @@ Not because we want lock-in. Because agents without oversight are dangerous, exp
 
 ---
 
-## Current Version: 0.4.11
+## Current Version: 0.5.0
 
 ---
 
@@ -80,7 +80,7 @@ SOMA shifts from progressive blocking (6 levels) to a guidance model (4 modes). 
 
 ## Milestone 1.8: Core Polish ✓
 
-*Shipped March 2026 — v0.4.1–0.4.11*
+*Shipped March 2026 — v0.4.1–0.4.12*
 
 Hardening the guidance system for real-world use. False positive reduction, actionable feedback, layer-agnostic architecture.
 
@@ -100,7 +100,27 @@ Hardening the guidance system for real-world use. False positive reduction, acti
 
 ---
 
-## Milestone 2: Real-World Ready
+## Milestone 2: Agent Intelligence ✓
+
+*Shipped March 2026 — v0.5.0*
+
+8 phases of behavioral analysis capabilities. SOMA gains uncertainty classification, vector pressure propagation, temporal modeling, reliability metrics, a policy engine, framework adapters, and a TypeScript SDK.
+
+| Deliverable | Description | Status |
+|:------------|:------------|:-------|
+| Phase 01: Vitals Accuracy | VIT-01 goal coherence, VIT-02 uncertainty classification, VIT-03 baseline integrity | Done |
+| Phase 02: Uncertainty Classification | Epistemic/aleatoric classification wired into engine pipeline | Done |
+| Phase 03: Vector Pressure Propagation | PressureVector per-signal propagation through trust graph | Done |
+| Phase 04: Coordination Intelligence | SNR isolation, task complexity estimation | Done |
+| Phase 05: Temporal Half-Life | Agent degradation modeling with exponential decay | Done |
+| Phase 06: Reliability Metrics | Calibration scoring, verbal-behavioral divergence detection | Done |
+| Phase 07: Universal Python SDK | Framework adapters for LangChain, CrewAI, AutoGen | Done |
+| Phase 08: Policy Engine + TypeScript | Declarative policy rules, guardrail decorator, TypeScript SDK | Done |
+| Test suite | 735 tests, all passing | Done |
+
+---
+
+## Milestone 3: Real-World Ready
 
 *Target: April 2026*
 
@@ -119,7 +139,7 @@ Make SOMA work seamlessly in production. No rough edges. Install, configure, for
 
 ---
 
-## Milestone 3: Ecosystem
+## Milestone 4: Ecosystem
 
 *Target: May 2026*
 
@@ -138,7 +158,7 @@ Framework integrations. Community layers. SOMA works with everything.
 
 ---
 
-## Milestone 4: Intelligence
+## Milestone 5: Intelligence
 
 *Target: June–July 2026*
 
@@ -152,7 +172,7 @@ SOMA stops being reactive and starts being predictive.
 
 ---
 
-## Milestone 5: Platform
+## Milestone 6: Platform
 
 *Target: Q3–Q4 2026*
 
@@ -169,7 +189,7 @@ SOMA becomes a platform. Web dashboard. Teams. Alerting.
 
 ---
 
-## Milestone 6: Research
+## Milestone 7: Research
 
 *Target: 2027*
 
@@ -192,7 +212,7 @@ Every milestone has tasks marked [`help wanted`](https://github.com/tr00x/SOMA-C
 
 **Researchers:** If you work on agent reliability, behavioral analysis, or multi-agent systems — open an issue or reach out.
 
-**Companies:** Running AI agents in production? Want early access to Milestone 4+ features? Open an issue with your use case.
+**Companies:** Running AI agents in production? Want early access to Milestone 5+ features? Open an issue with your use case.
 
 ---
 
@@ -201,7 +221,7 @@ Every milestone has tasks marked [`help wanted`](https://github.com/tr00x/SOMA-C
 These don't change regardless of milestone:
 
 1. **Controller, not logger.** SOMA intervenes. It doesn't just record.
-2. **Behavioral signals first.** Uncertainty and drift matter more than tokens and cost.
+2. **Behavioral signals first.** Uncertainty classification, reliability metrics, and drift matter more than tokens and cost.
 3. **One-line integration.** `soma.wrap(client)` and you're done. Complexity is opt-in.
 4. **Open core.** The engine is MIT. Always. Community layers welcome.
 5. **Math you can verify.** Every formula is documented. Every constant has a source file.
