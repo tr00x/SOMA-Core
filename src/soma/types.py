@@ -79,6 +79,36 @@ class Action:
 
 
 @dataclass(frozen=True, slots=True)
+class PressureVector:
+    """Per-signal pressure components propagated through the trust graph.
+
+    Allows downstream agents to react precisely to the *cause* of upstream
+    pressure rather than only to the aggregate scalar.
+    """
+    uncertainty: float = 0.0
+    drift: float = 0.0
+    error_rate: float = 0.0
+    cost: float = 0.0
+
+    def to_dict(self) -> "dict[str, float]":
+        return {
+            "uncertainty": self.uncertainty,
+            "drift": self.drift,
+            "error_rate": self.error_rate,
+            "cost": self.cost,
+        }
+
+    @classmethod
+    def from_dict(cls, d: "dict[str, float]") -> "PressureVector":
+        return cls(
+            uncertainty=d.get("uncertainty", 0.0),
+            drift=d.get("drift", 0.0),
+            error_rate=d.get("error_rate", 0.0),
+            cost=d.get("cost", 0.0),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class VitalsSnapshot:
     """All vitals at a point in time."""
     uncertainty: float = 0.0
