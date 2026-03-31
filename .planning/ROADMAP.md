@@ -49,7 +49,12 @@ SOMA v0.4.12 is a working behavioral monitoring system for Claude Code. This roa
   2. An agent that drifts to an unrelated task registers goal coherence below the threshold while behavioral drift stays normal
   3. `VitalsSnapshot` includes a `baseline_integrity` flag that activates when baseline trajectory diverges from historical fingerprint
   4. An agent running 20+ high-error actions that has adapted its baseline triggers baseline integrity failure, distinguishable from legitimate behavioral change
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Wave 0: Extend types, config, state slots, pressure weights + failing test stubs
+- [ ] 01-02-PLAN.md — Wave 1: Goal coherence scoring (VIT-01) — compute_goal_coherence + engine wiring
+- [ ] 01-03-PLAN.md — Wave 2: Baseline integrity check (VIT-03) — compute_baseline_integrity + engine wiring
 
 ### Phase 2: Uncertainty Classification
 **Goal**: SOMA classifies uncertainty as epistemic (agent doesn't know) or aleatoric (task is inherently ambiguous), triggering different guidance responses for each
@@ -165,11 +170,11 @@ SOMA v0.4.12 is a working behavioral monitoring system for Claude Code. This roa
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11
+**Execution Order:** Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Vitals Accuracy | M1 | 0/TBD | Not started | - |
+| 1. Vitals Accuracy | M1 | 0/3 | Planning complete | - |
 | 2. Uncertainty Classification | M1 | 0/TBD | Not started | - |
 | 3. Vector Pressure | M1 | 0/TBD | Not started | - |
 | 4. Coordination Intelligence | M1 | 0/TBD | Not started | - |
