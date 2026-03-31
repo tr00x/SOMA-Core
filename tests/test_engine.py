@@ -370,3 +370,109 @@ class TestPressureVectorIntegration:
         assert vec_a is not None
         assert abs(vec_a.error_rate - 0.6) < 1e-6
         assert abs(vec_a.uncertainty - 0.4) < 1e-6
+
+
+class TestCoordinationSNRIntegration:
+    def test_snr_is_one_for_isolated_agent(self):
+        """Agent with no incoming edges always has SNR=1.0."""
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("solo")
+        e.record_action("solo", Action(tool_name="Bash", output_text="ok", token_count=50))
+        assert e._graph.get_snr("solo") == 1.0
+
+    def test_snr_high_when_upstream_errors_corroborate_pressure(self):
+        """SNR approaches 1.0 when upstream pressure is backed by real errors."""
+        e = SOMAEngine(budget={"tokens": 500000})
+        e.register_agent("erroring")
+        e.register_agent("watcher")
+        e.add_edge("erroring", "watcher", trust_weight=1.0)
+
+        # Drive erroring agent past grace period with errors
+        for _ in range(20):
+            e.record_action("erroring", Action(
+                tool_name="Bash", output_text="error",
+                token_count=50, error=True, retried=True,
+            ))
+
+        e.record_action("watcher", Action(tool_name="search", output_text="ok", token_count=50))
+        # SNR > 0.5 because upstream pressure is error-backed
+        assert e._graph.get_snr("watcher") > 0.5
+
+    def test_snr_low_isolates_downstream_from_non_error_pressure(self):
+        """When upstream pressure has no error component, SNR is low → downstream isolated."""
+        from soma.graph import PressureGraph
+
+        g = PressureGraph(snr_threshold=0.5)
+        g.add_agent("noisy")
+        g.add_agent("clean")
+        g.add_edge("noisy", "clean", trust=1.0)
+
+        # noisy has high pressure but zero error_rate in vector (drift only)
+        g.set_internal_pressure("noisy", 0.8)
+        g.set_internal_pressure_vector("noisy", PressureVector(
+            uncertainty=0.0, drift=0.8, error_rate=0.0, cost=0.0
+        ))
+        g.set_internal_pressure("clean", 0.0)
+        g.set_internal_pressure_vector("clean", PressureVector())
+        g.propagate()
+
+        # clean should be isolated: effective_pressure = internal = 0.0
+        assert g.get_effective_pressure("clean") == pytest.approx(0.0)
+        assert g.get_snr("clean") < 0.5
+
+
+class TestTaskComplexityIntegration:
+    def test_task_complexity_none_before_first_action(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        assert e._agents["a"].task_complexity_score is None
+
+    def test_task_complexity_set_after_first_action(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        r = e.record_action("a", Action(tool_name="Bash", output_text="ok", token_count=50))
+        assert r.vitals.task_complexity is not None
+        assert 0.0 <= r.vitals.task_complexity <= 1.0
+
+    def test_simple_output_yields_low_complexity(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        r = e.record_action("a", Action(tool_name="Bash", output_text="ok", token_count=10))
+        assert r.vitals.task_complexity < 0.5
+
+    def test_complex_output_yields_higher_complexity(self):
+        e = SOMAEngine(budget={"tokens": 100000})
+        e.register_agent("a")
+        complex_text = (
+            "This task depends on completing the authentication module first. "
+            "It might require refactoring the database layer, which is unclear. "
+            "The implementation possibly requires changes across multiple services, "
+            "before we can proceed with deployment. This is complex and depends on "
+            "approval from the security team. " * 5
+        )
+        r = e.record_action("a", Action(tool_name="Bash", output_text=complex_text, token_count=100))
+        assert r.vitals.task_complexity > 0.3
+
+    def test_high_complexity_lowers_effective_thresholds(self):
+        """High complexity should cause earlier mode escalation."""
+        # Agent A: simple first action (low complexity), then errors
+        e_simple = SOMAEngine(budget={"tokens": 100000})
+        e_simple.register_agent("a")
+        e_simple.record_action("a", Action(tool_name="Bash", output_text="ok", token_count=10))
+
+        # Agent B: complex first action, then same errors
+        e_complex = SOMAEngine(budget={"tokens": 100000})
+        e_complex.register_agent("a")
+        complex_text = "This depends on multiple prerequisites. " * 20 + " requires possibly unclear ambiguous complex"
+        e_complex.record_action("a", Action(tool_name="Bash", output_text=complex_text, token_count=10))
+
+        # Push both past grace period with identical moderate errors
+        for _ in range(12):
+            action = Action(tool_name="Bash", output_text="err", token_count=50, error=True)
+            e_simple.record_action("a", action)
+            e_complex.record_action("a", action)
+
+        # Complex agent should reach higher mode sooner (same pressure, lower thresholds)
+        simple_mode = e_simple.get_level("a")
+        complex_mode = e_complex.get_level("a")
+        assert complex_mode.value >= simple_mode.value
