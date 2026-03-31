@@ -72,10 +72,10 @@ Core engine, CLI, hooks, persistence, self-learning, test suite.
 | **Streaming support** — intercept `client.messages.stream()` | Critical | Every real app streams responses |
 | **PyPI publish 0.5.0** — update the published package | Critical | Users still get 0.4.12 |
 | **Real API testing** — verified with live Anthropic + OpenAI calls | Critical | Never tested against real API response formats |
-| **Context window tracking** — monitor how much context the agent has consumed | High | Strongest predictor of agent degradation; half-life model needs this input |
-| **Structured audit log** (OTL-02) — JSON Lines per action, zero config | High | Compliance, post-mortem analysis, and training data for improving the core |
-| **CONTRIBUTING.md** — how to contribute, dev setup, test instructions | High | Open source without it is dead |
-| **soma.toml validation** — helpful errors on bad config | Medium | Current failure mode is silent |
+| **Phase 11: Context window tracking** — context exhaustion as first-class pressure signal | High | Strongest predictor of agent degradation; half-life model needs this input |
+| **Structured audit log** (OTL-02) — JSON Lines per action, zero config | High | Done (Phase 10) |
+| **Phase 12: CONTRIBUTING.md** — how to contribute, dev setup, test instructions | High | Open source without it is dead |
+| **Phase 13: soma.toml validation** — helpful errors on bad config | Medium | Current failure mode is silent |
 
 ---
 
