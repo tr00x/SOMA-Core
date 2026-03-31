@@ -122,16 +122,16 @@ def main():
         from soma.hooks.common import get_hook_config
         hook_config = get_hook_config()
 
-        append_action_log(tool_name, error=error, file_path=file_path)
+        append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id)
 
         if hook_config.get("task_tracking", True):
             try:
                 import os as _os
                 cwd = _os.environ.get("CLAUDE_WORKING_DIRECTORY", _os.getcwd())
                 from soma.hooks.common import get_task_tracker, save_task_tracker
-                tracker = get_task_tracker(cwd=cwd)
+                tracker = get_task_tracker(cwd=cwd, agent_id=agent_id)
                 tracker.record(tool_name, file_path, error)
-                save_task_tracker(tracker)
+                save_task_tracker(tracker, agent_id=agent_id)
             except Exception:
                 pass
 
@@ -179,9 +179,9 @@ def main():
         if hook_config.get("quality", True) and tool_name in ("Write", "Edit", "NotebookEdit"):
             try:
                 from soma.hooks.common import get_quality_tracker, save_quality_tracker
-                qt = get_quality_tracker()
+                qt = get_quality_tracker(agent_id=agent_id)
                 qt.record_write(had_syntax_error=bool(syntax_err), had_lint_issue=bool(lint_err))
-                save_quality_tracker(qt)
+                save_quality_tracker(qt, agent_id=agent_id)
             except Exception:
                 pass
 
@@ -192,7 +192,7 @@ def main():
                 from soma.rca import diagnose
                 from soma.hooks.common import read_action_log
                 rca = diagnose(
-                    read_action_log(),
+                    read_action_log(agent_id),
                     {"uncertainty": vitals.uncertainty, "drift": vitals.drift, "error_rate": vitals.error_rate},
                     pressure, level_name, 0,
                 )
@@ -213,7 +213,7 @@ def main():
         # Prediction
         if hook_config.get("predict", True):
             try:
-                predictor = get_predictor()
+                predictor = get_predictor(agent_id=agent_id)
                 predictor.update(pressure, {"tool": tool_name, "error": error, "file": file_path})
                 boundaries = [0.25, 0.50, 0.75]
                 next_boundary = next((b for b in boundaries if b > pressure), None)
@@ -221,7 +221,7 @@ def main():
                     pred = predictor.predict(next_boundary)
                     if pred.will_escalate:
                         print(f"SOMA: predicted escalation in ~{pred.actions_ahead} actions (p={pred.predicted_pressure:.0%}, {pred.dominant_reason})", file=sys.stderr)
-                save_predictor(predictor)
+                save_predictor(predictor, agent_id=agent_id)
             except Exception:
                 pass
 

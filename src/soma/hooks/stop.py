@@ -12,7 +12,7 @@ import sys
 from soma.hooks.common import (
     get_engine, save_state, read_action_log,
     get_fingerprint_engine, save_fingerprint_engine,
-    _get_session_agent_id, get_quality_tracker,
+    get_quality_tracker,
 )
 
 
@@ -25,10 +25,10 @@ def main():
 
     # Update fingerprint before cleaning up (fingerprint persists across sessions)
     try:
-        log = read_action_log()
+        log = read_action_log(agent_id)
         if len(log) >= 5:  # Only update if session had meaningful activity
             fp_engine = get_fingerprint_engine()
-            fp_engine.update_from_session(_get_session_agent_id(), log)
+            fp_engine.update_from_session(agent_id, log)
             save_fingerprint_engine(fp_engine)
     except Exception:
         pass
@@ -46,7 +46,7 @@ def main():
         pressure = snap['pressure']
 
         # Read action log for session stats
-        log = read_action_log()
+        log = read_action_log(agent_id)
         errors = sum(1 for e in log if e.get("error"))
         tools_used = {}
         for e in log:
@@ -63,7 +63,7 @@ def main():
 
         # Quality grade
         try:
-            qt = get_quality_tracker()
+            qt = get_quality_tracker(agent_id=agent_id)
             report = qt.get_report()
             if report.total_writes + report.total_bashes >= 3:
                 q_str = f"  quality: {report.grade} ({report.score:.0%})"
