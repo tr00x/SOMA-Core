@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/v/soma-ai?style=for-the-badge&color=blue&label=PyPI" alt="PyPI" /></a>&nbsp;
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/pyversions/soma-ai?style=for-the-badge" alt="Python" /></a>&nbsp;
   <a href="https://github.com/tr00x/SOMA-Core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tr00x/SOMA-Core?style=for-the-badge" alt="License" /></a>&nbsp;
-  <a href="#test-results"><img src="https://img.shields.io/badge/tests-735%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
+  <a href="#test-results"><img src="https://img.shields.io/badge/tests-773%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -410,11 +410,11 @@ No neural networks. No black boxes. Every formula is documented and tested.
 <tr>
 <td>
 
-**735 tests. 0 failures. ~1 second.**
+**773 tests. 0 failures. ~1 second.**
 
 Every formula, threshold, edge case, and integration path is covered.
 
-16 stress scenarios validate behavior under extreme conditions.
+16 stress scenarios validate behavior under extreme conditions. 5 real API integration tests (Anthropic + OpenAI, sync/async/streaming).
 
 **[Integration Test Report](docs/INTEGRATION-TEST-REPORT.md)** — 4 scenarios, 231 actions, full pipeline: healthy session (zero false positives), degrading session (OBSERVE→BLOCK in 16 actions), multi-agent trust graph, and policy engine live evaluation.
 
@@ -438,6 +438,11 @@ test_fingerprint.py    ✓ JSD behavioral signatures
 test_graph.py          ✓ Vector propagation + SNR
 test_budget.py         ✓ Budget + SAFE_MODE
 test_wrap.py           ✓ Anthropic + OpenAI wrapper
+test_wrap_async.py     ✓ Async client wrapping
+test_wrap_streaming.py ✓ Streaming interception
+test_context_usage.py  ✓ Context window tracking
+test_audit.py          ✓ JSON Lines audit logging
+test_integration_api.py ✓ Real API tests (Anthropic + OpenAI)
 test_sdk.py            ✓ LangChain, CrewAI, AutoGen
 test_stress.py         ✓ 16 stress scenarios
 test_claude_code_*.py  ✓ Full hook integration
@@ -453,7 +458,7 @@ test_hooks_*.py        ✓ All 4 lifecycle hooks
 ## Architecture
 
 ```
-src/soma/                     59 modules, ~10,000 lines
+src/soma/                     60 modules, ~10,100 lines
 ├── engine.py                Core pipeline — 22-step record_action()
 ├── types.py                 Action, VitalsSnapshot, PressureVector, ResponseMode
 ├── pressure.py              Aggregate pressure (weighted mean + max + error-rate floor)
@@ -473,7 +478,8 @@ src/soma/                     59 modules, ~10,000 lines
 ├── context.py               Workflow awareness + session context
 ├── fingerprint.py           Agent behavioral signatures (JSD divergence)
 ├── budget.py                Multi-dimensional budget tracking
-├── wrap.py                  Universal client wrapper (Anthropic + OpenAI)
+├── wrap.py                  Universal client wrapper (sync + async + streaming)
+├── audit.py                 JSON Lines audit logging (zero-config, rotatable)
 ├── persistence.py           Atomic state persistence (fcntl + fsync + rename)
 ├── recorder.py              Session recording + replay
 ├── sdk/
