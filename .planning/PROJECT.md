@@ -4,7 +4,7 @@
 
 SOMA is an open-source (MIT) behavioral monitoring and guidance system for AI agents. It observes agent actions in real-time, computes behavioral pressure from 5 vital signals, and injects corrective guidance into agent context before problems escalate. Think of it as a nervous system for AI agents — htop/Prometheus for the agent era.
 
-Currently works as a Claude Code hook system (v0.4.12, published on PyPI as `soma-ai`). The goal is to become the industry standard for AI agent observability and safety — platform-agnostic, framework-agnostic, used by everyone from solo developers to enterprises.
+Published on PyPI as `soma-ai` (v0.5.0). Works as a Claude Code hook system and universal Python SDK via `soma.wrap()`. Supports Anthropic and OpenAI clients (sync, async, streaming). The goal is to become the industry standard for AI agent observability and safety — platform-agnostic, framework-agnostic, used by everyone from solo developers to enterprises.
 
 ## Core Value
 
@@ -16,23 +16,37 @@ If everything else fails, the closed-loop feedback system must work: actions →
 
 ### Validated
 
-- ✓ 5 behavioral vitals (uncertainty, drift, error_rate, cost, token_usage) — existing
-- ✓ Pressure computation with z-score sigmoid + weighted aggregation — existing
-- ✓ 4-mode guidance (OBSERVE → GUIDE → WARN → BLOCK) — existing
-- ✓ Self-learning thresholds via intervention outcome tracking — existing
-- ✓ Multi-agent trust graph with pressure propagation — existing
-- ✓ Agent fingerprinting with JS divergence drift detection — existing
-- ✓ Pattern detection (blind writes, bash failures, thrashing, scope drift, agent spam, research stall) — existing
-- ✓ Code validation (py_compile, ruff, node --check) before pressure computation — existing
-- ✓ Budget tracking (tokens + cost) with automatic SAFE_MODE — existing
-- ✓ Predictive guidance (~5 actions ahead via linear regression + pattern boosts) — existing
-- ✓ Real-time statusline + context injection for Claude Code — existing
-- ✓ TUI dashboard with live agent cards — existing
-- ✓ Configurable via soma.toml with operating mode presets — existing
-- ✓ Atomic persistence with fcntl file locking — existing
-- ✓ Session recording and replay — existing
-- ✓ CI pipeline (GitHub Actions, 3 Python versions, ruff lint) — existing
-- ✓ 589 tests, 92% core coverage — existing
+- ✓ 5 behavioral vitals (uncertainty, drift, error_rate, cost, token_usage) — v0.4.x
+- ✓ Pressure computation with z-score sigmoid + weighted aggregation — v0.4.x
+- ✓ 4-mode guidance (OBSERVE → GUIDE → WARN → BLOCK) — v0.4.x
+- ✓ Self-learning thresholds via intervention outcome tracking — v0.4.x
+- ✓ Multi-agent trust graph with pressure propagation — v0.4.x
+- ✓ Agent fingerprinting with JS divergence drift detection — v0.4.x
+- ✓ Pattern detection (blind writes, bash failures, thrashing, scope drift, agent spam, research stall) — v0.4.x
+- ✓ Code validation (py_compile, ruff, node --check) before pressure computation — v0.4.x
+- ✓ Budget tracking (tokens + cost) with automatic SAFE_MODE — v0.4.x
+- ✓ Predictive guidance (~5 actions ahead via linear regression + pattern boosts) — v0.4.x
+- ✓ Real-time statusline + context injection for Claude Code — v0.4.x
+- ✓ TUI dashboard with live agent cards — v0.4.x
+- ✓ Configurable via soma.toml with operating mode presets — v0.4.x
+- ✓ Atomic persistence with fcntl file locking — v0.4.x
+- ✓ Session recording and replay — v0.4.x
+- ✓ CI pipeline (GitHub Actions, 3 Python versions, ruff lint) — v0.4.x
+- ✓ Goal coherence scoring + baseline integrity checks — v0.5.0
+- ✓ Epistemic vs aleatoric uncertainty classification — v0.5.0
+- ✓ Vector pressure propagation through trust graph — v0.5.0
+- ✓ SNR isolation + task complexity estimation — v0.5.0
+- ✓ Agent half-life estimation + handoff suggestions — v0.5.0
+- ✓ Calibration scoring + verbal-behavioral divergence — v0.5.0
+- ✓ Universal Python SDK: soma.track() + LangChain/CrewAI/AutoGen adapters — v0.5.0
+- ✓ TypeScript SDK scaffold + YAML/TOML policy engine + @guardrail — v0.5.0
+- ✓ Async client wrapper: soma.wrap(AsyncAnthropic()) — v0.5.0
+- ✓ Streaming interception: client.messages.stream() — v0.5.0
+- ✓ Context window tracking with half-life degradation — v0.5.0
+- ✓ Structured JSON Lines audit logging — v0.5.0
+- ✓ Real API integration tests (Anthropic + OpenAI) — v0.5.0
+- ✓ CONTRIBUTING.md + PyPI 0.5.0 published — v0.5.0
+- ✓ 773 tests, 90%+ core coverage — v0.5.0
 
 ### Active
 
@@ -73,14 +87,15 @@ If everything else fails, the closed-loop feedback system must work: actions →
 
 ## Context
 
-**Current state (v0.4.12):**
-- Published on PyPI as `soma-ai`
-- Works exclusively with Claude Code via hook system
-- Core engine is platform-agnostic but integration layer is Claude Code specific
-- `wrap()` API exists for Anthropic/OpenAI clients but is underdeveloped
-- OpenTelemetry optional dependency exists but no exporter implemented
-- Trust graph works but unused in production (single-agent Claude Code sessions)
-- Event bus wired but unplugged (no subscribers in production)
+**Current state (v0.5.0):**
+- Published on PyPI as `soma-ai` v0.5.0
+- Works with Claude Code (hook system) + any Python agent framework (soma.wrap(), soma.track())
+- Core engine is platform-agnostic with thin integration layers
+- `wrap()` API fully supports Anthropic/OpenAI (sync, async, streaming)
+- 8 research-backed intelligence features: goal coherence, uncertainty classification, vector pressure, SNR isolation, half-life, calibration, policy engine, framework adapters
+- Structured JSON Lines audit logging, context window tracking
+- OpenTelemetry optional dependency exists but no exporter implemented yet
+- 10,169 LOC Python, 773 tests
 
 **Ecosystem opportunity:**
 - No established standard for AI agent behavioral monitoring exists
@@ -109,11 +124,13 @@ If everything else fails, the closed-loop feedback system must work: actions →
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| MIT license, no monetization | Goal is industry standard adoption, not revenue | — Pending |
-| Python-first, TS later | Python dominates agent ecosystem (LangChain, CrewAI, AutoGen) | — Pending |
-| Policy-as-Code in YAML | Open, shareable, community-driven (like ESLint configs) | — Pending |
-| Self-hosted dashboard | No SaaS dependency, enterprise-friendly | — Pending |
-| OTel for observability | Industry standard, integrates with existing tooling | — Pending |
+| MIT license, no monetization | Goal is industry standard adoption, not revenue | ✓ Good |
+| Python-first, TS later | Python dominates agent ecosystem (LangChain, CrewAI, AutoGen) | ✓ Good — TS scaffold ready |
+| Policy-as-Code in YAML/TOML | Open, shareable, community-driven (like ESLint configs) | ✓ Good — engine shipped |
+| Self-hosted dashboard | No SaaS dependency, enterprise-friendly | — Pending (Milestone 7) |
+| OTel for observability | Industry standard, integrates with existing tooling | — Pending (Milestone 4) |
+| soma.wrap() as primary API | Transparent proxy, zero code change for users | ✓ Good — sync/async/streaming |
+| JSON Lines audit | Zero-config, parseable by jq, rotatable | ✓ Good — shipped v0.5.0 |
 
 ## Evolution
 
@@ -133,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after initialization*
+*Last updated: 2026-03-31 after v0.5.0 milestone (Milestone 3: Production Ready)*
