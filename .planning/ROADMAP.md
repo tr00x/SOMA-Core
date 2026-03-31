@@ -121,7 +121,7 @@ SOMA v0.5.0 is a fully operational behavioral monitoring system with 735 tests, 
   5. Existing sync wrapper tests pass without regression; new async/streaming tests cover happy path + error cases
 **Plans:** 2 plans
 Plans:
-- [ ] 09-01-PLAN.md — Async client wrapper (ASYNC-01)
+- [x] 09-01-PLAN.md — Async client wrapper (ASYNC-01)
 - [ ] 09-02-PLAN.md — Streaming interception (ASYNC-02)
 
 ### Phase 10: Production Hardening
