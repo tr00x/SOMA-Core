@@ -15,6 +15,7 @@ from soma.vitals import (
     sigmoid_clamp, compute_goal_coherence, compute_baseline_integrity,
     classify_uncertainty, estimate_task_complexity,
 )
+from soma.halflife import compute_half_life, predict_success_rate, generate_handoff_suggestion
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
 from soma.budget import MultiBudget
@@ -31,6 +32,7 @@ class ActionResult:
     vitals: VitalsSnapshot
     context_action: str = "pass"
     pressure_vector: PressureVector | None = None
+    handoff_suggestion: str | None = None
 
     @property
     def level(self) -> ResponseMode:
@@ -380,16 +382,23 @@ class SOMAEngine:
             "token_usage": rv.token_usage,
         }
 
-        # Baseline integrity check (per D-08, D-10, D-11)
+        # Load fingerprint once — used for both baseline integrity and half-life
         baseline_integrity = True  # Default: intact
+        predicted_success_rate: float | None = None
+        half_life_warning = False
+        handoff_suggestion: str | None = None
         min_samples = vitals_cfg.get("baseline_integrity_min_samples", 10)
         error_ratio = vitals_cfg.get("baseline_integrity_error_ratio", 2.0)
         min_error_rate = vitals_cfg.get("baseline_integrity_min_error_rate", 0.20)
+        hl_min_samples = vitals_cfg.get("half_life_min_samples", 3)
+        hl_lookahead = int(vitals_cfg.get("half_life_lookahead_actions", 10))
+        hl_threshold = vitals_cfg.get("half_life_success_threshold", 0.5)
         try:
             from soma.state import get_fingerprint_engine
             fp_engine = get_fingerprint_engine()
             fp = fp_engine.get(agent_id)
             if fp is not None:
+                # Baseline integrity (D-08, D-10, D-11)
                 baseline_integrity = compute_baseline_integrity(
                     baseline_error_rate=s.baseline.get("error_rate"),
                     current_error_rate=rv.error_rate,
@@ -399,8 +408,26 @@ class SOMAEngine:
                     error_ratio_threshold=error_ratio,
                     min_current_error_rate=min_error_rate,
                 )
+                # Half-life estimation (HLF-01, HLF-02)
+                if fp.sample_count >= hl_min_samples:
+                    half_life = compute_half_life(fp.avg_session_length, fp.avg_error_rate)
+                    predicted_success_rate = predict_success_rate(s.action_count, half_life)
+                    # Warn when projected success rate will cross threshold within lookahead
+                    projected = predict_success_rate(s.action_count + hl_lookahead, half_life)
+                    if projected < hl_threshold:
+                        half_life_warning = True
+                        handoff_suggestion = generate_handoff_suggestion(
+                            agent_id, s.action_count, half_life, predicted_success_rate
+                        )
+                        self._events.emit("half_life_warning", {
+                            "agent_id": agent_id,
+                            "action_count": s.action_count,
+                            "predicted_success_rate": predicted_success_rate,
+                            "half_life": half_life,
+                            "handoff_suggestion": handoff_suggestion,
+                        })
         except Exception:
-            pass  # Fingerprint unavailable — default True (per D-10)
+            pass  # Fingerprint unavailable — defaults apply
 
         # Goal coherence (None during warmup)
         goal_coherence: float | None = None
@@ -540,9 +567,12 @@ class SOMAEngine:
                 baseline_integrity=baseline_integrity,
                 uncertainty_type=uncertainty_type,
                 task_complexity=s.task_complexity_score,
+                predicted_success_rate=predicted_success_rate,
+                half_life_warning=half_life_warning,
             ),
             context_action=context_action,
             pressure_vector=pressure_vector,
+            handoff_suggestion=handoff_suggestion,
         )
 
         if self._auto_export:
