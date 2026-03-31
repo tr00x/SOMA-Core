@@ -584,7 +584,6 @@ class TestGoalCoherence:
 # ---------------------------------------------------------------------------
 
 class TestBaselineIntegrity:
-    @pytest.mark.xfail(reason="Implementation in Plan 03")
     def test_integrity_intact_when_normal(self):
         from soma.vitals import compute_baseline_integrity
         result = compute_baseline_integrity(
@@ -598,7 +597,6 @@ class TestBaselineIntegrity:
         )
         assert result is True
 
-    @pytest.mark.xfail(reason="Implementation in Plan 03")
     def test_integrity_false_when_corrupted(self):
         from soma.vitals import compute_baseline_integrity
         result = compute_baseline_integrity(
@@ -611,3 +609,57 @@ class TestBaselineIntegrity:
             min_current_error_rate=0.20,
         )
         assert result is False
+
+    def test_integrity_true_insufficient_history(self):
+        from soma.vitals import compute_baseline_integrity
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.50,
+            current_error_rate=0.40,
+            fingerprint_avg_error_rate=0.05,
+            fingerprint_sample_count=5,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is True
+
+    def test_integrity_true_no_historical_errors(self):
+        from soma.vitals import compute_baseline_integrity
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.50,
+            current_error_rate=0.40,
+            fingerprint_avg_error_rate=0.0,
+            fingerprint_sample_count=20,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is True
+
+    def test_integrity_true_when_recovered(self):
+        from soma.vitals import compute_baseline_integrity
+        # Baseline drifted but current errors recovered — not corruption
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.50,
+            current_error_rate=0.10,
+            fingerprint_avg_error_rate=0.05,
+            fingerprint_sample_count=20,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is True
+
+    def test_integrity_true_baseline_within_ratio(self):
+        from soma.vitals import compute_baseline_integrity
+        # 0.08 / 0.05 = 1.6x — below 2.0 threshold
+        result = compute_baseline_integrity(
+            baseline_error_rate=0.08,
+            current_error_rate=0.30,
+            fingerprint_avg_error_rate=0.05,
+            fingerprint_sample_count=20,
+            min_samples=10,
+            error_ratio_threshold=2.0,
+            min_current_error_rate=0.20,
+        )
+        assert result is True

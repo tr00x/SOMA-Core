@@ -231,6 +231,38 @@ def compute_goal_coherence(
     return cosine_similarity(current_vec, initial_task_vector)
 
 
+def compute_baseline_integrity(
+    baseline_error_rate: float,
+    current_error_rate: float,
+    fingerprint_avg_error_rate: float,
+    fingerprint_sample_count: int,
+    min_samples: int,
+    error_ratio_threshold: float,
+    min_current_error_rate: float,
+) -> bool:
+    """Check if baseline has been corrupted by adapting to bad behavior.
+
+    Returns True if baseline is intact, False if potential corruption detected.
+
+    Fires False when ALL of:
+    - fingerprint has enough history (sample_count >= min_samples)
+    - baseline EMA error_rate drifted > error_ratio_threshold * fingerprint norm
+    - current session error_rate is still elevated (> min_current_error_rate)
+
+    This distinguishes corruption (baseline absorbed high errors as normal)
+    from legitimate change (behavior and baseline shifted for valid reasons,
+    but current error rate has since recovered).
+    """
+    if fingerprint_sample_count < min_samples:
+        return True  # Not enough history to judge — assume intact
+    if fingerprint_avg_error_rate <= 0:
+        return True  # No historical error rate to compare against
+    drift_ratio = baseline_error_rate / max(fingerprint_avg_error_rate, 0.001)
+    if drift_ratio > error_ratio_threshold and current_error_rate > min_current_error_rate:
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Drift
 # ---------------------------------------------------------------------------
