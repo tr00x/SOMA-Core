@@ -2,7 +2,22 @@
 
 ## [0.5.0] — 2026-03-31
 
-Agent Intelligence Pipeline: 8 phases of behavioral analysis capabilities.
+Production Ready: 10 phases of behavioral analysis + full production API support.
+
+### Added (Phase 9: Async + Streaming)
+- **Async client wrapper** (ASYNC-01) — `soma.wrap(AsyncAnthropic())` detects async clients via `inspect.iscoroutinefunction` and wraps all methods with async interceptors; full 22-step engine pipeline runs identically to sync
+- **Streaming interception** (ASYNC-02) — `client.messages.stream()` (Anthropic) and `stream=True` (OpenAI) are intercepted; chunks accumulated into single Action with token count from `get_final_message()`
+- **SomaStreamContext** / **AsyncSomaStreamContext** — context managers that wrap streaming responses, accumulate text, and record one Action on exit
+
+### Added (Phase 10: Production Hardening)
+- **Context window tracking** (CTX-01) — `VitalsSnapshot.context_usage` tracks cumulative tokens as fraction of model context window; half-life degradation factor reduces predicted success rate as context fills
+- **Structured audit logging** (LOG-01) — `AuditLogger` writes JSON Lines to `~/.soma/audit.jsonl` with timestamp, agent_id, tool_name, error, pressure, mode; zero-config, auto-rotating at 10MB
+- **Real API integration tests** (TEST-01) — 5 tests covering Anthropic (sync/stream/async) + OpenAI (sync/stream) with real API keys; skipif guards for CI safety
+- **CONTRIBUTING.md** (DOC-01) — dev setup, test instructions, project structure, code style, contribution workflow
+
+### Fixed (Phase 10)
+- Streaming context manager bug: `MessageStreamManager.__enter__()` returns `MessageStream` — was calling `text_stream` on manager instead of inner stream
+- pytest-asyncio version constraint lowered to `>=0.23` for broader compatibility
 
 ### Added
 - **Uncertainty classification** (VIT-02) — classifies uncertainty as epistemic (knowledge gap) or aleatoric (inherent ambiguity) via output entropy; epistemic gets 1.3x pressure, aleatoric gets 0.7x dampening
