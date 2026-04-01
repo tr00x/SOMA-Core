@@ -8,8 +8,8 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 - ✅ **Milestone 1+2 — Core Engine + Agent Intelligence** — Phases 1-8 (shipped pre-v0.5.0)
 - ✅ **Milestone 3 — Production Ready** — Phases 9-10 (shipped 2026-03-31, v0.5.0)
-- 🚧 **Milestone 4 — Observability** — Phase 11 (next)
-- 📋 **Milestone 5 — Ecosystem** — Phase 12
+- ✅ **Milestone 4 — Observability** — Phase 11 (completed 2026-04-01)
+- 🚧 **Milestone 5 — Ecosystem** — Phase 12
 - 📋 **Milestone 6 — Intelligence** — Phase 13
 - 📋 **Milestone 7 — Platform** — Phase 14
 - 📋 **Milestone 8 — Research** — Phase 15
@@ -38,11 +38,14 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 </details>
 
-### 🚧 Milestone 4 — Observability
+<details>
+<summary>✅ Milestone 4: Observability (Phase 11) — COMPLETED 2026-04-01</summary>
 
 - [x] **Phase 11: Observability** — OpenTelemetry exporter + session reports + webhook alerting (completed 2026-04-01)
 
-### 📋 Milestone 5 — Ecosystem
+</details>
+
+### 🚧 Milestone 5 — Ecosystem
 
 - [ ] **Phase 12: Ecosystem** — Cursor/Windsurf hooks, NPM publish, demo, community policy packs
 
@@ -80,7 +83,12 @@ Plans:
 **Goal**: SOMA works with every AI coding tool, not just Claude Code
 **Depends on**: Phase 11
 **Requirements**: HOOK-01, NPM-01, DEMO-01, POL-03, LAYER-01
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Hook adapter protocol (LAYER-01) + Cursor/Windsurf adapters (HOOK-01)
+- [ ] 12-02-PLAN.md — NPM publish prep (NPM-01) + community policy packs (POL-03)
+- [ ] 12-03-PLAN.md — Demo tape for README (DEMO-01)
 
 ### Phase 13: Intelligence
 **Goal**: SOMA predicts problems before they happen using cross-session learning
