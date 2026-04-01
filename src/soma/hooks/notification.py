@@ -231,6 +231,145 @@ def main():
         except Exception:
             pass  # Never crash notification for signal reflex failures
 
+        # ── Advanced reflex injections (Phase 16) ──────────────────────
+        try:
+            soma_mode = get_soma_mode()
+            if soma_mode in ("guide", "reflex") and actions >= 3:
+                # 1. Circuit breaker
+                try:
+                    from soma.graph_reflexes import evaluate_circuit_breaker, update_circuit_state
+                    from soma.hooks.common import get_circuit_breaker_state, save_circuit_breaker_state
+                    from soma.types import ResponseMode as _RM
+
+                    cb_state = get_circuit_breaker_state(agent_id)
+                    if cb_state is not None:
+                        snap_mode = snap.get("level", snap.get("mode"))
+                        if isinstance(snap_mode, str):
+                            snap_mode = _RM[snap_mode.upper()] if hasattr(_RM, snap_mode.upper()) else _RM.OBSERVE
+                        elif not isinstance(snap_mode, _RM):
+                            snap_mode = _RM.OBSERVE
+                        cb_state = update_circuit_state(cb_state, snap_mode)
+                        save_circuit_breaker_state(cb_state, agent_id)
+                        cb_result = evaluate_circuit_breaker(cb_state)
+                        if cb_result.inject_message:
+                            finding_lines.append(cb_result.inject_message)
+                            try:
+                                from soma.audit import AuditLogger
+                                AuditLogger().append(
+                                    agent_id=agent_id, tool_name="notification",
+                                    error=False, pressure=pressure, mode="reflex",
+                                    type="reflex", reflex_kind=cb_result.reflex_kind,
+                                    detail=cb_result.detail,
+                                )
+                            except Exception:
+                                pass
+                        # Reduce trust on graph edges when open
+                        if cb_state.is_open:
+                            try:
+                                edges = engine._graph._adj.get(agent_id, {})
+                                for target in list(edges):
+                                    engine._graph.update_edge(agent_id, target, 0.1)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                # 2. Smart throttle
+                try:
+                    from soma.advanced_signal_reflexes import evaluate_smart_throttle
+                    from soma.types import ResponseMode as _RM2
+
+                    snap_mode2 = snap.get("level", snap.get("mode"))
+                    if isinstance(snap_mode2, str):
+                        snap_mode2 = _RM2[snap_mode2.upper()] if hasattr(_RM2, snap_mode2.upper()) else _RM2.OBSERVE
+                    elif not isinstance(snap_mode2, _RM2):
+                        snap_mode2 = _RM2.OBSERVE
+                    throttle_result = evaluate_smart_throttle(snap_mode2, pressure)
+                    if throttle_result.inject_message:
+                        finding_lines.append(throttle_result.inject_message)
+                        try:
+                            from soma.audit import AuditLogger
+                            AuditLogger().append(
+                                agent_id=agent_id, tool_name="notification",
+                                error=False, pressure=pressure, mode="reflex",
+                                type="reflex", reflex_kind=throttle_result.reflex_kind,
+                                detail=throttle_result.detail,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # 3. Fingerprint anomaly
+                try:
+                    from soma.advanced_signal_reflexes import evaluate_fingerprint_anomaly
+                    from soma.hooks.common import get_fingerprint_engine
+                    fp_engine = get_fingerprint_engine()
+                    div_score, div_explanation = fp_engine.check_divergence(agent_id, action_log)
+                    anomaly_result = evaluate_fingerprint_anomaly(div_score, 0.2, div_explanation)
+                    if anomaly_result.inject_message:
+                        finding_lines.append(anomaly_result.inject_message)
+                        try:
+                            from soma.audit import AuditLogger
+                            AuditLogger().append(
+                                agent_id=agent_id, tool_name="notification",
+                                error=False, pressure=pressure, mode="reflex",
+                                type="anomaly", reflex_kind=anomaly_result.reflex_kind,
+                                detail=anomaly_result.detail,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # 4. Context overflow
+                try:
+                    from soma.advanced_signal_reflexes import evaluate_context_overflow
+                    context_usage = vitals.get("context_usage", 0.0)
+                    overflow_result = evaluate_context_overflow(context_usage)
+                    if overflow_result.inject_message:
+                        finding_lines.append(overflow_result.inject_message)
+                        try:
+                            from soma.audit import AuditLogger
+                            AuditLogger().append(
+                                agent_id=agent_id, tool_name="notification",
+                                error=False, pressure=pressure, mode="reflex",
+                                type="reflex", reflex_kind=overflow_result.reflex_kind,
+                                detail=overflow_result.detail,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # 5. Session memory (actions 3-10 only)
+                try:
+                    if 3 <= actions <= 10:
+                        from soma.session_memory import evaluate_session_memory
+                        from soma.session_store import load_sessions
+                        current_tools: dict[str, int] = {}
+                        for entry in action_log:
+                            t = entry.get("tool", "?")
+                            current_tools[t] = current_tools.get(t, 0) + 1
+                        sessions = load_sessions()
+                        mem_result = evaluate_session_memory(current_tools, sessions, actions)
+                        if mem_result.inject_message:
+                            finding_lines.append(mem_result.inject_message)
+                            try:
+                                from soma.audit import AuditLogger
+                                AuditLogger().append(
+                                    agent_id=agent_id, tool_name="notification",
+                                    error=False, pressure=pressure, mode="reflex",
+                                    type="reflex", reflex_kind=mem_result.reflex_kind,
+                                    detail=mem_result.detail,
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Never crash notification for advanced reflex failures
+
         # ── Output ──
         if finding_lines:
             lines.extend(finding_lines)
