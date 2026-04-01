@@ -53,16 +53,37 @@ def save_quality_tracker(tracker, agent_id: str = "") -> None:
 
 
 def get_predictor(agent_id: str = ""):
-    """Load or create pressure predictor (session-scoped if agent_id provided)."""
-    from soma.predictor import PressurePredictor
+    """Load or create pressure predictor (session-scoped if agent_id provided).
+
+    Returns a CrossSessionPredictor that blends local predictions with
+    historical session trajectories when local confidence is low.
+    Falls back to base PressurePredictor if cross_session module fails.
+    """
     path = _session_path(agent_id, "predictor") if agent_id else PREDICTOR_PATH
     try:
+        from soma.cross_session import CrossSessionPredictor
         if path.exists():
             data = json.loads(path.read_text())
-            return PressurePredictor.from_dict(data)
-    except (json.JSONDecodeError, IOError):
-        pass
-    return PressurePredictor()
+            predictor = CrossSessionPredictor.from_dict(data)
+        else:
+            predictor = CrossSessionPredictor()
+        # Load historical session trajectories for cross-session blending
+        try:
+            if not predictor._session_patterns:
+                predictor.load_history()
+        except Exception:
+            pass
+        return predictor
+    except Exception:
+        # Fallback to base predictor if cross_session unavailable
+        from soma.predictor import PressurePredictor
+        try:
+            if path.exists():
+                data = json.loads(path.read_text())
+                return PressurePredictor.from_dict(data)
+        except (json.JSONDecodeError, IOError):
+            pass
+        return PressurePredictor()
 
 
 def save_predictor(predictor, agent_id: str = "") -> None:
