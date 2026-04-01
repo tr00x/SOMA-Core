@@ -125,7 +125,11 @@ Plans:
 **Goal**: Every existing pipeline signal triggers a real action, not just a number
 **Depends on**: Phase 14
 **Requirements**: RFX-05, RFX-06, RFX-07, RFX-08, RFX-09
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Signal reflex evaluator module (all 5 pure-function reflexes + tests)
+- [ ] 15-02-PLAN.md — Hook integration (commit gate, notification injections, git stash, report stats)
 
 ### Phase 16: Advanced Reflexes
 **Goal**: Multi-agent circuit breakers, session memory, context management
