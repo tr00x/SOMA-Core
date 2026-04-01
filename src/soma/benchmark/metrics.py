@@ -36,6 +36,8 @@ class ActionMetric:
     mode: str  # ResponseMode name
     guidance_issued: bool
     guidance_followed: bool  # True if guidance_responsive action was skipped
+    error: bool = False  # Whether this action had an error
+    error: bool = False  # Whether this action had an error
 
 
 @dataclass(frozen=True, slots=True)

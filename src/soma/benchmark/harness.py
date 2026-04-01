@@ -101,6 +101,7 @@ def _collect_metrics(
             mode=result.mode.name,
             guidance_issued=guidance_issued,
             guidance_followed=False,
+            error=sa.error,
         )))
 
         # Track mode transitions
@@ -260,6 +261,7 @@ def run_multi_agent_scenario(
                 mode=result.mode.name,
                 guidance_issued=guidance_issued,
                 guidance_followed=False,
+                error=sa.error,
             )))
 
             pm = agent_prev_mode[aid]

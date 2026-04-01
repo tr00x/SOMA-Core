@@ -1,6 +1,6 @@
 # SOMA Benchmark Results
 
-> Generated: 2026-04-01T02:34:26.586661+00:00
+> Generated: 2026-04-01T02:43:51.270828+00:00
 > Runs per scenario: 5
 
 ## Summary
