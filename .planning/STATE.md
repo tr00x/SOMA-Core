@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 13-03-PLAN.md
-last_updated: "2026-04-01T02:44:06.463Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-04-01T04:44:37.626Z"
 progress:
-  total_phases: 6
+  total_phases: 9
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 12
+  completed_plans: 10
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-30)
 
 **Core value:** Real-time behavioral guidance that makes AI agents safer and more effective without requiring human babysitting.
-**Current focus:** Phase 13 — config-validation
+**Current focus:** Phase 14 — core-reflexes
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
+Phase: 14 (core-reflexes) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Plan: Not started
 | Phase 13 P02 | 3min | 2 tasks | 8 files |
 | Phase 13 P01 | 4min | 2 tasks | 5 files |
 | Phase 13 P03 | 3min | 3 tasks | 5 files |
+| Phase 14 P01 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,7 @@ Recent decisions affecting current work:
 - [Phase 13]: auto_export=False, audit_enabled=False for benchmark engines (no disk side effects)
 - [Phase 13]: Honest benchmark results — no inflation on scenarios with minimal SOMA impact
 - [Phase 13]: Detection precision included per-scenario (TP/FP analysis in BENCHMARK.md)
+- [Phase 14]: Retry dedup checked before patterns.analyze() since it needs raw tool_input
 
 ### Pending Todos
 
@@ -100,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T02:36:20.892Z
-Stopped at: Completed 13-03-PLAN.md
+Last session: 2026-04-01T04:44:37.613Z
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None
