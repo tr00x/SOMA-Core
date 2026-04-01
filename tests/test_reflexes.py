@@ -172,6 +172,7 @@ class TestThrashingReflex:
 
     def test_allows_different_file(self):
         log = _make_log([
+            ("Read", False, "x.py"),
             ("Edit", False, "x.py"),
             ("Edit", False, "x.py"),
             ("Edit", False, "x.py"),
@@ -185,14 +186,15 @@ class TestThrashingReflex:
 
 class TestErrorRateReflex:
     def test_inject_only(self):
+        # Error rate >= 30% but no consecutive bash failures
         log = _make_log([
             ("Bash", True, ""),
+            ("Bash", False, ""),  # break bash_failures streak
             ("Edit", True, "a.py"),
-            ("Bash", True, ""),
-            ("Read", False, "b.py"),
+            ("Read", True, "b.py"),
             ("Bash", True, ""),
         ])
-        result = evaluate("Bash", {"command": "make"}, log)
+        result = evaluate("Read", {"file_path": "c.py"}, log)
         assert result.allow is True
         assert result.inject_message is not None
         assert result.reflex_kind == "error_rate"
