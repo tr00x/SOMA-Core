@@ -37,11 +37,23 @@ class TestOTelExporterEnabled:
         mock_tracer_provider.get_tracer.return_value = mock_tracer
         mock_meter_provider.get_meter.return_value = mock_meter
 
-        # Mock gauge/counter creation
-        mock_gauge = MagicMock()
-        mock_counter = MagicMock()
-        mock_meter.create_gauge.return_value = mock_gauge
-        mock_meter.create_counter.return_value = mock_counter
+        # Mock gauge/counter creation — each call returns a distinct mock
+        gauges = {}
+
+        def _create_gauge(name, **kwargs):
+            g = MagicMock(name=f"gauge_{name}")
+            gauges[name] = g
+            return g
+
+        counters = {}
+
+        def _create_counter(name, **kwargs):
+            c = MagicMock(name=f"counter_{name}")
+            counters[name] = c
+            return c
+
+        mock_meter.create_gauge.side_effect = _create_gauge
+        mock_meter.create_counter.side_effect = _create_counter
 
         with (
             patch("soma.exporters.otel.HAS_OTEL", True),
@@ -58,7 +70,7 @@ class TestOTelExporterEnabled:
                 service_name="soma-test",
             )
 
-        return exporter, mock_tracer, mock_meter, mock_gauge, mock_counter
+        return exporter, mock_tracer, mock_meter, gauges, counters
 
     def test_creates_tracer_and_meter_providers(self):
         exporter, tracer, meter, _, _ = self._make_exporter()
