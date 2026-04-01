@@ -72,6 +72,51 @@ def generate_session_report(engine: SOMAEngine, agent_id: str = "default") -> st
         lines.append("No interventions recorded.")
     lines.append("")
 
+    # Reflexes
+    lines.append("## Reflexes")
+    lines.append("")
+    try:
+        from soma.hooks.common import get_block_count, get_checkpoint_count
+        block_count = get_block_count(agent_id)
+        checkpoint_count = get_checkpoint_count(agent_id)
+
+        if block_count == 0 and checkpoint_count == 0:
+            lines.append("No reflex activity this session.")
+        else:
+            lines.append(f"- **Blocks:** {block_count}")
+            lines.append(f"- **Checkpoints:** {checkpoint_count}")
+
+            # Top reflex from audit log
+            top_reflex = ""
+            top_count = 0
+            try:
+                from soma.audit import AuditLogger
+                logger = AuditLogger()
+                if logger.path.exists():
+                    reflex_counts: dict[str, int] = {}
+                    for line in logger.path.read_text().splitlines():
+                        try:
+                            import json
+                            entry = json.loads(line)
+                            if entry.get("type") == "reflex":
+                                kind = entry.get("reflex_kind", "unknown")
+                                reflex_counts[kind] = reflex_counts.get(kind, 0) + 1
+                        except Exception:
+                            continue
+                    if reflex_counts:
+                        top_reflex = max(reflex_counts, key=reflex_counts.get)
+                        top_count = reflex_counts[top_reflex]
+            except Exception:
+                pass
+
+            if top_reflex:
+                lines.append(f"- **Top reflex:** {top_reflex} ({top_count} triggers)")
+
+            lines.append(f"- **Estimated errors prevented:** {block_count}")
+    except Exception:
+        lines.append("No reflex activity this session.")
+    lines.append("")
+
     # Cost
     lines.append("## Cost")
     lines.append("")

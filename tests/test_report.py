@@ -86,6 +86,38 @@ def test_unknown_agent_handled():
     assert "not found" in report
 
 
+def test_report_contains_reflexes_section():
+    engine = _make_engine_with_actions()
+    report = generate_session_report(engine, "test-agent")
+    assert "## Reflexes" in report
+
+
+def test_report_reflexes_no_activity():
+    """When no blocks/checkpoints, show 'No reflex activity'."""
+    engine = _make_engine_with_actions()
+    # Default: no block_count or checkpoint_count files exist
+    report = generate_session_report(engine, "test-agent")
+    assert "No reflex activity" in report
+
+
+def test_report_reflexes_with_blocks(tmp_path, monkeypatch):
+    """When blocks exist, show reflex stats."""
+    monkeypatch.setattr("soma.hooks.common.SOMA_DIR", tmp_path)
+    monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", tmp_path / "sessions")
+
+    # Write block_count for the agent
+    agent_dir = tmp_path / "sessions" / "test-agent"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "block_count").write_text("3")
+    (agent_dir / "checkpoint_count").write_text("1")
+
+    engine = _make_engine_with_actions()
+    report = generate_session_report(engine, "test-agent")
+    assert "**Blocks:** 3" in report
+    assert "**Checkpoints:** 1" in report
+    assert "**Estimated errors prevented:** 3" in report
+
+
 def test_save_report_creates_file(tmp_path: Path):
     report = "# SOMA Session Report\n\nTest report content."
     path = save_report(report, "test-agent", reports_dir=tmp_path)
