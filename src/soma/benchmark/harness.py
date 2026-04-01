@@ -29,6 +29,61 @@ from soma.types import Action, ResponseMode
 
 
 # ------------------------------------------------------------------
+# Reflex helpers
+# ------------------------------------------------------------------
+
+
+def _build_action_log(
+    actions: list[ScenarioAction], max_entries: int = 20,
+) -> list[dict]:
+    """Convert ScenarioActions to action_log format for reflex evaluation.
+
+    Returns dicts with keys: tool, error, file, ts — the format
+    that ``patterns.analyze`` expects.
+
+    File names are generated from sequential indices.  Read/Grep/Glob
+    actions and Edit/Write actions share the same file-name pool so
+    that the pattern analyser recognises reads-before-writes correctly.
+    """
+    entries: list[dict] = []
+    # Assign stable file names: each action gets a file based on its
+    # position modulo a small pool.  Read-type and write-type tools
+    # reference the same files so that normal read-then-edit patterns
+    # are not flagged as blind edits.
+    for i, sa in enumerate(actions[-max_entries:]):
+        if sa.tool_name in ("Edit", "Write", "NotebookEdit"):
+            fname = f"src/mod_{i % 10}.py"
+        elif sa.tool_name in ("Read", "Grep", "Glob"):
+            fname = f"src/mod_{i % 10}.py"
+        else:
+            fname = ""
+        entries.append({
+            "tool": sa.tool_name,
+            "error": sa.error,
+            "file": fname,
+            "ts": 1000 + i,
+        })
+    return entries
+
+
+def _build_bash_history(
+    actions: list[ScenarioAction], max_entries: int = 10,
+) -> list[str]:
+    """Extract normalized Bash command strings from recent ScenarioActions.
+
+    For retry scenarios where ``retried=True``, the output_text is used
+    as the command identifier since ScenarioAction has no command field.
+    """
+    history: list[str] = []
+    for sa in actions[-max_entries:]:
+        if sa.tool_name == "Bash":
+            cmd = " ".join(sa.output_text.split())
+            if cmd:
+                history.append(cmd)
+    return history
+
+
+# ------------------------------------------------------------------
 # Single-scenario runner
 # ------------------------------------------------------------------
 
@@ -38,6 +93,7 @@ def _collect_metrics(
     agent_id: str,
     actions: list[ScenarioAction],
     soma_enabled: bool,
+    reflex_mode: bool = False,
 ) -> BenchmarkMetrics:
     """Process *actions* through *engine* and return collected metrics."""
     per_action: list[dict[str, object]] = []
@@ -70,6 +126,46 @@ def _collect_metrics(
                     guidance_followed=True,
                 )))
                 continue  # skip this action
+
+        # Reflex blocking (simulates PreToolUse reflex check)
+        reflex_blocked = False
+        if reflex_mode:
+            from soma.reflexes import evaluate as reflex_evaluate
+
+            reflex_action_log = _build_action_log(actions[:idx])
+            bash_hist = _build_bash_history(actions[:idx])
+
+            tool_input: dict = {}
+            if sa.tool_name == "Bash":
+                # Use output_text as command proxy for retry dedup
+                tool_input = {"command": sa.output_text if sa.retried else f"cmd_{idx}"}
+
+            snapshot = engine.get_snapshot(agent_id) if processed_count > 0 else {}
+            rr = reflex_evaluate(
+                tool_name=sa.tool_name,
+                tool_input=tool_input,
+                action_log=reflex_action_log,
+                pressure=snapshot.get("pressure", 0.0),
+                config={},
+                bash_history=bash_hist,
+            )
+            if not rr.allow:
+                reflex_blocked = True
+                per_action.append(asdict(ActionMetric(
+                    action_index=idx,
+                    pressure=0.0,
+                    uncertainty=0.0,
+                    drift=0.0,
+                    error_rate=0.0,
+                    token_usage=0.0,
+                    cost=0.0,
+                    mode="BLOCK",
+                    guidance_issued=True,
+                    guidance_followed=False,
+                    error=sa.error,
+                    reflex_blocked=True,
+                )))
+                continue  # skip this action — blocked by reflex
 
         # Feed action to engine
         action = Action(
@@ -158,12 +254,16 @@ def run_scenario(
     soma_enabled: bool,
     agent_id: str = "benchmark-agent",
     budget: dict[str, float] | None = None,
+    reflex_mode: bool = False,
 ) -> BenchmarkMetrics:
     """Run a scenario through a fresh SOMAEngine and collect metrics.
 
     With ``soma_enabled=True``, guidance_responsive actions are skipped when
     the engine's mode is >= GUIDE.  With ``soma_enabled=False``, all actions
     are processed unconditionally (guidance is still computed but not acted on).
+
+    With ``reflex_mode=True``, actions are checked against the reflex engine
+    before processing.  Blocked actions are skipped (like guidance-responsive).
     """
     engine = SOMAEngine(
         budget=budget or {"tokens": 500_000},
@@ -171,7 +271,7 @@ def run_scenario(
         audit_enabled=False,
     )
     engine.register_agent(agent_id)
-    return _collect_metrics(engine, agent_id, actions, soma_enabled)
+    return _collect_metrics(engine, agent_id, actions, soma_enabled, reflex_mode)
 
 
 # ------------------------------------------------------------------
@@ -341,6 +441,7 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
     for name, description, gen_fn, is_multi in scenarios_defs:
         soma_runs: list[BenchmarkMetrics] = []
         baseline_runs: list[BenchmarkMetrics] = []
+        reflex_runs: list[BenchmarkMetrics] = []
 
         for seed in range(1, runs_per_scenario + 1):
             if is_multi:
@@ -348,10 +449,14 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
                 # Use agent-b metrics (agent that receives propagated pressure)
                 _, soma_m = run_multi_agent_scenario(a_actions, b_actions, soma_enabled=True)
                 _, baseline_m = run_multi_agent_scenario(a_actions, b_actions, soma_enabled=False)
+                # Multi-agent reflex not yet supported — use soma result
+                reflex_runs.append(soma_m)
             else:
                 actions = gen_fn(seed=seed)
                 soma_m = run_scenario(actions, soma_enabled=True)
                 baseline_m = run_scenario(actions, soma_enabled=False)
+                reflex_m = run_scenario(actions, soma_enabled=True, reflex_mode=True)
+                reflex_runs.append(reflex_m)
 
             soma_runs.append(soma_m)
             baseline_runs.append(baseline_m)
@@ -365,6 +470,14 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
         avg_base_tokens = sum(r.total_tokens for r in baseline_runs) / len(baseline_runs)
         avg_soma_time = sum(r.duration_seconds for r in soma_runs) / len(soma_runs)
         avg_base_time = sum(r.duration_seconds for r in baseline_runs) / len(baseline_runs)
+        avg_reflex_errors = sum(r.error_rate for r in reflex_runs) / len(reflex_runs)
+
+        # Count reflex activations across reflex runs
+        reflex_activations = sum(
+            1 for run in reflex_runs
+            for entry in run.per_action
+            if entry.get("reflex_blocked")
+        )
 
         scenario_results.append(ScenarioResult(
             scenario_name=name,
@@ -375,6 +488,8 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
             retry_reduction=_safe_reduction(avg_base_retries, avg_soma_retries),
             token_savings=_safe_reduction(avg_base_tokens, avg_soma_tokens),
             time_savings=_safe_reduction(avg_base_time, avg_soma_time),
+            reflex_error_reduction=_safe_reduction(avg_base_errors, avg_reflex_errors),
+            reflex_activations=reflex_activations,
         ))
 
     # Overall averages across all scenarios
@@ -382,6 +497,7 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
     overall_err = sum(s.error_reduction for s in scenario_results) / n if n else 0.0
     overall_retry = sum(s.retry_reduction for s in scenario_results) / n if n else 0.0
     overall_tokens = sum(s.token_savings for s in scenario_results) / n if n else 0.0
+    overall_reflex_err = sum(s.reflex_error_reduction for s in scenario_results) / n if n else 0.0
 
     return BenchmarkResult(
         scenarios=scenario_results,
@@ -390,4 +506,5 @@ def run_benchmark(runs_per_scenario: int = 5) -> BenchmarkResult:
         overall_error_reduction=overall_err,
         overall_retry_reduction=overall_retry,
         overall_token_savings=overall_tokens,
+        overall_reflex_error_reduction=overall_reflex_err,
     )

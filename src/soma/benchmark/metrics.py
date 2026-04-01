@@ -37,7 +37,7 @@ class ActionMetric:
     guidance_issued: bool
     guidance_followed: bool  # True if guidance_responsive action was skipped
     error: bool = False  # Whether this action had an error
-    error: bool = False  # Whether this action had an error
+    reflex_blocked: bool = False  # Whether this action was blocked by a reflex
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +69,8 @@ class ScenarioResult:
     retry_reduction: float = 0.0
     token_savings: float = 0.0
     time_savings: float = 0.0
+    reflex_error_reduction: float = 0.0
+    reflex_activations: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,3 +83,4 @@ class BenchmarkResult:
     overall_error_reduction: float = 0.0
     overall_retry_reduction: float = 0.0
     overall_token_savings: float = 0.0
+    overall_reflex_error_reduction: float = 0.0
