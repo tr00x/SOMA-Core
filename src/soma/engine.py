@@ -25,6 +25,7 @@ from soma.graph import PressureGraph
 from soma.learning import LearningEngine
 from soma.events import EventBus
 from soma.audit import AuditLogger
+from soma.exporters import Exporter
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,8 @@ class _AgentState:
     __slots__ = ("config", "ring_buffer", "baseline", "mode", "known_tools",
                  "baseline_vector", "action_count", "_last_active",
                  "initial_task_vector", "initial_known_tools", "task_complexity_score",
-                 "cumulative_tokens")
+                 "cumulative_tokens",
+                 "_context_warning_fired", "_context_critical_fired", "_token_burn_history")
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -61,6 +63,9 @@ class _AgentState:
         self.initial_known_tools: list[str] | None = None
         self.task_complexity_score: float | None = None
         self.cumulative_tokens: int = 0
+        self._context_warning_fired: bool = False
+        self._context_critical_fired: bool = False
+        self._token_burn_history: list[int] = []
 
 
 class SOMAEngine:
@@ -89,6 +94,7 @@ class SOMAEngine:
         self._default_autonomy = AutonomyMode.HUMAN_ON_THE_LOOP
         self._context_window = context_window
         self._audit = AuditLogger(path=audit_path, enabled=audit_enabled)
+        self._exporters: list[Exporter] = []
         self._vitals_config: dict[str, Any] = {}
 
     @property
@@ -98,6 +104,20 @@ class SOMAEngine:
     @property
     def budget(self) -> MultiBudget:
         return self._budget
+
+    def add_exporter(self, exporter: Exporter) -> None:
+        """Register an exporter and wire it to EventBus events."""
+        self._exporters.append(exporter)
+        self._events.on("action_recorded", exporter.on_action)
+        self._events.on("level_changed", exporter.on_mode_change)
+
+    def shutdown(self) -> None:
+        """Shut down all registered exporters. Never crashes."""
+        for exporter in self._exporters:
+            try:
+                exporter.shutdown()
+            except Exception:
+                pass  # Never crash on shutdown
 
     def register_agent(
         self,
@@ -520,6 +540,24 @@ class SOMAEngine:
         context_usage = s.cumulative_tokens / self._context_window if self._context_window > 0 else 0.0
         context_usage = min(1.0, context_usage)
 
+        # Context burn rate: rolling avg of tokens per action over last 10 actions
+        s._token_burn_history.append(action.token_count)
+        if len(s._token_burn_history) > 10:
+            s._token_burn_history = s._token_burn_history[-10:]
+        context_burn_rate = sum(s._token_burn_history) / len(s._token_burn_history) if s._token_burn_history else 0.0
+
+        # Context exhaustion pressure signal (D-23)
+        context_exhaustion = sigmoid_clamp((context_usage - 0.5) / 0.15)
+        signal_pressures["context_exhaustion"] = context_exhaustion
+
+        # Proactive context events (D-27, D-28) — fire once per threshold
+        if context_usage >= 0.7 and not s._context_warning_fired:
+            s._context_warning_fired = True
+            self._events.emit("context_warning", {"agent_id": agent_id, "usage": context_usage})
+        if context_usage >= 0.9 and not s._context_critical_fired:
+            s._context_critical_fired = True
+            self._events.emit("context_critical", {"agent_id": agent_id, "usage": context_usage})
+
         # Context degradation: at 70% usage, multiply success by 0.7; at 100%, multiply by 0.4
         if context_usage > 0.0 and predicted_success_rate is not None:
             context_factor = max(0.4, 1.0 - (context_usage * 0.6))
@@ -620,6 +658,7 @@ class SOMAEngine:
                 calibration_score=calibration_score,
                 verbal_behavioral_divergence=verbal_behavioral_divergence,
                 context_usage=context_usage,
+                context_burn_rate=context_burn_rate,
             ),
             context_action=context_action,
             pressure_vector=pressure_vector,
@@ -633,6 +672,22 @@ class SOMAEngine:
             pressure=result.pressure,
             mode=result.mode.name,
         )
+
+        self._events.emit("action_recorded", {
+            "agent_id": agent_id,
+            "tool_name": action.tool_name,
+            "pressure": result.pressure,
+            "mode": result.mode.name,
+            "error": action.error,
+            "token_count": action.token_count,
+            "cost": action.cost,
+            "vitals": {
+                "uncertainty": uncertainty,
+                "drift": drift,
+                "error_rate": rv.error_rate,
+                "context_usage": context_usage,
+            },
+        })
 
         if self._auto_export:
             self.export_state(self._state_path)

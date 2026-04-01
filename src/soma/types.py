@@ -126,6 +126,7 @@ class VitalsSnapshot:
     calibration_score: float | None = None    # None during warmup (< 3 actions)
     verbal_behavioral_divergence: bool = False  # True = confident language + high pressure
     context_usage: float = 0.0                 # cumulative tokens / context window size
+    context_burn_rate: float = 0.0             # rolling avg tokens per action (last 10)
 
 
 @dataclass

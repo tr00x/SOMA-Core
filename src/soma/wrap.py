@@ -22,6 +22,7 @@ from typing import Any
 from soma.engine import SOMAEngine
 from soma.types import Action, ResponseMode
 from soma.recorder import SessionRecorder
+from soma.models import get_context_window
 
 
 class SomaBlocked(Exception):
@@ -251,6 +252,7 @@ class WrappedClient:
         self._block_at = block_at
         self._recorder = SessionRecorder()
         self._pending_context_action = "pass"
+        self._model_detected: bool = False
 
         # Push auto_export into the engine so record_action() handles it
         self._engine._auto_export = auto_export
@@ -511,6 +513,19 @@ class WrappedClient:
         # Fallback: estimate tokens from text
         if tokens == 0 and text:
             tokens = len(text) // 4
+
+        # Auto-detect model and update context window on first response (D-26)
+        if not self._model_detected:
+            model_name = None
+            if hasattr(response, "model"):
+                model_name = response.model
+            elif hasattr(response, "model_dump") and callable(response.model_dump):
+                dump = response.model_dump()
+                model_name = dump.get("model")
+            if model_name:
+                self._model_detected = True
+                window = get_context_window(model_name)
+                self._engine._context_window = window
 
         return text, tokens
 
