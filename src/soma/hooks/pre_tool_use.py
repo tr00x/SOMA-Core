@@ -123,6 +123,28 @@ def main():
     except Exception:
         pass  # Never crash pre_tool_use for signal reflex failures
 
+    # Guide mode: evaluate injection reflexes (error_rate, research_stall, agent_spam)
+    # These provide guidance but never block in guide mode.
+    if soma_mode == "guide":
+        try:
+            from soma.reflexes import evaluate as reflex_evaluate
+
+            reflex_config = get_reflex_config()
+            bash_history = read_bash_history(agent_id)
+            reflex_result = reflex_evaluate(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                action_log=action_log,
+                pressure=pressure,
+                config=reflex_config,
+                bash_history=bash_history,
+            )
+            # Only use inject_message — never block in guide mode
+            if reflex_result.inject_message:
+                print(reflex_result.inject_message, file=sys.stderr)
+        except Exception:
+            pass  # Never crash for injection reflex failures
+
     # Guide + Reflex modes: existing guidance logic (per D-03 mode inheritance)
     thresholds = get_guidance_thresholds()
     gsd_active = False
