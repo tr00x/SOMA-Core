@@ -148,8 +148,8 @@ def main():
                 sig_success_rate = 1.0
                 sig_handoff_text = ""
                 try:
-                    from soma.halflife import predict_success_rate, generate_handoff_suggestion, estimate_half_life
-                    hl = estimate_half_life(action_log)
+                    from soma.halflife import predict_success_rate, generate_handoff_suggestion, compute_half_life
+                    hl = compute_half_life(len(action_log), vitals.get("error_rate", 0.0))
                     sig_success_rate = predict_success_rate(actions, hl)
                     sig_handoff_text = generate_handoff_suggestion(agent_id, actions, hl, sig_success_rate)
                 except Exception:
