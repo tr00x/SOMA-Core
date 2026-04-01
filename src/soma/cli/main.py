@@ -426,6 +426,64 @@ def _cmd_doctor(_args: argparse.Namespace) -> None:
     print()
 
 
+def _cmd_report(args: argparse.Namespace) -> None:
+    """Generate and display a session report."""
+    from soma.persistence import load_engine_state
+    from soma.report import generate_session_report, save_report
+
+    engine_path = Path.home() / ".soma" / "engine_state.json"
+    if not engine_path.exists():
+        print("  No SOMA state found. Run some actions first.")
+        return
+
+    engine = load_engine_state(str(engine_path))
+    if engine is None:
+        print("  Could not load engine state.")
+        return
+
+    agent_id = getattr(args, "agent_id", None) or "claude-code"
+    report = generate_session_report(engine, agent_id)
+    print(report)
+
+    if not getattr(args, "no_save", False):
+        path = save_report(report, agent_id)
+        print(f"\n  Report saved to: {path}")
+
+
+def _cmd_analytics(args: argparse.Namespace) -> None:
+    """Show historical analytics for an agent."""
+    from soma.analytics import AnalyticsStore
+
+    store = AnalyticsStore()
+    agent_id = getattr(args, "agent_id", None) or "claude-code"
+
+    trends = store.get_agent_trends(agent_id, last_n_sessions=10)
+    if not trends:
+        print(f"  No analytics data for agent '{agent_id}'.")
+        store.close()
+        return
+
+    print(f"\n  SOMA Analytics — {agent_id}")
+    print(f"  {'Session':<12} {'Actions':>8} {'Avg P':>8} {'Max P':>8} {'Tokens':>10} {'Cost':>10} {'Errors':>7}")
+    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*7}")
+    for t in trends:
+        print(
+            f"  {t['session_id']:<12} {t['total_actions']:>8} "
+            f"{t['avg_pressure']:>8.3f} {t['max_pressure']:>8.3f} "
+            f"{t['total_tokens']:>10,.0f} ${t['total_cost']:>9.4f} "
+            f"{t['error_count']:>7.0f}"
+        )
+
+    tool_stats = store.get_tool_stats(agent_id)
+    if tool_stats:
+        print(f"\n  Tool Usage:")
+        for tool, count in tool_stats.items():
+            print(f"    {tool}: {count}")
+
+    store.close()
+    print()
+
+
 def _cmd_tui() -> None:
     # First run? Auto-wizard
     if not Path("soma.toml").exists() and not (Path.home() / ".soma" / "state.json").exists():
@@ -467,6 +525,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "  soma config set <key> <value>   Update a config value\n"
             "  soma mode [name]                Switch operating mode\n"
             "  soma init                       Run the interactive setup wizard\n"
+            "\n"
+            "Reports:\n"
+            "  soma report [agent-id]          Generate session report\n"
+            "  soma analytics [agent-id]       Show historical analytics\n"
             "\n"
             "Session:\n"
             "  soma replay <file>              Replay a recorded session file\n"
@@ -519,6 +581,17 @@ def _build_parser() -> argparse.ArgumentParser:
     mode_parser.add_argument("mode_name", nargs="?", default=None,
                              help="Mode: strict, relaxed, or autonomous")
 
+    # ---- Reports / Analytics ----
+    report_parser = subparsers.add_parser("report", help="Generate session report")
+    report_parser.add_argument("agent_id", metavar="agent-id", nargs="?", default="claude-code",
+                               help="Agent ID (default: claude-code)")
+    report_parser.add_argument("--no-save", action="store_true", dest="no_save",
+                               help="Print report without saving to file")
+
+    analytics_parser = subparsers.add_parser("analytics", help="Show historical analytics")
+    analytics_parser.add_argument("agent_id", metavar="agent-id", nargs="?", default="claude-code",
+                                  help="Agent ID (default: claude-code)")
+
     # ---- Session ----
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded session file")
     replay_parser.add_argument("file", help="Path to the session recording file (JSON)")
@@ -563,6 +636,8 @@ def main() -> None:
         "setup-claude": lambda _: __import__(
             "soma.cli.setup_claude", fromlist=["run_setup_claude"]
         ).run_setup_claude(),
+        "report": _cmd_report,
+        "analytics": _cmd_analytics,
         "version": _cmd_version,
         "doctor": _cmd_doctor,
     }
