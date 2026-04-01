@@ -219,12 +219,95 @@ def get_engine():
         engine._custom_thresholds = CLAUDE_CODE_CONFIG["thresholds"]
 
     agent_id = _get_session_agent_id()
+    is_new_session = False
     try:
         engine.get_level(agent_id)
     except Exception:
         engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
+        is_new_session = True
+
+    # Detect recycled PID: agent exists in persisted state but belongs
+    # to a previous OS process. Check via session marker file.
+    if not is_new_session and _is_stale_session(agent_id):
+        # Re-register agent to reset engine state for this agent
+        engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
+        is_new_session = True
+
+    if is_new_session:
+        _inherit_baseline(engine, agent_id)
+        _cleanup_old_agents(engine, agent_id)
+        _clear_session_files(agent_id)
+        _write_session_marker(agent_id)
 
     return engine, agent_id
+
+
+def _get_ppid_start_time() -> float:
+    """Get the start time of the parent process (PPID).
+
+    Returns 0.0 on failure. Uses `ps` which works on macOS and Linux.
+    """
+    import os
+    import subprocess
+    try:
+        ppid = os.getppid()
+        result = subprocess.run(
+            ["ps", "-o", "etime=", "-p", str(ppid)],
+            capture_output=True, text=True, timeout=2,
+        )
+        if result.returncode == 0:
+            # etime format: [[dd-]hh:]mm:ss — convert to elapsed seconds
+            etime = result.stdout.strip()
+            parts = etime.replace("-", ":").split(":")
+            parts = [int(p) for p in parts]
+            if len(parts) == 2:
+                return time.time() - (parts[0] * 60 + parts[1])
+            elif len(parts) == 3:
+                return time.time() - (parts[0] * 3600 + parts[1] * 60 + parts[2])
+            elif len(parts) == 4:
+                return time.time() - (parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3])
+    except Exception:
+        pass
+    return 0.0
+
+
+def _is_stale_session(agent_id: str) -> bool:
+    """Detect if a persisted agent_id belongs to a dead process (recycled PID).
+
+    The session marker stores the PPID's start time. If the current PPID
+    started at a different time, the PID was recycled and this is a new session.
+    """
+    try:
+        marker = SESSIONS_DIR / agent_id / ".session_marker"
+        if not marker.exists():
+            return False
+
+        stored_start = float(marker.read_text().strip())
+        current_start = _get_ppid_start_time()
+
+        if current_start == 0.0:
+            # Can't determine PPID start time — not stale (conservative)
+            return False
+
+        # If stored start time differs by more than 5 seconds, PID was recycled
+        return abs(stored_start - current_start) > 5.0
+    except Exception:
+        pass
+    return False
+
+
+def _write_session_marker(agent_id: str) -> None:
+    """Write session marker with PPID start time for recycled-PID detection."""
+    try:
+        session_dir = SESSIONS_DIR / agent_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        marker = session_dir / ".session_marker"
+        start_time = _get_ppid_start_time()
+        if start_time == 0.0:
+            start_time = time.time()  # fallback
+        marker.write_text(str(start_time))
+    except Exception:
+        pass  # Never crash
 
 
 def _inherit_baseline(engine, new_agent_id: str) -> None:
@@ -265,6 +348,29 @@ def _inherit_baseline(engine, new_agent_id: str) -> None:
         pass  # Never crash
 
 
+def _clear_session_files(agent_id: str) -> None:
+    """Remove stale per-session files so new session starts fresh.
+
+    Called when a new agent is registered (new PPID = new session).
+    Clears trajectory, action_log, bash_history, quality, predictor,
+    task_tracker, block_count, and checkpoint_count.
+    """
+    try:
+        session_dir = SESSIONS_DIR / agent_id
+        if not session_dir.exists():
+            return
+        for f in session_dir.iterdir():
+            # Keep subagents.json (cross-session data) and lock files
+            if f.name.endswith(".lock"):
+                continue
+            try:
+                f.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:
+        pass  # Never crash
+
+
 def _cleanup_old_agents(engine, current_id: str, keep: int = 2) -> None:
     """Remove old session agents, keeping only the N most active + current."""
     try:
@@ -281,6 +387,8 @@ def _cleanup_old_agents(engine, current_id: str, keep: int = 2) -> None:
         for aid in to_remove:
             del engine._agents[aid]
             engine._graph._nodes.pop(aid, None)
+            # Clean up session files on disk
+            _clear_session_files(aid)
     except Exception:
         pass  # Never crash
 

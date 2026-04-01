@@ -18,6 +18,7 @@ from soma.persistence import save_engine_state, load_engine_state
 from soma.sdk.track import track, SomaTracker
 from soma.policy import PolicyEngine, guardrail
 from soma.audit import AuditLogger
+from soma.proxy import SOMAProxy, SOMABlockError
 
 def quickstart(budget=None, agents=None):
     """Fastest way to start. Returns a configured engine.
@@ -50,4 +51,5 @@ __all__ = [
     "track", "SomaTracker",
     "PolicyEngine", "guardrail",
     "AuditLogger",
+    "SOMAProxy", "SOMABlockError",
 ]

@@ -128,3 +128,27 @@ def track(
         # t.result is now available
     """
     return SomaTracker(engine, agent_id, tool_name, token_count=token_count, cost=cost)
+
+
+def soma_track(
+    engine: SOMAEngine,
+    agent_id: str,
+    tool_name: str | None = None,
+):
+    """Decorator that wraps any function with SOMA proxy monitoring.
+
+    Usage:
+        @soma_track(engine, "my-agent")
+        def my_tool(query: str) -> str:
+            return search(query)
+
+        result = my_tool("hello")  # monitored by SOMA
+    """
+    from soma.proxy import SOMAProxy
+    proxy = SOMAProxy(engine, agent_id)
+
+    def decorator(fn):
+        name = tool_name or fn.__name__
+        return proxy.wrap_tool(fn, name)
+
+    return decorator

@@ -268,8 +268,9 @@ def _deep_merge(base: dict, override: dict) -> None:
 
 def load_config(path: str = "soma.toml") -> dict[str, Any]:
     """Read and return config from *path*. Returns DEFAULT_CONFIG if file is missing."""
+    import copy
     if not os.path.exists(path):
-        return DEFAULT_CONFIG.copy()
+        return copy.deepcopy(DEFAULT_CONFIG)
     with open(path, "rb") as fh:
         config = tomllib.load(fh)
     return migrate_config(config)

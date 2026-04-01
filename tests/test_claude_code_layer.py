@@ -434,6 +434,9 @@ class TestPreToolUse:
         engine._graph.propagate()
         save_state(engine)
 
+        # Clear bash history so retry dedup doesn't trigger on shared test state
+        monkeypatch.setattr("soma.hooks.common.read_bash_history", lambda agent_id="": [])
+
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
             "tool_name": "Bash",
             "tool_input": {"command": "ls -la"},
@@ -503,6 +506,9 @@ class TestPreToolUse:
         engine._graph.set_internal_pressure("claude-code", 0.60)
         engine._graph.propagate()
         save_state(engine)
+
+        # Clear bash history so retry dedup doesn't trigger on shared test state
+        monkeypatch.setattr("soma.hooks.common.read_bash_history", lambda agent_id="": [])
 
         # Even bash should pass at WARN level
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
@@ -1748,3 +1754,133 @@ class TestQualityScoring:
         report = qt.get_report()
         assert any("syntax" in i for i in report.issues)
         assert any("lint" in i for i in report.issues)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Session File Cleanup
+# ──────────────────────────────────────────────────────────────────
+
+class TestSessionCleanup:
+    """Tests that session files are cleared when a new session starts."""
+
+    def test_clear_session_files_removes_trajectory(self, tmp_path, monkeypatch):
+        """Trajectory file should be deleted when new session starts."""
+        from soma.hooks.common import _clear_session_files, SESSIONS_DIR
+        fake_sessions = tmp_path / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        agent_id = "cc-12345"
+        session_dir = fake_sessions / agent_id
+        session_dir.mkdir(parents=True)
+        (session_dir / "trajectory.json").write_text("[0.1, 0.2, 0.3]")
+        (session_dir / "action_log.json").write_text('[{"tool": "Read"}]')
+
+        _clear_session_files(agent_id)
+
+        assert not (session_dir / "trajectory.json").exists()
+        assert not (session_dir / "action_log.json").exists()
+
+    def test_clear_session_files_preserves_lock_files(self, tmp_path, monkeypatch):
+        """Lock files should not be deleted during cleanup."""
+        from soma.hooks.common import _clear_session_files
+        fake_sessions = tmp_path / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        agent_id = "cc-12345"
+        session_dir = fake_sessions / agent_id
+        session_dir.mkdir(parents=True)
+        (session_dir / "action_log.lock").write_text("")
+        (session_dir / "trajectory.json").write_text("[0.1]")
+
+        _clear_session_files(agent_id)
+
+        assert (session_dir / "action_log.lock").exists()
+        assert not (session_dir / "trajectory.json").exists()
+
+    def test_clear_session_files_noop_for_missing_dir(self, tmp_path, monkeypatch):
+        """No crash when session directory doesn't exist."""
+        from soma.hooks.common import _clear_session_files
+        fake_sessions = tmp_path / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        # Should not raise
+        _clear_session_files("cc-nonexistent")
+
+    def test_clear_session_files_removes_all_state(self, tmp_path, monkeypatch):
+        """All session-scoped state files should be cleared."""
+        from soma.hooks.common import _clear_session_files
+        fake_sessions = tmp_path / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        agent_id = "cc-99999"
+        session_dir = fake_sessions / agent_id
+        session_dir.mkdir(parents=True)
+
+        files = [
+            "trajectory.json", "action_log.json", "bash_history.json",
+            "quality.json", "predictor.json", "task_tracker.json",
+            "block_count", "checkpoint_count",
+        ]
+        for f in files:
+            (session_dir / f).write_text("[]")
+
+        _clear_session_files(agent_id)
+
+        for f in files:
+            assert not (session_dir / f).exists(), f"{f} should have been deleted"
+
+    def test_new_session_clears_stale_trajectory(self, soma_dir, monkeypatch):
+        """get_engine should clear trajectory when registering new agent."""
+        from soma.hooks.common import SESSIONS_DIR
+        fake_sessions = soma_dir / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        # Pre-create stale session files
+        agent_id = "claude-code"
+        session_dir = fake_sessions / agent_id
+        session_dir.mkdir(parents=True)
+        traj_path = session_dir / "trajectory.json"
+        traj_path.write_text("[0.5, 0.6, 0.7]")  # stale data
+
+        # get_engine will register "claude-code" as new → should clear
+        engine, aid = get_engine()
+        assert engine is not None
+        assert aid == "claude-code"
+
+        # Trajectory should be cleared
+        assert not traj_path.exists()
+
+    def test_cleanup_old_agents_clears_session_files(self, tmp_path, monkeypatch):
+        """Removing old agents should also clean their session directories."""
+        from soma.hooks.common import _cleanup_old_agents
+        fake_sessions = tmp_path / "sessions"
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", fake_sessions)
+
+        engine = SOMAEngine(budget={"tokens": 100000})
+        # Create 5 old agents with varying activity
+        for i in range(5):
+            aid = f"cc-{i}"
+            engine.register_agent(aid, tools=CLAUDE_TOOLS)
+            engine._agents[aid].action_count = i * 10
+
+            # Create session files on disk
+            session_dir = fake_sessions / aid
+            session_dir.mkdir(parents=True)
+            (session_dir / "trajectory.json").write_text("[0.1]")
+            (session_dir / "action_log.json").write_text("[]")
+
+        # Register current agent
+        engine.register_agent("cc-current", tools=CLAUDE_TOOLS)
+
+        _cleanup_old_agents(engine, "cc-current", keep=2)
+
+        # Should keep 2 most active + current
+        assert "cc-current" in engine._agents
+        assert "cc-4" in engine._agents  # 40 actions, most active
+        assert "cc-3" in engine._agents  # 30 actions, second most active
+
+        # Removed agents should have files cleaned
+        for i in range(3):
+            aid = f"cc-{i}"
+            session_dir = fake_sessions / aid
+            assert not (session_dir / "trajectory.json").exists()

@@ -66,18 +66,20 @@ def compute_aggregate_pressure(
 
     result = 0.7 * weighted_mean + 0.3 * max_p
 
-    # Error-rate aggregate floor: sustained high error rates must escalate mode
-    # regardless of other signals sitting at baseline.  Without this, the
-    # mean-based formula dilutes a dominant error signal when all other signals
-    # are healthy — keeping aggregate < GUIDE even at 80%+ error rates.
+    # Continuous error-rate aggregate floor: ensures high error pressure
+    # translates to proportional aggregate pressure even when other signals
+    # are healthy. Uses smooth mapping starting at er_p=0.20 instead of
+    # step function at 0.50 (which caused bimodal 0/0.80 pressure distribution).
     #
-    # Floor mapping (mirrors the threshold ladder):
-    #   er_p = 0.50  →  floor = 0.40  (GUIDE entry)
-    #   er_p = 0.75  →  floor = 0.60  (WARN entry)
-    #   er_p = 1.00  →  floor = 0.80  (BLOCK entry)
+    # Smooth mapping:
+    #   er_p = 0.20  →  floor = 0.10  (early OBSERVE)
+    #   er_p = 0.40  →  floor = 0.25  (late OBSERVE)
+    #   er_p = 0.60  →  floor = 0.40  (GUIDE entry)
+    #   er_p = 0.80  →  floor = 0.55  (mid WARN)
+    #   er_p = 1.00  →  floor = 0.70  (high WARN, not instant BLOCK)
     er_p = signal_pressures.get("error_rate", 0.0)
-    if er_p >= 0.50 and effective_weights.get("error_rate", 0.0) > 0:
-        er_floor = 0.40 + 0.40 * (er_p - 0.50) / 0.50
+    if er_p >= 0.20 and effective_weights.get("error_rate", 0.0) > 0:
+        er_floor = 0.10 + 0.60 * (er_p - 0.20) / 0.80  # linear 0.10→0.70
         result = max(result, er_floor)
 
     return min(1.0, result)

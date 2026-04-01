@@ -424,10 +424,12 @@ class SOMAEngine:
         # 5. Per-signal pressure
         error_pressure = compute_signal_pressure(
             rv.error_rate, s.baseline.get("error_rate"), s.baseline.get_std("error_rate"))
-        # Absolute floor: error_rate is objectively bad — baseline must not "normalize" errors.
-        # If error_rate > 0.3, pressure floor = error_rate itself (high errors = high pressure).
-        if rv.error_rate > 0.3:
-            error_pressure = max(error_pressure, rv.error_rate)
+        # Continuous error floor: error_rate is objectively bad — baseline must not
+        # "normalize" errors. Use smooth ramp starting at 0.1 instead of step at 0.3.
+        # At error_rate=0.1 floor=0.0, at 0.3 floor=0.2, at 0.5 floor=0.4, at 1.0 floor=0.9.
+        if rv.error_rate > 0.1:
+            error_floor = (rv.error_rate - 0.1) * (1.0 / 0.9)  # linear 0→1 over 0.1→1.0
+            error_pressure = max(error_pressure, error_floor)
 
         uncertainty_pressure = compute_signal_pressure(
             uncertainty, s.baseline.get("uncertainty"), s.baseline.get_std("uncertainty"))
@@ -616,13 +618,20 @@ class SOMAEngine:
         self._graph.propagate()
         effective = self._graph.get_effective_pressure(agent_id)
 
-        # Grace period: don't penalize during cold start
-        # Also zero the graph so get_snapshot returns 0
-        if s.action_count <= s.baseline.min_samples:
-            effective = 0.0
-            pressure_vector = PressureVector()  # keep consistent with effective=0.0
-            self._graph.set_internal_pressure(agent_id, 0.0)
-            self._graph._nodes[agent_id].effective_pressure = 0.0
+        # Grace period: ramp pressure from 0 to full over min_samples actions.
+        # Linear ramp prevents the cliff where pressure jumps from 0 to high
+        # on action min_samples+1 (the bimodal pressure bug).
+        if s.action_count < s.baseline.min_samples:
+            ramp = s.action_count / s.baseline.min_samples  # 0.0 → 1.0
+            effective = effective * ramp
+            pressure_vector = PressureVector(
+                uncertainty=pressure_vector.uncertainty * ramp,
+                drift=pressure_vector.drift * ramp,
+                error_rate=pressure_vector.error_rate * ramp,
+                cost=pressure_vector.cost * ramp,
+            )
+            self._graph.set_internal_pressure(agent_id, effective)
+            self._graph._nodes[agent_id].effective_pressure = effective
             self._graph.set_internal_pressure_vector(agent_id, pressure_vector)
             self._graph._nodes[agent_id].effective_pressure_vector = pressure_vector
 
