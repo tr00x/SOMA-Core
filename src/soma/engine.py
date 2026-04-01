@@ -16,6 +16,7 @@ from soma.vitals import (
     classify_uncertainty, estimate_task_complexity,
 )
 from soma.halflife import compute_half_life, predict_success_rate, generate_handoff_suggestion
+from soma.phase_drift import compute_phase_aware_drift
 from soma.reliability import compute_hedging_rate, compute_calibration_score, detect_verbal_behavioral_divergence
 from soma.baseline import Baseline
 from soma.pressure import compute_signal_pressure, compute_aggregate_pressure, DEFAULT_WEIGHTS
@@ -26,6 +27,36 @@ from soma.learning import LearningEngine
 from soma.events import EventBus
 from soma.audit import AuditLogger
 from soma.exporters import Exporter
+
+
+_RESEARCH_TOOLS = {"Read", "Grep", "Glob", "WebSearch", "WebFetch"}
+_IMPLEMENT_TOOLS = {"Write", "Edit", "NotebookEdit"}
+_TEST_TOOLS = {"Bash"}
+
+
+def _detect_phase(actions: list) -> str:
+    """Detect current development phase from recent tool usage.
+
+    Returns one of: "research", "implement", "test", "debug", "unknown".
+    Mirrors task_tracker._detect_phase logic without requiring a TaskTracker instance.
+    """
+    if not actions:
+        return "unknown"
+    recent = actions[-10:]
+    error_count = sum(1 for a in recent if a.error)
+    if len(recent) >= 3 and error_count / len(recent) > 0.3:
+        return "debug"
+    scores = {"research": 0, "implement": 0, "test": 0}
+    for a in recent:
+        if a.tool_name in _RESEARCH_TOOLS:
+            scores["research"] += 1
+        elif a.tool_name in _IMPLEMENT_TOOLS:
+            scores["implement"] += 1
+        elif a.tool_name in _TEST_TOOLS:
+            scores["test"] += 1
+    if not any(scores.values()):
+        return "unknown"
+    return max(scores, key=scores.get)
 
 
 @dataclass(frozen=True)
@@ -341,7 +372,12 @@ class SOMAEngine:
         current_vec = compute_behavior_vector(actions, s.known_tools)
         drift = 0.0
         if s.baseline_vector is not None:
-            drift = compute_drift(actions, s.baseline_vector, s.known_tools)
+            # Phase-aware drift: detect current phase from tool usage and
+            # reduce drift when tools match the expected phase pattern.
+            current_phase = _detect_phase(actions)
+            drift = compute_phase_aware_drift(
+                actions, s.baseline_vector, s.known_tools, current_phase
+            )
         if s.action_count % 10 == 0 or s.baseline_vector is None:
             s.baseline_vector = current_vec
 
