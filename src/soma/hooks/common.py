@@ -446,6 +446,50 @@ def increment_checkpoint_count(agent_id: str = "") -> int:
         return 0
 
 
+def get_circuit_breaker_state(agent_id: str = ""):
+    """Load circuit breaker state from disk. Returns default if missing.
+
+    Never raises -- returns fresh state on any error.
+    """
+    try:
+        from soma.graph_reflexes import CircuitBreakerState
+
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        if path.exists():
+            data = json.loads(path.read_text())
+            return CircuitBreakerState(
+                agent_id=data.get("agent_id", aid),
+                consecutive_block=data.get("consecutive_block", 0),
+                consecutive_observe=data.get("consecutive_observe", 0),
+                is_open=data.get("is_open", False),
+            )
+        return CircuitBreakerState(agent_id=aid)
+    except Exception:
+        try:
+            from soma.graph_reflexes import CircuitBreakerState
+            return CircuitBreakerState(agent_id=agent_id or "default")
+        except Exception:
+            return None  # type: ignore[return-value]
+
+
+def save_circuit_breaker_state(state, agent_id: str = "") -> None:
+    """Persist circuit breaker state to disk. Never raises."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "agent_id": state.agent_id,
+            "consecutive_block": state.consecutive_block,
+            "consecutive_observe": state.consecutive_observe,
+            "is_open": state.is_open,
+        }
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
 def _auto_checkpoint(checkpoint_number: int) -> bool:
     """Run git stash push as an auto-checkpoint. Returns True on success.
 
