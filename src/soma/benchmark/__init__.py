@@ -10,6 +10,7 @@ from soma.benchmark.metrics import (
     ActionMetric,
 )
 from soma.benchmark.harness import run_benchmark, run_scenario, run_multi_agent_scenario
+from soma.benchmark.report import generate_markdown, render_terminal
 
 __all__ = [
     "run_benchmark",
@@ -20,4 +21,6 @@ __all__ = [
     "BenchmarkMetrics",
     "ScenarioAction",
     "ActionMetric",
+    "generate_markdown",
+    "render_terminal",
 ]
