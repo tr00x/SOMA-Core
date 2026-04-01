@@ -546,6 +546,27 @@ def _cmd_benchmark(args: argparse.Namespace) -> None:
     """Run SOMA behavioral benchmarks with A/B comparison."""
     from dataclasses import asdict
 
+    # Live benchmark mode — real LLM API calls
+    if getattr(args, "live", False):
+        from soma.benchmark.live import (
+            run_live_benchmark,
+            generate_live_report,
+            render_live_terminal,
+        )
+        model = getattr(args, "model", "claude-haiku-4-5-20251001")
+        runs = getattr(args, "runs", 3)
+        print(f"  Running live benchmark with {model}...")
+        print(f"  {runs} run(s) per task, estimated cost: ~$0.05")
+        print()
+        result = run_live_benchmark(runs_per_task=runs, model=model)
+        render_live_terminal(result)
+
+        output_path = Path(getattr(args, "output", "docs/LIVE-BENCHMARK.md"))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(generate_live_report(result))
+        print(f"  Live benchmark report: {output_path}")
+        return
+
     from soma.benchmark import run_benchmark
     from soma.benchmark.report import generate_markdown, render_terminal, render_progress
 
@@ -740,6 +761,10 @@ def _build_parser() -> argparse.ArgumentParser:
                                   help="Skip rich terminal output")
     benchmark_parser.add_argument("--tune-thresholds", action="store_true", dest="tune_thresholds",
                                   help="Run threshold tuner on results")
+    benchmark_parser.add_argument("--live", action="store_true",
+                                  help="Run live benchmark with real LLM API calls")
+    benchmark_parser.add_argument("--model", type=str, default="claude-haiku-4-5-20251001",
+                                  help="Model for live benchmark (default: claude-haiku-4-5-20251001)")
 
     # ---- System ----
     subparsers.add_parser("version", help="Print the SOMA version and exit")
