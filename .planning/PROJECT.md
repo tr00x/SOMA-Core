@@ -52,6 +52,11 @@ If everything else fails, the closed-loop feedback system must work: actions →
 - ✓ Community policy packs with YAML rules and CLI (`soma policy`) — Phase 12
 - ✓ Terminal demo (VHS tape + demo.gif, real engine data) — Phase 12
 - ✓ 890 tests passing — Phase 12
+- ✓ A/B benchmark harness proving SOMA reduces errors 13.7%, retries 55.6% in retry storms — Phase 13
+- ✓ Cross-session learning: session store, anomaly predictor, threshold tuner — Phase 13
+- ✓ Phase-aware drift: reduces drift 50% for known task phases — Phase 13
+- ✓ `soma benchmark` CLI command with rich output and docs/BENCHMARK.md — Phase 13
+- ✓ 944 tests passing — Phase 13
 
 ### Active
 
@@ -158,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-01 after Phase 12 (Ecosystem: hooks, NPM, demo, policy packs)*
+*Last updated: 2026-04-01 after Phase 13 (Intelligence: benchmark proof + cross-session learning)*
