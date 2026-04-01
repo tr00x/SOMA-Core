@@ -39,10 +39,22 @@ def _cmd_status(_args: argparse.Namespace) -> None:
 
 
 def _cmd_replay(args: argparse.Namespace) -> None:
+    # Check if session store shortcuts are used
+    use_last = getattr(args, "last", False)
+    use_worst = getattr(args, "worst", False)
+    session_idx = getattr(args, "session", None)
+
+    if use_last or use_worst or session_idx is not None:
+        _cmd_replay_session(args)
+        return
+
     from soma.recorder import SessionRecorder
     from soma.replay import replay_session
 
-    recording_path: str = args.file
+    recording_path: str | None = args.file
+    if recording_path is None:
+        print("  Usage: soma replay <file> or soma replay --last/--worst/--session N")
+        return
 
     try:
         from soma.cli.replay_cli import run_replay_cli
@@ -52,6 +64,88 @@ def _cmd_replay(args: argparse.Namespace) -> None:
         results = replay_session(recording)
         for i, result in enumerate(results, start=1):
             print(f"  [{i:>4}] level={result.level.name}  pressure={result.pressure:.3f}")
+
+
+def _cmd_replay_session(args: argparse.Namespace) -> None:
+    """Replay a session from session_store (--last, --worst, --session N)."""
+    from soma.session_store import load_sessions
+
+    sessions = load_sessions()
+    if not sessions:
+        print("  No sessions found in session store.")
+        return
+
+    # Sort by ended time descending (most recent first)
+    sessions_sorted = sorted(sessions, key=lambda s: s.ended, reverse=True)
+
+    if getattr(args, "worst", False):
+        target = max(sessions, key=lambda s: s.max_pressure)
+    elif getattr(args, "session", None) is not None:
+        idx = args.session
+        if idx < 0 or idx >= len(sessions_sorted):
+            print(f"  Session index {idx} out of range (0-{len(sessions_sorted) - 1}).")
+            return
+        target = sessions_sorted[idx]
+    else:
+        # --last (default)
+        target = sessions_sorted[0]
+
+    # Print session header
+    import datetime
+    started = datetime.datetime.fromtimestamp(target.started).strftime("%Y-%m-%d %H:%M") if target.started > 0 else "?"
+    duration = int(target.ended - target.started) if target.started > 0 else 0
+    duration_min = duration // 60
+
+    print()
+    print(f"  Session: {target.agent_id}")
+    print(f"  Started: {started}  Duration: {duration_min}min  Actions: {target.action_count}")
+    print(f"  Pressure: avg={target.avg_pressure:.0%}  peak={target.max_pressure:.0%}  final={target.final_pressure:.0%}")
+    print(f"  Errors: {target.error_count}/{target.action_count}")
+    print()
+
+    traj = target.pressure_trajectory or []
+
+    # Print action-by-action
+    n_actions = max(len(traj), target.action_count)
+    if n_actions == 0:
+        print("  No action data to replay.")
+        return
+
+    # Detect patterns: >60% single tool usage
+    patterns = set()
+    if target.tool_distribution:
+        total_t = sum(target.tool_distribution.values())
+        for t, c in target.tool_distribution.items():
+            if total_t > 5 and c / total_t > 0.6:
+                patterns.add(t)
+
+    tool_order = list(target.tool_distribution.keys()) if target.tool_distribution else []
+    tool_counts_remaining = dict(target.tool_distribution) if target.tool_distribution else {}
+
+    for i in range(n_actions):
+        pressure = traj[i] if i < len(traj) else 0.0
+
+        # Pick tool name from distribution (approximate order)
+        tool = "?"
+        for t in tool_order:
+            if tool_counts_remaining.get(t, 0) > 0:
+                tool = t
+                tool_counts_remaining[t] -= 1
+                break
+
+        # Status marker
+        is_error = i < target.error_count  # approximate: errors first
+        is_pattern = tool in patterns
+        if is_error:
+            marker = "\u2717"
+        elif is_pattern:
+            marker = "\u26a1"
+        else:
+            marker = "\u2713"
+
+        pattern_note = f"[{tool} heavy]" if is_pattern and i == 0 else ""
+
+        print(f"  #{i:<4} {tool:12s}  p={pressure:.0%}  {marker}  {pattern_note}")
 
 
 def _cmd_version(_args: argparse.Namespace) -> None:
@@ -905,7 +999,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ---- Session ----
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded session file")
-    replay_parser.add_argument("file", help="Path to the session recording file (JSON)")
+    replay_parser.add_argument("file", nargs="?", default=None, help="Path to the session recording file (JSON)")
+    replay_parser.add_argument("--last", action="store_true", help="Replay most recent session from session store")
+    replay_parser.add_argument("--worst", action="store_true", help="Replay session with highest peak pressure")
+    replay_parser.add_argument("--session", type=int, default=None, metavar="N",
+                               help="Replay Nth session (0=most recent)")
 
     # ---- Benchmark ----
     benchmark_parser = subparsers.add_parser("benchmark", help="Run SOMA behavioral benchmarks")
