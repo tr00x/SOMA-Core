@@ -86,38 +86,66 @@ def main():
     try:
         snap = engine.get_snapshot(agent_id)
         action_count = snap['action_count']
-        level = snap['level'].name
         pressure = snap['pressure']
 
         # Read action log for session stats
         log = read_action_log(agent_id)
         errors = sum(1 for e in log if e.get("error"))
-        tools_used = {}
-        for e in log:
-            t = e.get("tool", "?")
-            tools_used[t] = tools_used.get(t, 0) + 1
 
-        # Build summary
-        parts = [f"SOMA session end: {level} (p={pressure:.0%}, #{action_count})"]
-        if errors:
-            parts.append(f"  errors: {errors}/{len(log)}")
-        if tools_used:
-            top_3 = sorted(tools_used.items(), key=lambda x: -x[1])[:3]
-            parts.append(f"  top tools: {', '.join(f'{t}={c}' for t, c in top_3)}")
+        # Only print enhanced summary for notable sessions
+        if action_count < 10 and pressure <= 0.3:
+            # Minimal summary for short/quiet sessions
+            print(f"SOMA: {action_count} actions, p={pressure:.0%}", file=sys.stderr)
+        else:
+            # Enhanced summary
+            traj = read_pressure_trajectory(agent_id)
+            peak = max(traj) if traj else pressure
+            peak_action = traj.index(peak) + 1 if traj else action_count
 
-        # Quality grade
-        try:
-            qt = get_quality_tracker(agent_id=agent_id)
-            report = qt.get_report()
-            if report.total_writes + report.total_bashes >= 3:
-                q_str = f"  quality: {report.grade} ({report.score:.0%})"
-                if report.issues:
-                    q_str += f" — {', '.join(report.issues)}"
-                parts.append(q_str)
-        except Exception:
-            pass
+            # Duration
+            duration_min = 0
+            if log and len(log) >= 2:
+                first_ts = log[0].get("ts", 0)
+                last_ts = log[-1].get("ts", 0)
+                if first_ts and last_ts:
+                    duration_min = int((last_ts - first_ts) / 60)
 
-        print("\n".join(parts), file=sys.stderr)
+            error_rate = errors / action_count if action_count > 0 else 0.0
+
+            # Quality grade
+            grade = "?"
+            try:
+                qt = get_quality_tracker(agent_id=agent_id)
+                report = qt.get_report()
+                if report.total_writes + report.total_bashes >= 3:
+                    grade = f"{report.grade} ({report.score:.0%})"
+            except Exception:
+                pass
+
+            # Pattern detection
+            tools_used: dict[str, int] = {}
+            for e in log:
+                t = e.get("tool", "?")
+                tools_used[t] = tools_used.get(t, 0) + 1
+            pattern_line = ""
+            if tools_used:
+                total_t = sum(tools_used.values())
+                for t, c in tools_used.items():
+                    if total_t > 5 and c / total_t > 0.6:
+                        pattern_line = f"Pattern: {t} heavy ({c}/{total_t} actions)"
+                        break
+
+            parts = [
+                "\u2500\u2500 SOMA Session \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+                f"Duration: {duration_min}min  Actions: {action_count}  Grade: {grade}",
+                f"Peak: {peak:.0%} at action #{peak_action}",
+                f"Errors: {errors}/{action_count} ({error_rate:.0%})",
+            ]
+            if pattern_line:
+                parts.append(pattern_line)
+            parts.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+
+            print("\n".join(parts), file=sys.stderr)
     except Exception:
         pass  # Never crash Claude Code
 

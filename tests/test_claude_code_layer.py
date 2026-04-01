@@ -640,8 +640,8 @@ class TestStop:
         main()
 
         captured = capsys.readouterr()
-        assert "SOMA session end" in captured.err
-        assert "OBSERVE" in captured.err
+        assert "SOMA" in captured.err
+        assert "actions" in captured.err
 
     def test_returns_none_when_no_engine(self, soma_dir, monkeypatch):
         from soma.hooks import stop
