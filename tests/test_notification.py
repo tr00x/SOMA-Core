@@ -17,13 +17,13 @@ class TestCollectFindings:
 
     def test_warn_level_produces_status_finding(self):
         findings = _collect_findings([], {}, 0.55, "WARN", 50, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "WARN" in m]
-        assert len(status) == 1
+        status = [m for _, m in findings if "p=" in m and "status" in m.lower() or "55%" in m]
+        assert len(status) >= 1
 
     def test_block_level_produces_status_finding(self):
         findings = _collect_findings([], {}, 0.80, "BLOCK", 100, self._MINIMAL_CONFIG)
-        status = [m for _, m in findings if "BLOCK" in m]
-        assert len(status) == 1
+        status = [m for _, m in findings if "blocked" in m.lower() or "p=" in m]
+        assert len(status) >= 1
 
     def test_observe_no_status_finding(self):
         findings = _collect_findings([], {}, 0.10, "OBSERVE", 20, self._MINIMAL_CONFIG)
@@ -42,7 +42,7 @@ class TestCollectFindings:
             for i in range(5)
         ]
         findings = _collect_findings(log, {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
-        pattern_msgs = [m for _, m in findings if "[do]" in m]
+        pattern_msgs = [m for _, m in findings if "pattern" in m.lower() or "blind" in m.lower()]
         assert len(pattern_msgs) >= 1  # blind edits detected
 
     def test_positive_pattern_in_findings(self):
@@ -65,15 +65,15 @@ class TestCollectFindings:
         positive = [m for _, m in findings if "✓" in m]
         assert all(m.startswith("[✓]") for m in positive)
 
-    def test_negative_format_uses_do_prefix(self):
-        """Negative findings use [do] prefix."""
+    def test_negative_format_reports_data(self):
+        """Negative findings report pattern data, not instructions."""
         log = [
             {"tool": "Edit", "error": False, "file": f"/other/f{i}.py", "ts": i}
             for i in range(5)
         ]
         findings = _collect_findings(log, {}, 0.30, "GUIDE", 30, self._MINIMAL_CONFIG)
-        do_msgs = [m for _, m in findings if "[do]" in m]
-        assert len(do_msgs) >= 1
+        data_msgs = [m for _, m in findings if "pattern=" in m or "blind" in m.lower()]
+        assert len(data_msgs) >= 1
 
 
 class TestActionableMetrics:

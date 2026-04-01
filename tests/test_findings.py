@@ -23,7 +23,7 @@ class TestFindingStructure:
 class TestCollectStatus:
     def test_warn_produces_finding(self):
         findings = collect([], {}, 0.55, "WARN", 50, _MINIMAL_CONFIG)
-        assert any(f.category == "status" and "elevated" in f.message.lower() for f in findings)
+        assert any(f.category == "status" and "p=" in f.message for f in findings)
 
     def test_block_produces_finding(self):
         findings = collect([], {}, 0.80, "BLOCK", 100, _MINIMAL_CONFIG)

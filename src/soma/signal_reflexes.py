@@ -49,27 +49,16 @@ def evaluate_predictor_checkpoint(
 
     reason = getattr(prediction, "dominant_reason", "trend")
 
-    if mode == "reflex":
-        return ReflexResult(
-            allow=True,
-            reflex_kind="predictor_checkpoint",
-            inject_message=(
-                f"[SOMA] Auto-checkpoint recommended: escalation predicted "
-                f"in ~{actions_ahead} actions (confidence {confidence:.0%}, "
-                f"reason: {reason}). Save progress now."
-            ),
-            detail=f"confidence={confidence:.2f}, actions_ahead={actions_ahead}",
-        )
+    msg = (
+        f"[SOMA] predicted_escalation in ~{actions_ahead} actions, "
+        f"confidence={confidence:.0%}, trigger={reason}"
+    )
+    kind = "predictor_checkpoint" if mode == "reflex" else "predictor_warning"
 
-    # guide mode
     return ReflexResult(
         allow=True,
-        reflex_kind="predictor_warning",
-        inject_message=(
-            f"[SOMA WARNING] Pressure escalation predicted in ~{actions_ahead} "
-            f"actions (confidence {confidence:.0%}, reason: {reason}). "
-            "Consider saving progress."
-        ),
+        reflex_kind=kind,
+        inject_message=msg,
         detail=f"confidence={confidence:.2f}, actions_ahead={actions_ahead}",
     )
 
@@ -93,8 +82,8 @@ def evaluate_drift_guardian(
         allow=True,
         reflex_kind="drift_guardian",
         inject_message=(
-            f"[SOMA] Your task: {original_task}. "
-            f"You're now doing: {activity}. Refocus."
+            f"[SOMA] drift={drift:.2f}, original_task=\"{original_task}\", "
+            f"current_activity=\"{activity}\""
         ),
         detail=f"drift={drift:.2f}",
     )
@@ -115,8 +104,8 @@ def evaluate_handoff(
     return ReflexResult(
         allow=True,
         reflex_kind="handoff_suggestion",
-        inject_message=f"[SOMA] {handoff_text}",
-        detail=f"trust_reduction recommended for agent '{agent_id}'",
+        inject_message=f"[SOMA] success_rate={success_rate:.0%}, {handoff_text}",
+        detail=f"success_rate={success_rate:.2f}, agent='{agent_id}'",
     )
 
 
@@ -135,7 +124,7 @@ def evaluate_rca_injection(
     return ReflexResult(
         allow=True,
         reflex_kind="rca_injection",
-        inject_message=f"[SOMA DIAGNOSIS] Root cause: {rca_text}",
+        inject_message=f"[SOMA] error_rate={error_rate:.0%}, root_cause: {rca_text}",
         detail=f"error_rate={error_rate:.2f}",
     )
 
