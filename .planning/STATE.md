@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-04-01T05:07:27.414Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-04-01T05:12:53.382Z"
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -61,6 +61,7 @@ Plan: 2 of 2
 | Phase 14 P02 | 3min | 2 tasks | 5 files |
 | Phase 14 P03 | 4min | 2 tasks | 4 files |
 | Phase 15 P01 | 2min | 1 tasks | 2 files |
+| Phase 15 P02 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,9 @@ Recent decisions affecting current work:
 - [Phase 14]: Bash output_text as command proxy for retry dedup in benchmark ScenarioActions
 - [Phase 15]: Signal reflexes as pure functions in separate module from pattern reflexes
 - [Phase 15]: Priority order rca > drift > handoff > checkpoint, max 2 injections per cycle
+- [Phase 15]: Commit gate placed after pattern reflexes but before guidance in PreToolUse
+- [Phase 15]: Signal reflex evaluation wrapped in try/except to never crash hooks
+- [Phase 15]: Top reflex in report parsed from audit JSONL rather than adding read() to AuditLogger
 
 ### Pending Todos
 
@@ -111,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T05:07:27.404Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-04-01T05:12:53.373Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
