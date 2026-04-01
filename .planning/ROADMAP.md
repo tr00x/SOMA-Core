@@ -72,7 +72,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 **Plans**: 3 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — Exporter interface, context exhaustion pressure, model-aware sizing
+- [x] 11-01-PLAN.md — Exporter interface, context exhaustion pressure, model-aware sizing
 - [ ] 11-02-PLAN.md — OpenTelemetry exporter and webhook alerting
 - [ ] 11-03-PLAN.md — Session reports, historical analytics, CLI commands
 
@@ -106,7 +106,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
