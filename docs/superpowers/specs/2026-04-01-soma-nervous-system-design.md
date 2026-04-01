@@ -279,23 +279,75 @@ This design succeeds if:
 - No changes to core pipeline math (it works fine)
 - No new vitals or signals (we have enough sensing, we need actuation)
 
-### 9. Implementation Priority
+### 9. Agent Awareness (Prompt Injection)
 
-**Wave 1 — Core Reflexes** (highest impact, proves the concept):
+Agents must know SOMA exists. Without this, agents panic, try to bypass blocks, or complain to the user. SOMA injects a system prompt block at session start via hooks:
+
+```
+You are monitored by SOMA — a behavioral nervous system.
+SOMA tracks your actions and may block harmful patterns:
+- Editing files you haven't read
+- Retrying the same failed command
+- Drifting from your original task
+
+When SOMA blocks an action, it tells you WHY and WHAT to do instead.
+Follow SOMA's guidance — it sees patterns you can't.
+Do NOT try to bypass SOMA blocks. They exist to help you succeed.
+If blocked: read the message, follow the suggestion, continue.
+```
+
+This is injected via the existing Notification hook on first action. Platform adapters handle injection for Cursor (rules file), Windsurf (event context), SDK (system prompt parameter).
+
+### 10. User Feedback Channels
+
+Four channels, all extending existing infrastructure:
+
+**Statusline** (live, every action):
+```
+SOMA: #42 p=34% GUIDE | 2 blocked | ⚡ ~3 to escalation | ctx=73%
+```
+
+**Terminal notifications** (per-event, via notification hook):
+```
+[BLOCKED] Edit main.py — read it first (blind_edits reflex)
+[CHECKPOINT] auto git stash — escalation predicted
+[ROLLBACK] reverted auth.py — 3 tests broke after edit
+[HANDOFF] agent degrading — success rate 35%, summary ready
+```
+
+**Audit log** (machine-readable, ~/.soma/audit.jsonl):
+```json
+{"ts":"...","type":"reflex","reflex":"blind_edits","action":"block","tool":"Edit","file":"main.py","pressure":0.56}
+```
+
+**Session report** (human-readable, `soma report`):
+```
+SOMA Session Report
+  Actions: 87 | Blocked: 12 | Checkpoints: 3
+  Reflexes saved ~23 errors (estimated)
+  Top reflex: retry_dedup (7 blocks)
+```
+
+### 11. Implementation Priority
+
+**Wave 1 — Core Reflexes** (~1 session):
 - Reflex engine module (`reflexes.py`)
 - 3 modes in config (observe/guide/reflex)
-- Pattern reflexes: blind_edits block, retry_dedup, bash_failure block
+- Pattern reflexes: blind_edits block, retry_dedup, bash_failure block, thrashing lock
 - Agent notification on every block (what/why/how)
+- Agent awareness prompt injection
+- Extended statusline with block count
 - Benchmark: re-run all scenarios with reflex mode
 
-**Wave 2 — Signal Reflexes** (leverage existing pipeline):
+**Wave 2 — Signal Reflexes** (~1 session):
 - Predictor → auto-checkpoint
 - Drift → scope guardian injection
 - Half-life → handoff suggestion
 - RCA → diagnosis injection
 - Quality → commit gate
+- Extended session report with reflex stats
 
-**Wave 3 — Advanced** (nice-to-have):
+**Wave 3 — Advanced** (~1 session):
 - Graph circuit breaker
 - Session memory injection
 - Smart throttle
