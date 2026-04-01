@@ -308,3 +308,106 @@ def read_stdin() -> dict:
     except (json.JSONDecodeError, IOError):
         pass
     return {}
+
+
+# ── Reflex helpers ──────────────────────────────────────────────────
+
+BASH_HISTORY_MAX = 10
+
+
+def get_soma_mode() -> str:
+    """Return the configured SOMA mode ('observe', 'guide', or 'reflex').
+
+    Defaults to 'guide' if config is missing or unreadable.
+    """
+    try:
+        from soma.cli.config_loader import load_config
+        config = load_config()
+        return config.get("soma", {}).get("mode", "guide")
+    except Exception:
+        return "guide"
+
+
+def get_reflex_config() -> dict:
+    """Return the [reflexes] section from soma.toml config.
+
+    Returns empty dict on missing config or error.
+    """
+    try:
+        from soma.cli.config_loader import load_config
+        config = load_config()
+        return config.get("reflexes", {})
+    except Exception:
+        return {}
+
+
+def read_bash_history(agent_id: str = "") -> list[str]:
+    """Read recent bash command history for retry dedup.
+
+    Returns list of normalized command strings, capped at BASH_HISTORY_MAX.
+    """
+    if agent_id:
+        path = SESSIONS_DIR / agent_id / "bash_history.json"
+    else:
+        path = SOMA_DIR / "bash_history.json"
+    try:
+        if path.exists():
+            data = json.loads(path.read_text())
+            if isinstance(data, list):
+                return data[-BASH_HISTORY_MAX:]
+    except (json.JSONDecodeError, IOError):
+        pass
+    return []
+
+
+def write_bash_history(command: str, agent_id: str = "") -> None:
+    """Append a normalized bash command to history for retry dedup.
+
+    Truncates to last BASH_HISTORY_MAX entries. Never crashes.
+    """
+    try:
+        if agent_id:
+            path = SESSIONS_DIR / agent_id / "bash_history.json"
+        else:
+            path = SOMA_DIR / "bash_history.json"
+        normalized = " ".join(command.split())
+        if not normalized:
+            return
+        history = read_bash_history(agent_id)
+        history.append(normalized)
+        history = history[-BASH_HISTORY_MAX:]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history))
+    except Exception:
+        pass
+
+
+def get_block_count(agent_id: str = "") -> int:
+    """Read the reflex block count for this session.
+
+    Returns 0 on missing file or error.
+    """
+    if agent_id:
+        path = SESSIONS_DIR / agent_id / "block_count"
+    else:
+        path = SOMA_DIR / "block_count"
+    try:
+        if path.exists():
+            return int(path.read_text().strip())
+    except (ValueError, IOError):
+        pass
+    return 0
+
+
+def increment_block_count(agent_id: str = "") -> None:
+    """Increment the reflex block counter by 1. Never crashes."""
+    try:
+        if agent_id:
+            path = SESSIONS_DIR / agent_id / "block_count"
+        else:
+            path = SOMA_DIR / "block_count"
+        count = get_block_count(agent_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(count + 1))
+    except Exception:
+        pass
