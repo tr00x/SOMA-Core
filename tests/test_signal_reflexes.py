@@ -122,7 +122,7 @@ class TestHandoffSuggestion:
         assert result.allow is True
         assert result.reflex_kind == "handoff_suggestion"
         assert result.inject_message is not None
-        assert "half-life" in result.inject_message.lower() or "handoff" in result.inject_message.lower() or "Agent" in result.inject_message
+        assert "success_rate=" in result.inject_message
 
     def test_above_threshold(self):
         result = evaluate_handoff(success_rate=0.5, handoff_text="irrelevant", agent_id="main")
@@ -147,7 +147,7 @@ class TestRCAInjection:
         assert result.allow is True
         assert result.reflex_kind == "rca_injection"
         assert result.inject_message is not None
-        assert "error_rate=" in result.inject_message
+        assert "errors=" in result.inject_message
         assert "stuck in Edit loop" in result.inject_message
 
     def test_below_threshold(self):

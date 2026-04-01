@@ -95,9 +95,16 @@ def collect(
                     pred = predictor.predict(next_boundary)
                     if pred.will_escalate:
                         reason = pred.dominant_reason
+                        context = {
+                            "error_streak": "consecutive failures detected",
+                            "blind_writes": "writes without reading first",
+                            "thrashing": "repeated edits to same file",
+                            "retry_storm": "retrying same failing approach",
+                            "trend": "steady pressure increase",
+                        }.get(reason, "pressure climbing")
                         findings.append(Finding(
                             priority=1, category="predict",
-                            message=f"escalation in ~{pred.actions_ahead} actions, trigger={reason}, confidence={pred.confidence:.0%}",
+                            message=f"escalation in ~{pred.actions_ahead} actions, trigger={reason}, confidence={pred.confidence:.0%} — {context}",
                         ))
         except Exception:
             pass
@@ -120,14 +127,25 @@ def collect(
                     message=pr.action,
                 ))
             else:
-                # Data tone: report the pattern and its data, not instructions
-                data_parts = [f"pattern={pr.kind}"]
+                # Hybrid: data first, then brief context (max 8 words, no verbs)
+                context = {
+                    "blind_edits": "no reads in last actions",
+                    "bash_failures": "same command pattern",
+                    "error_rate": "high failure rate in window",
+                    "thrashing": "repeated edits, same file",
+                    "agent_spam": "multiple agents, check results",
+                    "research_stall": "research phase, no output yet",
+                    "no_checkin": "many mutations without user check",
+                }.get(pr.kind, pr.detail[:40] if pr.detail else "")
+                data_parts = [f"{pr.kind}"]
                 if pr.data:
                     for k, v in pr.data.items():
                         data_parts.append(f"{k}={v}")
+                data_str = ", ".join(data_parts)
+                msg = f"{data_str} — {context}" if context else data_str
                 findings.append(Finding(
                     priority=1, category="pattern",
-                    message=", ".join(data_parts),
+                    message=msg,
                 ))
     except Exception:
         pass
