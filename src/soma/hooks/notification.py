@@ -127,6 +127,110 @@ def main():
             for f in findings[:6]:
                 finding_lines.append(_format_finding(f))
 
+        # ── Signal reflex injections (guide + reflex modes, per D-17) ──
+        try:
+            soma_mode = get_soma_mode()
+            if soma_mode in ("guide", "reflex") and actions >= 3:
+                from soma.signal_reflexes import evaluate_all_signals
+
+                # Gather signal inputs
+                sig_prediction = None
+                try:
+                    from soma.hooks.common import get_predictor
+                    predictor = get_predictor(agent_id=agent_id)
+                    boundaries = [0.25, 0.50, 0.75]
+                    next_boundary = next((b for b in boundaries if b > pressure), None)
+                    if next_boundary:
+                        sig_prediction = predictor.predict(next_boundary)
+                except Exception:
+                    pass
+
+                sig_success_rate = 1.0
+                sig_handoff_text = ""
+                try:
+                    from soma.halflife import predict_success_rate, generate_handoff_suggestion, estimate_half_life
+                    hl = estimate_half_life(action_log)
+                    sig_success_rate = predict_success_rate(actions, hl)
+                    sig_handoff_text = generate_handoff_suggestion(agent_id, actions, hl, sig_success_rate)
+                except Exception:
+                    pass
+
+                sig_original_task = ""
+                sig_current_activity = ""
+                try:
+                    from soma.hooks.common import get_task_tracker
+                    tracker = get_task_tracker(agent_id=agent_id)
+                    ctx = tracker.get_context()
+                    sig_original_task = getattr(ctx, "original_task", "") or ""
+                    sig_current_activity = getattr(ctx, "current_activity", "") or getattr(ctx, "phase", "")
+                except Exception:
+                    pass
+
+                sig_drift = vitals.get("drift", 0.0)
+                sig_error_rate = vitals.get("error_rate", 0.0)
+
+                sig_rca_text = None
+                if sig_error_rate > 0.3:
+                    try:
+                        from soma.rca import diagnose
+                        sig_rca_text = diagnose(action_log, vitals, pressure, level_name, actions)
+                    except Exception:
+                        pass
+
+                reflex_results = evaluate_all_signals(
+                    prediction=sig_prediction,
+                    soma_mode=soma_mode,
+                    drift=sig_drift,
+                    original_task=sig_original_task,
+                    current_activity=sig_current_activity,
+                    error_rate=sig_error_rate,
+                    rca_text=sig_rca_text,
+                    success_rate=sig_success_rate,
+                    handoff_text=sig_handoff_text,
+                    agent_id=agent_id,
+                )
+
+                for rr in reflex_results:
+                    if rr.inject_message:
+                        finding_lines.append(rr.inject_message)
+
+                    # Auto-checkpoint in reflex mode
+                    if rr.reflex_kind == "predictor_checkpoint" and soma_mode == "reflex":
+                        try:
+                            from soma.hooks.common import _auto_checkpoint, increment_checkpoint_count
+                            cp_num = increment_checkpoint_count(agent_id)
+                            _auto_checkpoint(cp_num)
+                        except Exception:
+                            pass
+
+                    # Trust weight reduction on handoff (per D-09)
+                    if rr.reflex_kind == "handoff_suggestion":
+                        try:
+                            edges = engine._graph._adj.get(agent_id, {})
+                            for target, weight in list(edges.items()):
+                                engine._graph.update_edge(agent_id, target, weight * sig_success_rate)
+                        except Exception:
+                            pass
+
+                    # Audit log each signal reflex event (per D-17)
+                    try:
+                        from soma.audit import AuditLogger
+                        logger = AuditLogger()
+                        logger.append(
+                            agent_id=agent_id,
+                            tool_name="notification",
+                            error=False,
+                            pressure=pressure,
+                            mode="reflex",
+                            type="reflex",
+                            reflex_kind=rr.reflex_kind,
+                            detail=rr.detail,
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # Never crash notification for signal reflex failures
+
         # ── Output ──
         if finding_lines:
             lines.extend(finding_lines)

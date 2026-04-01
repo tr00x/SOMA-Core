@@ -411,3 +411,62 @@ def increment_block_count(agent_id: str = "") -> None:
         path.write_text(str(count + 1))
     except Exception:
         pass
+
+
+def get_checkpoint_count(agent_id: str = "") -> int:
+    """Read the auto-checkpoint count for this session.
+
+    Returns 0 on missing file or error.
+    """
+    if agent_id:
+        path = SESSIONS_DIR / agent_id / "checkpoint_count"
+    else:
+        path = SOMA_DIR / "checkpoint_count"
+    try:
+        if path.exists():
+            return int(path.read_text().strip())
+    except (ValueError, IOError):
+        pass
+    return 0
+
+
+def increment_checkpoint_count(agent_id: str = "") -> int:
+    """Increment the checkpoint counter by 1. Returns new count. Never crashes."""
+    try:
+        if agent_id:
+            path = SESSIONS_DIR / agent_id / "checkpoint_count"
+        else:
+            path = SOMA_DIR / "checkpoint_count"
+        count = get_checkpoint_count(agent_id)
+        new_count = count + 1
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(new_count))
+        return new_count
+    except Exception:
+        return 0
+
+
+def _auto_checkpoint(checkpoint_number: int) -> bool:
+    """Run git stash push as an auto-checkpoint. Returns True on success.
+
+    Checks for git repo first (never crashes in non-git directories).
+    """
+    import subprocess
+
+    try:
+        # Check if we're in a git repo
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+
+        # Run git stash push
+        result = subprocess.run(
+            ["git", "stash", "push", "-m", f"soma-checkpoint-{checkpoint_number}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
