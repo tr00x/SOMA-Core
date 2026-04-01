@@ -8,5 +8,7 @@ examples/paperclip_session.json
 docs/superpowers/
 soma_session.json
 dist/
+node_modules/
+package-lock.json
 .serena/
 .claude-plugin/
