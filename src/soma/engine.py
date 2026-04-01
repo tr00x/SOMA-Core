@@ -112,7 +112,18 @@ class SOMAEngine:
         self._events.on("level_changed", exporter.on_mode_change)
 
     def shutdown(self) -> None:
-        """Shut down all registered exporters. Never crashes."""
+        """Shutdown engine: generate reports for all agents, then flush exporters."""
+        # Generate and save session reports (per D-09)
+        try:
+            from soma.report import generate_session_report, save_report
+            for agent_id in self._agents:
+                if self._agents[agent_id].action_count > 0:
+                    report = generate_session_report(self, agent_id)
+                    save_report(report, agent_id)
+        except Exception:
+            pass  # Never crash on shutdown — report generation is best-effort
+
+        # Flush exporters
         for exporter in self._exporters:
             try:
                 exporter.shutdown()
