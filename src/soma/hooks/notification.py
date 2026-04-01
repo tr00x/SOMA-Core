@@ -4,9 +4,18 @@ Thin layer: calls core (soma.findings, soma.patterns), formats for
 Claude Code's UserPromptSubmit hook (stdout injection).
 
 Output goes to stdout as "additional context" in Claude Code.
+Injects agent awareness prompt on first action of session (D-18/D-19/D-20).
 """
 
 from __future__ import annotations
+
+# Agent awareness prompt — injected on first action only (per D-18/D-19)
+AGENT_AWARENESS_PROMPT = """[SOMA Active] This session is monitored by SOMA, a behavioral safety system.
+- SOMA may BLOCK actions that match harmful patterns (blind edits, retry loops, file thrashing)
+- When blocked, read the reason and follow the suggested fix
+- Do NOT retry blocked actions without changing approach
+- SOMA guidance appears in [SOMA] prefixed messages
+- Current mode: {mode}"""
 
 
 def _format_finding(f) -> str:
@@ -29,6 +38,7 @@ def main():
     try:
         from soma.hooks.common import (
             get_engine, read_action_log, get_hook_config,
+            get_soma_mode,
         )
 
         engine, agent_id = get_engine()
@@ -45,11 +55,17 @@ def main():
         actions = snap["action_count"]
         vitals = snap.get("vitals", {})
 
+        # ── Load action log early (needed for awareness check) ──
+        action_log = read_action_log(agent_id)
+
+        # ── Agent awareness prompt — first action only (per D-18/D-20) ──
+        if len(action_log) == 0:
+            soma_mode = get_soma_mode()
+            print(AGENT_AWARENESS_PROMPT.format(mode=soma_mode))
+            return  # Don't also print findings on first prompt
+
         hook_config = get_hook_config()
         verbosity = hook_config.get("verbosity", "normal")
-
-        # ── Load action log ──
-        action_log = read_action_log(agent_id)
 
         # ── Grace period: first 3 actions, stay silent ──
         if actions < 3:

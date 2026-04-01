@@ -138,6 +138,18 @@ def main():
         # Action count
         parts.append(f"#{actions}")
 
+        # Block count and mode (per D-21)
+        try:
+            from soma.hooks.common import get_block_count, get_soma_mode
+            bc = get_block_count(agent_id)
+            if bc > 0:
+                parts.append(f"{bc} blocked")
+            sm = get_soma_mode()
+            if sm and sm != "guide":
+                parts.append(sm.upper())
+        except Exception:
+            pass
+
         # Badges
         phase = _phase_badge(agent_id)
         quality = _quality_badge(agent_id)
