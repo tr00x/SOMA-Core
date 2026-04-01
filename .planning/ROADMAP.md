@@ -10,9 +10,9 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 - ✅ **Milestone 3 — Production Ready** — Phases 9-10 (shipped 2026-03-31, v0.5.0)
 - ✅ **Milestone 4 — Observability** — Phase 11 (completed 2026-04-01)
 - ✅ **Milestone 5 — Ecosystem** — Phase 12 (completed 2026-04-01)
-- 🚧 **Milestone 6 — Intelligence** — Phase 13
-- 📋 **Milestone 7 — Platform** — Phase 14
-- 📋 **Milestone 8 — Research** — Phase 15
+- ✅ **Milestone 6 — Intelligence** — Phase 13
+- 🚧 **Milestone 7 — Nervous System (v1.0)** — Phase 14
+- 📋 **Milestone 8 — Platform** — Phase 15
 
 ## Phases
 
@@ -114,7 +114,12 @@ Plans:
 **Goal**: SOMA blocks harmful patterns and forces correct behavior — mechanical, not advisory
 **Depends on**: Phase 13
 **Requirements**: RFX-01, RFX-02, RFX-03, RFX-04
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Reflex engine module (reflexes.py) + config loader (mode, reflexes sections)
+- [ ] 14-02-PLAN.md — Hook integration (PreToolUse, Notification, Statusline) + agent awareness prompt
+- [ ] 14-03-PLAN.md — Benchmark proof with reflex mode + docs/BENCHMARK.md update
 
 ### Phase 15: Signal Reflexes
 **Goal**: Every existing pipeline signal triggers a real action, not just a number
