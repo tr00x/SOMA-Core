@@ -58,6 +58,19 @@ def _cmd_version(_args: argparse.Namespace) -> None:
     print(f"soma {_VERSION}")
 
 
+def _cmd_setup(args: argparse.Namespace) -> None:
+    """Route soma setup --<platform> to the correct setup function."""
+    if getattr(args, "setup_claude_code", False):
+        from soma.cli.setup_claude import run_setup_claude
+        run_setup_claude()
+    elif getattr(args, "setup_cursor", False):
+        from soma.cli.setup_claude import run_setup_cursor
+        run_setup_cursor()
+    elif getattr(args, "setup_windsurf", False):
+        from soma.cli.setup_claude import run_setup_windsurf
+        run_setup_windsurf()
+
+
 def _cmd_init(_args: argparse.Namespace) -> None:
     try:
         from soma.cli.wizard import run_wizard  # type: ignore[import]

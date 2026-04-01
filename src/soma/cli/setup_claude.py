@@ -295,3 +295,80 @@ def run_setup_claude() -> None:
     print("  To uninstall:")
     print("    soma uninstall-claude")
     print()
+
+
+def run_setup_cursor() -> None:
+    """Set up SOMA for Cursor AI coding tool."""
+    import json as _json
+    from soma.hooks.cursor import generate_cursor_config
+
+    print()
+    print("  SOMA Setup for Cursor")
+    print("  ─────────────────────")
+    print()
+
+    config = generate_cursor_config()
+    hooks_path = Path(".cursor") / "hooks.json"
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if hooks_path.exists():
+        try:
+            existing = _json.loads(hooks_path.read_text())
+            # Check if SOMA hooks already installed
+            for entries in existing.get("hooks", {}).values():
+                for entry in entries:
+                    if "soma" in entry.get("command", ""):
+                        print("  SOMA hooks already installed in .cursor/hooks.json")
+                        print()
+                        return
+        except (_json.JSONDecodeError, IOError):
+            pass
+
+    hooks_path.write_text(_json.dumps(config, indent=2))
+    print("  + Created .cursor/hooks.json with SOMA hooks")
+    print()
+    print("  Events monitored:")
+    print("    preToolUse   — checks pressure, guides with suggestions")
+    print("    postToolUse  — records action, validates code, computes vitals")
+    print("    stop         — saves final state, cleans up session")
+    print()
+
+
+def run_setup_windsurf() -> None:
+    """Set up SOMA for Windsurf (Codeium) AI coding tool."""
+    import json as _json
+    from soma.hooks.windsurf import generate_windsurf_config
+
+    print()
+    print("  SOMA Setup for Windsurf")
+    print("  ───────────────────────")
+    print()
+
+    config = generate_windsurf_config()
+    hooks_path = Path(".windsurf") / "hooks.json"
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if hooks_path.exists():
+        try:
+            existing = _json.loads(hooks_path.read_text())
+            for entries in existing.get("hooks", {}).values():
+                for entry in entries:
+                    if "soma" in entry.get("command", ""):
+                        print("  SOMA hooks already installed in .windsurf/hooks.json")
+                        print()
+                        return
+        except (_json.JSONDecodeError, IOError):
+            pass
+
+    hooks_path.write_text(_json.dumps(config, indent=2))
+    print("  + Created .windsurf/hooks.json with SOMA hooks")
+    print()
+    print("  Events monitored:")
+    print("    pre_run_command     — Bash command guidance")
+    print("    pre_write_code      — file write guidance")
+    print("    pre_read_code       — file read tracking")
+    print("    post_run_command    — records Bash actions")
+    print("    post_write_code     — validates written code")
+    print("    post_read_code      — records file reads")
+    print("    post_cascade_response — session end cleanup")
+    print()
