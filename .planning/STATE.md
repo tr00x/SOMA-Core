@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-04-01T05:13:28.778Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-04-01T05:21:59.423Z"
 progress:
   total_phases: 9
   completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 17
+  completed_plans: 15
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-30)
 
 **Core value:** Real-time behavioral guidance that makes AI agents safer and more effective without requiring human babysitting.
-**Current focus:** Phase 15 — signal-reflexes
+**Current focus:** Phase 16 — advanced-reflexes
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
+Phase: 16 (advanced-reflexes) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Plan: Not started
 | Phase 14 P03 | 4min | 2 tasks | 4 files |
 | Phase 15 P01 | 2min | 1 tasks | 2 files |
 | Phase 15 P02 | 4min | 2 tasks | 6 files |
+| Phase 16 P02 | 2min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,9 @@ Recent decisions affecting current work:
 - [Phase 15]: Commit gate placed after pattern reflexes but before guidance in PreToolUse
 - [Phase 15]: Signal reflex evaluation wrapped in try/except to never crash hooks
 - [Phase 15]: Top reflex in report parsed from audit JSONL rather than adding read() to AuditLogger
+- [Phase 16]: Cosine similarity on tool_distribution dicts with math.sqrt (no numpy)
+- [Phase 16]: Success filter: final_pressure <= 0.5 to skip failed sessions
+- [Phase 16]: 3-action minimum before memory injection fires
 
 ### Pending Todos
 
@@ -115,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T05:12:53.373Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-04-01T05:21:59.414Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
