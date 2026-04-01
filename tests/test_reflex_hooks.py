@@ -19,10 +19,10 @@ import pytest
 class TestAwarenessPrompt:
     """Notification hook injects awareness prompt on first action only."""
 
-    @patch("soma.hooks.notification.get_engine")
-    @patch("soma.hooks.notification.read_action_log", return_value=[])
-    @patch("soma.hooks.notification.get_soma_mode", return_value="guide")
-    def test_awareness_on_first_action(self, mock_mode, mock_log, mock_engine, capsys):
+    @patch("soma.hooks.common.get_soma_mode", return_value="guide")
+    @patch("soma.hooks.common.read_action_log", return_value=[])
+    @patch("soma.hooks.common.get_engine")
+    def test_awareness_on_first_action(self, mock_engine, mock_log, mock_mode, capsys):
         engine = MagicMock()
         engine.get_snapshot.return_value = {
             "level": MagicMock(name="OBSERVE"),
@@ -38,12 +38,12 @@ class TestAwarenessPrompt:
         captured = capsys.readouterr()
         assert "[SOMA Active]" in captured.out
 
-    @patch("soma.hooks.notification.get_engine")
-    @patch("soma.hooks.notification.read_action_log", return_value=[
+    @patch("soma.hooks.common.get_soma_mode", return_value="guide")
+    @patch("soma.hooks.common.read_action_log", return_value=[
         {"tool": "Read", "error": False, "file": "x.py", "ts": 1}
     ])
-    @patch("soma.hooks.notification.get_soma_mode", return_value="guide")
-    def test_no_awareness_after_first(self, mock_mode, mock_log, mock_engine, capsys):
+    @patch("soma.hooks.common.get_engine")
+    def test_no_awareness_after_first(self, mock_engine, mock_log, mock_mode, capsys):
         engine = MagicMock()
         engine.get_snapshot.return_value = {
             "level": MagicMock(name="OBSERVE"),
@@ -132,8 +132,10 @@ class TestPreToolUseReflex:
 class TestStatuslineBlocks:
     """Statusline shows block count and non-default mode."""
 
-    @patch("soma.hooks.statusline.get_engine")
-    def test_block_count_shown(self, mock_engine, capsys):
+    @patch("soma.hooks.common.get_soma_mode", return_value="guide")
+    @patch("soma.hooks.common.get_block_count", return_value=3)
+    @patch("soma.hooks.common.get_engine")
+    def test_block_count_shown(self, mock_engine, mock_bc, mock_mode, capsys):
         engine = MagicMock()
         engine.get_snapshot.return_value = {
             "level": MagicMock(name="GUIDE"),
@@ -143,16 +145,16 @@ class TestStatuslineBlocks:
         }
         mock_engine.return_value = (engine, "test-agent")
 
-        with patch("soma.hooks.statusline.get_block_count", return_value=3):
-            with patch("soma.hooks.statusline.get_soma_mode", return_value="guide"):
-                from soma.hooks.statusline import main
-                main()
+        from soma.hooks.statusline import main
+        main()
 
         captured = capsys.readouterr()
         assert "3 blocked" in captured.out
 
-    @patch("soma.hooks.statusline.get_engine")
-    def test_mode_shown_when_reflex(self, mock_engine, capsys):
+    @patch("soma.hooks.common.get_soma_mode", return_value="reflex")
+    @patch("soma.hooks.common.get_block_count", return_value=0)
+    @patch("soma.hooks.common.get_engine")
+    def test_mode_shown_when_reflex(self, mock_engine, mock_bc, mock_mode, capsys):
         engine = MagicMock()
         engine.get_snapshot.return_value = {
             "level": MagicMock(name="GUIDE"),
@@ -162,10 +164,8 @@ class TestStatuslineBlocks:
         }
         mock_engine.return_value = (engine, "test-agent")
 
-        with patch("soma.hooks.statusline.get_block_count", return_value=0):
-            with patch("soma.hooks.statusline.get_soma_mode", return_value="reflex"):
-                from soma.hooks.statusline import main
-                main()
+        from soma.hooks.statusline import main
+        main()
 
         captured = capsys.readouterr()
         assert "REFLEX" in captured.out
