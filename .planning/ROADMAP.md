@@ -40,7 +40,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 ### 🚧 Milestone 4 — Observability
 
-- [ ] **Phase 11: Observability** — OpenTelemetry exporter + session reports + webhook alerting
+- [x] **Phase 11: Observability** — OpenTelemetry exporter + session reports + webhook alerting (completed 2026-04-01)
 
 ### 📋 Milestone 5 — Ecosystem
 
@@ -73,7 +73,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 Plans:
 - [x] 11-01-PLAN.md — Exporter interface, context exhaustion pressure, model-aware sizing
-- [ ] 11-02-PLAN.md — OpenTelemetry exporter and webhook alerting
+- [x] 11-02-PLAN.md — OpenTelemetry exporter and webhook alerting
 - [x] 11-03-PLAN.md — Session reports, historical analytics, CLI commands
 
 ### Phase 12: Ecosystem
@@ -106,7 +106,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
