@@ -86,8 +86,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Hook adapter protocol (LAYER-01) + Cursor/Windsurf adapters (HOOK-01)
-- [ ] 12-02-PLAN.md — NPM publish prep (NPM-01) + community policy packs (POL-03)
+- [x] 12-01-PLAN.md — Hook adapter protocol (LAYER-01) + Cursor/Windsurf adapters (HOOK-01)
+- [x] 12-02-PLAN.md — NPM publish prep (NPM-01) + community policy packs (POL-03)
 - [ ] 12-03-PLAN.md — Demo tape for README (DEMO-01)
 
 ### Phase 13: Intelligence
@@ -114,7 +114,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
