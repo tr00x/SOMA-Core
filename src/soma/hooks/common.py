@@ -473,6 +473,48 @@ def get_circuit_breaker_state(agent_id: str = ""):
             return None  # type: ignore[return-value]
 
 
+def append_pressure_trajectory(pressure: float, agent_id: str = "") -> None:
+    """Append one pressure reading to the per-session trajectory buffer.
+
+    Stored as a simple JSON array in ~/.soma/sessions/{agent_id}/trajectory.json.
+    Read by stop.py to build complete SessionRecord.pressure_trajectory.
+    """
+    try:
+        if agent_id:
+            path = SESSIONS_DIR / agent_id / "trajectory.json"
+        else:
+            path = SOMA_DIR / "trajectory.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        traj: list[float] = []
+        if path.exists():
+            try:
+                traj = json.loads(path.read_text())
+            except (json.JSONDecodeError, IOError):
+                traj = []
+
+        traj.append(round(pressure, 4))
+        path.write_text(json.dumps(traj))
+    except Exception:
+        pass  # Never crash
+
+
+def read_pressure_trajectory(agent_id: str = "") -> list[float]:
+    """Read the full pressure trajectory for this session."""
+    if agent_id:
+        path = SESSIONS_DIR / agent_id / "trajectory.json"
+    else:
+        path = SOMA_DIR / "trajectory.json"
+    try:
+        if path.exists():
+            data = json.loads(path.read_text())
+            if isinstance(data, list):
+                return data
+    except (json.JSONDecodeError, IOError):
+        pass
+    return []
+
+
 def save_circuit_breaker_state(state, agent_id: str = "") -> None:
     """Persist circuit breaker state to disk. Never raises."""
     try:

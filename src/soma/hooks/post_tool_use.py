@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 
-from soma.hooks.common import get_engine, save_state, read_stdin, append_action_log, get_predictor, save_predictor
+from soma.hooks.common import get_engine, save_state, read_stdin, append_action_log, get_predictor, save_predictor, append_pressure_trajectory
 
 _prev_level: str | None = None
 _prev_pressure: float = 0.0
@@ -170,6 +170,9 @@ def main():
 
         result = engine.record_action(agent_id, action)
         save_state(engine)
+
+        # Append pressure to per-session trajectory for cross-session intelligence
+        append_pressure_trajectory(result.pressure, agent_id)
 
         level_name = result.mode.name
         pressure = result.pressure
