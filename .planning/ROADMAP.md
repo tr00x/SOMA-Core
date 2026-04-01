@@ -100,8 +100,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — Benchmark harness, scenarios, and metrics collection (PRED-01)
-- [ ] 13-02-PLAN.md — Session store, cross-session predictor, threshold tuner, phase-aware drift (TUNE-01, TASK-01, ANOM-01)
+- [x] 13-01-PLAN.md — Benchmark harness, scenarios, and metrics collection (PRED-01)
+- [x] 13-02-PLAN.md — Session store, cross-session predictor, threshold tuner, phase-aware drift (TUNE-01, TASK-01, ANOM-01)
 - [ ] 13-03-PLAN.md — CLI wiring, report generation, docs/BENCHMARK.md with real results
 
 ### Phase 14: Platform
@@ -122,7 +122,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
