@@ -370,6 +370,25 @@ def main():
         except Exception:
             pass  # Never crash notification for advanced reflex failures
 
+        # ── Context control: limit injections by ResponseMode ──
+        try:
+            from soma.context_control import apply_context_control
+            from soma.types import ResponseMode as _RM
+
+            snap_mode_cc = snap.get("level", snap.get("mode"))
+            if isinstance(snap_mode_cc, str):
+                snap_mode_cc = _RM[snap_mode_cc.upper()] if hasattr(_RM, snap_mode_cc.upper()) else _RM.OBSERVE
+            elif not isinstance(snap_mode_cc, _RM):
+                snap_mode_cc = _RM.OBSERVE
+
+            cc_result = apply_context_control(
+                {"messages": finding_lines, "tools": [], "system_prompt": ""},
+                snap_mode_cc,
+            )
+            finding_lines = cc_result["messages"]
+        except Exception:
+            pass  # Never crash for context control failures
+
         # ── Output ──
         if finding_lines:
             lines.extend(finding_lines)
