@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-04-01T04:54:28.029Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-04-01T05:07:27.414Z"
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 14
+  completed_plans: 13
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-30)
 
 **Core value:** Real-time behavioral guidance that makes AI agents safer and more effective without requiring human babysitting.
-**Current focus:** Phase 14 — core-reflexes
+**Current focus:** Phase 15 — signal-reflexes
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
+Phase: 15 (signal-reflexes) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Plan: Not started
 | Phase 14 P01 | 3min | 2 tasks | 3 files |
 | Phase 14 P02 | 3min | 2 tasks | 5 files |
 | Phase 14 P03 | 4min | 2 tasks | 4 files |
+| Phase 15 P01 | 2min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [Phase 14]: Awareness prompt returns early on first action to avoid noise overlap with findings
 - [Phase 14]: Action log file names use modular pool for correct read-edit pattern mapping in benchmarks
 - [Phase 14]: Bash output_text as command proxy for retry dedup in benchmark ScenarioActions
+- [Phase 15]: Signal reflexes as pure functions in separate module from pattern reflexes
+- [Phase 15]: Priority order rca > drift > handoff > checkpoint, max 2 injections per cycle
 
 ### Pending Todos
 
@@ -108,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T04:50:43.260Z
-Stopped at: Completed 14-03-PLAN.md
+Last session: 2026-04-01T05:07:27.404Z
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
