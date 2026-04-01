@@ -52,17 +52,23 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 </details>
 
-### 🚧 Milestone 6 — Intelligence
+### ✅ Milestone 6 — Intelligence
 
 - [x] **Phase 13: Intelligence** — Benchmark-first proof, cross-session learning, threshold tuning, phase-aware drift (completed 2026-04-01)
 
-### 📋 Milestone 7 — Platform
+### 🚧 Milestone 7 — Nervous System (v1.0)
 
-- [ ] **Phase 14: Platform** — Web dashboard, fleet management, teams
+- [ ] **Phase 14: Core Reflexes** — Reflex engine, 3 modes, pattern blocks, agent awareness, benchmark proof
+- [ ] **Phase 15: Signal Reflexes** — Auto-checkpoint, scope guardian, handoff, RCA injection, commit gate
+- [ ] **Phase 16: Advanced Reflexes** — Circuit breaker, session memory, smart throttle, anomaly detection
 
-### 📋 Milestone 8 — Research
+### 📋 Milestone 8 — Platform
 
-- [ ] **Phase 15: Research** — Papers, open datasets, benchmarks
+- [ ] **Phase 17: Dashboard** — Web dashboard, fleet management, teams
+
+### 📋 Milestone 9 — Research
+
+- [ ] **Phase 18: Research** — Papers, open datasets, benchmarks
 
 ## Phase Details
 
@@ -104,15 +110,33 @@ Plans:
 - [x] 13-02-PLAN.md — Session store, cross-session predictor, threshold tuner, phase-aware drift (TUNE-01, TASK-01, ANOM-01)
 - [x] 13-03-PLAN.md — CLI wiring, report generation, docs/BENCHMARK.md with real results
 
-### Phase 14: Platform
-**Goal**: Self-hosted web dashboard for multi-agent monitoring
+### Phase 14: Core Reflexes
+**Goal**: SOMA blocks harmful patterns and forces correct behavior — mechanical, not advisory
 **Depends on**: Phase 13
+**Requirements**: RFX-01, RFX-02, RFX-03, RFX-04
+**Plans**: TBD
+
+### Phase 15: Signal Reflexes
+**Goal**: Every existing pipeline signal triggers a real action, not just a number
+**Depends on**: Phase 14
+**Requirements**: RFX-05, RFX-06, RFX-07, RFX-08, RFX-09
+**Plans**: TBD
+
+### Phase 16: Advanced Reflexes
+**Goal**: Multi-agent circuit breakers, session memory, context management
+**Depends on**: Phase 15
+**Requirements**: RFX-10, RFX-11, RFX-12, RFX-13
+**Plans**: TBD
+
+### Phase 17: Dashboard
+**Goal**: Self-hosted web dashboard for multi-agent monitoring
+**Depends on**: Phase 16
 **Requirements**: DSH-01, DSH-02, DSH-03, DSH-04, FLT-01, FLT-02, TEAM-01
 **Plans**: TBD
 
-### Phase 15: Research
+### Phase 18: Research
 **Goal**: Contribute back to the research community
-**Depends on**: Phase 14
+**Depends on**: Phase 17
 **Requirements**: BEN-01, BEN-02, SAF-01
 **Plans**: TBD
 
