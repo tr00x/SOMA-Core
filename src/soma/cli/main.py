@@ -542,6 +542,60 @@ def _cmd_policy(args: argparse.Namespace) -> None:
         print(f"  Removed policy pack: {entry}")
 
 
+def _cmd_benchmark(args: argparse.Namespace) -> None:
+    """Run SOMA behavioral benchmarks with A/B comparison."""
+    from dataclasses import asdict
+
+    from soma.benchmark import run_benchmark
+    from soma.benchmark.report import generate_markdown, render_terminal, render_progress
+
+    runs = getattr(args, "runs", 5)
+
+    if not getattr(args, "no_terminal", False):
+        from rich.console import Console
+        console = Console()
+        console.print()
+        console.print("[bold magenta]SOMA Benchmark[/bold magenta]")
+        console.print(f"  Running {runs} run(s) per scenario...")
+        console.print()
+
+    result = run_benchmark(runs_per_scenario=runs)
+
+    if not getattr(args, "no_terminal", False):
+        render_terminal(result)
+
+    # Write markdown report
+    output_path = Path(getattr(args, "output", "docs/BENCHMARK.md"))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(generate_markdown(result))
+    print(f"  Benchmark report written to: {output_path}")
+
+    # Optional JSON output
+    json_path = getattr(args, "json", None)
+    if json_path:
+        jp = Path(json_path)
+        jp.parent.mkdir(parents=True, exist_ok=True)
+        jp.write_text(json.dumps(asdict(result), indent=2, default=str))
+        print(f"  JSON results written to: {jp}")
+
+    # Optional threshold tuning
+    if getattr(args, "tune_thresholds", False):
+        from soma.threshold_tuner import compute_optimal_thresholds
+
+        # Collect per-action data from all SOMA runs
+        all_runs: list[dict] = []
+        for scenario in result.scenarios:
+            for run in scenario.soma_runs:
+                all_runs.append({"per_action": run.per_action})
+
+        thresholds = compute_optimal_thresholds(all_runs)
+        print()
+        print("  Optimized thresholds from benchmark data:")
+        for key, val in thresholds.items():
+            print(f"    {key}: {val:.3f}")
+        print()
+
+
 def _cmd_tui() -> None:
     # First run? Auto-wizard
     if not Path("soma.toml").exists() and not (Path.home() / ".soma" / "state.json").exists():
@@ -672,6 +726,21 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_parser = subparsers.add_parser("replay", help="Replay a recorded session file")
     replay_parser.add_argument("file", help="Path to the session recording file (JSON)")
 
+    # ---- Benchmark ----
+    benchmark_parser = subparsers.add_parser("benchmark", help="Run SOMA behavioral benchmarks")
+    benchmark_parser.add_argument("--scenarios", nargs="*", default=None,
+                                  help="Specific scenarios to run (default: all)")
+    benchmark_parser.add_argument("--runs", type=int, default=5,
+                                  help="Runs per scenario (default: 5)")
+    benchmark_parser.add_argument("--output", type=str, default="docs/BENCHMARK.md",
+                                  help="Markdown output path")
+    benchmark_parser.add_argument("--json", type=str, default=None,
+                                  help="JSON output path")
+    benchmark_parser.add_argument("--no-terminal", action="store_true", dest="no_terminal",
+                                  help="Skip rich terminal output")
+    benchmark_parser.add_argument("--tune-thresholds", action="store_true", dest="tune_thresholds",
+                                  help="Run threshold tuner on results")
+
     # ---- System ----
     subparsers.add_parser("version", help="Print the SOMA version and exit")
     subparsers.add_parser("doctor", help="Check SOMA installation health")
@@ -724,6 +793,7 @@ def main() -> None:
         "analytics": _cmd_analytics,
         "version": _cmd_version,
         "doctor": _cmd_doctor,
+        "benchmark": _cmd_benchmark,
     }
 
     handler = dispatch.get(args.command)
