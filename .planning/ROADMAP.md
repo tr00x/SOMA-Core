@@ -9,8 +9,8 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 - ✅ **Milestone 1+2 — Core Engine + Agent Intelligence** — Phases 1-8 (shipped pre-v0.5.0)
 - ✅ **Milestone 3 — Production Ready** — Phases 9-10 (shipped 2026-03-31, v0.5.0)
 - ✅ **Milestone 4 — Observability** — Phase 11 (completed 2026-04-01)
-- 🚧 **Milestone 5 — Ecosystem** — Phase 12
-- 📋 **Milestone 6 — Intelligence** — Phase 13
+- ✅ **Milestone 5 — Ecosystem** — Phase 12 (completed 2026-04-01)
+- 🚧 **Milestone 6 — Intelligence** — Phase 13
 - 📋 **Milestone 7 — Platform** — Phase 14
 - 📋 **Milestone 8 — Research** — Phase 15
 
@@ -45,13 +45,16 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 </details>
 
-### 🚧 Milestone 5 — Ecosystem
+<details>
+<summary>✅ Milestone 5: Ecosystem (Phase 12) — COMPLETED 2026-04-01</summary>
 
 - [x] **Phase 12: Ecosystem** — Cursor/Windsurf hooks, NPM publish, demo, community policy packs (completed 2026-04-01)
 
-### 📋 Milestone 6 — Intelligence
+</details>
 
-- [ ] **Phase 13: Intelligence** — Context-aware degradation, ML threshold tuning, semantic monitoring
+### 🚧 Milestone 6 — Intelligence
+
+- [ ] **Phase 13: Intelligence** — Benchmark-first proof, cross-session learning, threshold tuning, phase-aware drift
 
 ### 📋 Milestone 7 — Platform
 
@@ -91,10 +94,15 @@ Plans:
 - [x] 12-03-PLAN.md — Demo tape for README (DEMO-01)
 
 ### Phase 13: Intelligence
-**Goal**: SOMA predicts problems before they happen using cross-session learning
+**Goal**: Benchmark-first proof that SOMA improves agent behavior, then cross-session learning
 **Depends on**: Phase 12
 **Requirements**: PRED-01, TUNE-01, TASK-01, ANOM-01
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Benchmark harness, scenarios, and metrics collection (PRED-01)
+- [ ] 13-02-PLAN.md — Session store, cross-session predictor, threshold tuner, phase-aware drift (TUNE-01, TASK-01, ANOM-01)
+- [ ] 13-03-PLAN.md — CLI wiring, report generation, docs/BENCHMARK.md with real results
 
 ### Phase 14: Platform
 **Goal**: Self-hosted web dashboard for multi-agent monitoring
