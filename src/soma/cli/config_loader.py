@@ -277,4 +277,37 @@ def create_engine_from_config(config: dict[str, Any]) -> SOMAEngine:
 
     engine.register_agent("default", autonomy=autonomy)
 
+    # Register exporters from config (OTel, webhooks)
+    for exporter in create_exporters_from_config(config):
+        engine.add_exporter(exporter)
+
     return engine
+
+
+def create_exporters_from_config(config: dict[str, Any]) -> list:
+    """Instantiate exporters from [otel] and [webhooks] config sections.
+
+    Returns a list of Exporter instances ready to be passed to engine.add_exporter().
+    """
+    exporters: list = []
+
+    # OTel exporter
+    otel_config = config.get("otel", {})
+    if otel_config.get("enabled", False):
+        from soma.exporters.otel import OTelExporter
+
+        endpoint = otel_config.get("endpoint", "http://localhost:4317")
+        service_name = otel_config.get("service_name", "soma-agent")
+        exporters.append(OTelExporter(endpoint=endpoint, service_name=service_name))
+
+    # Webhook exporter
+    webhooks_config = config.get("webhooks", {})
+    if webhooks_config.get("enabled", False):
+        from soma.exporters.webhook import WebhookExporter
+
+        urls = webhooks_config.get("urls", [])
+        events = webhooks_config.get("events", None)
+        if urls:
+            exporters.append(WebhookExporter(urls=urls, events=events))
+
+    return exporters

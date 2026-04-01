@@ -10,6 +10,13 @@ import pytest
 from soma.exporters import Exporter
 
 
+def _mock_mode(name: str) -> MagicMock:
+    """Create a mock enum-like object with a .name attribute."""
+    m = MagicMock()
+    m.name = name
+    return m
+
+
 class TestWebhookExporterProtocol:
     def test_implements_exporter_protocol(self):
         from soma.exporters.webhook import WebhookExporter
@@ -30,7 +37,7 @@ class TestWebhookOnModeChange:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "OBSERVE",
-                "new_level": MagicMock(name="WARN"),
+                "new_level": _mock_mode("WARN"),
                 "pressure": 0.55,
             })
             # new_level.name.lower() should be "warn" which is in default events
@@ -42,7 +49,7 @@ class TestWebhookOnModeChange:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "OBSERVE",
-                "new_level": MagicMock(name="BLOCK"),
+                "new_level": _mock_mode("BLOCK"),
                 "pressure": 0.80,
             })
             assert mock_dispatch.called
@@ -53,7 +60,7 @@ class TestWebhookOnModeChange:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "GUIDE",
-                "new_level": MagicMock(name="OBSERVE"),
+                "new_level": _mock_mode("OBSERVE"),
                 "pressure": 0.1,
             })
             assert not mock_dispatch.called
@@ -64,7 +71,7 @@ class TestWebhookOnModeChange:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "OBSERVE",
-                "new_level": MagicMock(name="GUIDE"),
+                "new_level": _mock_mode("GUIDE"),
                 "pressure": 0.3,
             })
             assert not mock_dispatch.called
@@ -80,7 +87,7 @@ class TestWebhookOnModeChange:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "OBSERVE",
-                "new_level": MagicMock(name="WARN"),
+                "new_level": _mock_mode("WARN"),
                 "pressure": 0.55,
             })
 
@@ -162,7 +169,7 @@ class TestWebhookDispatch:
             exporter.on_mode_change({
                 "agent_id": "a1",
                 "old_level": "OBSERVE",
-                "new_level": MagicMock(name="WARN"),
+                "new_level": _mock_mode("WARN"),
                 "pressure": 0.55,
             })
         elapsed = time.monotonic() - start
