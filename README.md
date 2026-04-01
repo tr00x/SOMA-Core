@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/v/soma-ai?style=for-the-badge&color=blue&label=PyPI" alt="PyPI" /></a>&nbsp;
   <a href="https://pypi.org/project/soma-ai/"><img src="https://img.shields.io/pypi/pyversions/soma-ai?style=for-the-badge" alt="Python" /></a>&nbsp;
   <a href="https://github.com/tr00x/SOMA-Core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tr00x/SOMA-Core?style=for-the-badge" alt="License" /></a>&nbsp;
-  <a href="#test-results"><img src="https://img.shields.io/badge/tests-773%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
+  <a href="#test-results"><img src="https://img.shields.io/badge/tests-1067%20passed-brightgreen?style=for-the-badge" alt="Tests" /></a>
 </p>
 
 <p align="center">
@@ -54,13 +54,14 @@ SOMA is a **closed-loop behavioral guidance system**. It watches every action an
 
 | | What | How |
 |:--|:-----|:----|
-| **Watch** | 6 behavioral signals per action | Uncertainty, drift, error rate, goal coherence, cost, token usage |
+| **Watch** | 18 behavioral signals per action | Uncertainty, drift, error rate, goal coherence, cost, token usage, context burn rate, output entropy, hedging rate, calibration, time anomaly, and more |
 | **Classify** | Epistemic vs. aleatoric uncertainty | Output entropy analysis — knowledge gaps escalate, inherent ambiguity dampens |
+| **Reflex** | 14 reflexes — 5 block, 9 inject guidance | Blind edits, thrashing, retry dedup, commit gate, circuit breaker, smart throttle, fingerprint anomaly, context overflow, session memory |
 | **Guide** | Injects specific advice into agent context | `"3 writes without a Read — Read the target file first"` |
-| **Warn** | Escalating warnings as pressure rises | Insistent guidance with increasing urgency |
 | **Block** | Blocks ONLY destructive operations | `rm -rf`, `git push --force`, `.env` writes — never blocks normal tools |
-| **Predict** | Warns ~5 actions before escalation | Trend extrapolation + pattern detection (error streaks, thrashing, blind writes) |
-| **Learn** | Adapts thresholds to each agent | Tracks intervention outcomes, tunes over time |
+| **Predict** | Warns ~5 actions before escalation | OLS trend extrapolation + pattern detection (error streaks, thrashing, blind writes) |
+| **Learn** | Adapts thresholds to each agent | Tracks intervention outcomes, tunes weights and thresholds over time |
+| **Remember** | Cross-session behavioral learning | Fingerprinting (JSD), session memory matching, baseline inheritance |
 | **Model** | Predicts agent degradation over time | Half-life temporal modeling — warns before reliability drops |
 
 ### What SOMA Catches
@@ -176,7 +177,7 @@ AI agents loop, drift, edit files blind, retry failing commands endlessly. In mu
 | Guardrails (NeMo, Lakera) | Prompt-level only | No | Content filter | No | No |
 | Observability (LangSmith, Helicone) | Yes | **No** | **No** | No | Partial |
 | Rate limiters | No | No | Token cap | No | No |
-| **SOMA** | **6 signals** | **7 pattern warnings** | **4-mode guidance** | **Self-learning** | **Trust graph** |
+| **SOMA** | **18 signals** | **14 reflexes** | **4-mode guidance** | **Self-learning** | **Trust graph** |
 
 ---
 
@@ -393,7 +394,7 @@ Escalation → wait 5 actions → pressure dropped?
            (catch earlier)             (fewer false alarms)
 ```
 
-Adaptive step size scales with outcome consistency (1x at 50/50, up to 2x at 100% same outcome). Threshold shifts bounded to ±0.10. Signal weights adjust independently — floored at 0.2 so no signal is ever fully silenced.
+Adaptive step size scales with outcome consistency (1x at 50/50, up to 3x at 100% same outcome). Threshold shifts bounded to ±0.10. Signal weights adjust independently — floored at 0.2 so no signal is ever fully silenced.
 
 ---
 
@@ -420,11 +421,11 @@ No neural networks. No black boxes. Every formula is documented and tested.
 <tr>
 <td>
 
-**773 tests. 0 failures. ~1 second.**
+**1,067 tests. 0 failures. ~1 second.**
 
-Every formula, threshold, edge case, and integration path is covered.
+Every formula, threshold, edge case, and integration path is covered across 64 test files.
 
-16 stress scenarios validate behavior under extreme conditions. 5 real API integration tests (Anthropic + OpenAI, sync/async/streaming).
+16 stress scenarios validate behavior under extreme conditions. 5 real API integration tests (Anthropic + OpenAI, sync/async/streaming). Zero-mock reflex integration tests validate real system behavior end-to-end.
 
 **[Integration Test Report](docs/INTEGRATION-TEST-REPORT.md)** — 4 scenarios, 231 actions, full pipeline: healthy session (zero false positives), degrading session (OBSERVE→BLOCK in 16 actions), multi-agent trust graph, and policy engine live evaluation.
 
@@ -432,31 +433,19 @@ Every formula, threshold, edge case, and integration path is covered.
 <td>
 
 ```
-test_engine.py         ✓ Core pipeline (22 steps)
-test_pressure.py       ✓ Aggregation, sigmoid, floors
-test_vitals.py         ✓ All 6 signals + classification
-test_baseline.py       ✓ EMA, cold-start blending
-test_guidance.py       ✓ Mode transitions, destructive blocking
-test_learning.py       ✓ Threshold adaptation
-test_predictor.py      ✓ Trend + pattern prediction
-test_halflife.py       ✓ Temporal decay modeling
-test_reliability.py    ✓ Calibration + divergence
-test_policy.py         ✓ Policy engine + guardrail
-test_quality.py        ✓ A-F grading
-test_rca.py            ✓ Root cause analysis
-test_fingerprint.py    ✓ JSD behavioral signatures
-test_graph.py          ✓ Vector propagation + SNR
-test_budget.py         ✓ Budget + SAFE_MODE
-test_wrap.py           ✓ Anthropic + OpenAI wrapper
-test_wrap_async.py     ✓ Async client wrapping
-test_wrap_streaming.py ✓ Streaming interception
-test_context_usage.py  ✓ Context window tracking
-test_audit.py          ✓ JSON Lines audit logging
-test_integration_api.py ✓ Real API tests (Anthropic + OpenAI)
-test_sdk.py            ✓ LangChain, CrewAI, AutoGen
-test_stress.py         ✓ 16 stress scenarios
-test_claude_code_*.py  ✓ Full hook integration
-test_hooks_*.py        ✓ All 4 lifecycle hooks
+64 test files covering every module:
+
+Core pipeline          engine, pressure, vitals, baseline, types, ring_buffer, models
+Behavioral intelligence patterns, fingerprint, rca, quality, predictor, context, halflife
+Adaptation             learning, graph, guidance, policy, budget, threshold_tuner
+Reflexes               reflexes, signal_reflexes, advanced_signal_reflexes, graph_reflexes
+Reliability            reliability, calibration, verbal-behavioral divergence
+Integration            wrap (sync + async + streaming), sdk (LangChain/CrewAI/AutoGen)
+Hooks                  notification, pre_tool_use, post_tool_use, claude_code_layer
+Cross-session          cross_session_predictor, session_memory, session_store, analytics
+Infrastructure         persistence, audit, events, config, context_usage, recorder
+Stress & benchmarks    16 stress scenarios, reflex benchmarks, edge cases, coverage gaps
+Integration tests      real API (Anthropic + OpenAI), zero-mock reflex wiring, multiagent
 ```
 
 </td>
@@ -468,42 +457,99 @@ test_hooks_*.py        ✓ All 4 lifecycle hooks
 ## Architecture
 
 ```
-src/soma/                     60 modules, ~10,100 lines
-├── engine.py                Core pipeline — 22-step record_action()
-├── types.py                 Action, VitalsSnapshot, PressureVector, ResponseMode
-├── pressure.py              Aggregate pressure (weighted mean + max + error-rate floor)
-├── vitals.py                6 signals + uncertainty classification + task complexity
-├── baseline.py              EMA baselines (α=0.15) with cold-start blending
-├── guidance.py              4-mode system (OBSERVE/GUIDE/WARN/BLOCK)
-├── graph.py                 Trust graph + vector propagation + SNR isolation
-├── policy.py                Declarative YAML/TOML rules + @guardrail decorator
-├── reliability.py           Calibration score + verbal-behavioral divergence
-├── halflife.py              Temporal success rate modeling (exponential decay)
-├── learning.py              Self-tuning thresholds + weight adaptation
-├── predictor.py             ~5-action-ahead pressure prediction
-├── quality.py               A-F code quality grading
-├── rca.py                   Root cause analysis (5 detectors, plain English)
-├── patterns.py              7 behavioral pattern detectors
-├── findings.py              Prioritized findings collector
-├── context.py               Workflow awareness + session context
-├── fingerprint.py           Agent behavioral signatures (JSD divergence)
-├── budget.py                Multi-dimensional budget tracking
-├── wrap.py                  Universal client wrapper (sync + async + streaming)
-├── audit.py                 JSON Lines audit logging (zero-config, rotatable)
-├── persistence.py           Atomic state persistence (fcntl + fsync + rename)
-├── recorder.py              Session recording + replay
-├── sdk/
-│   ├── track.py             soma.track() context manager
-│   ├── langchain.py         SomaLangChainCallback
-│   ├── crewai.py            SomaCrewObserver
-│   └── autogen.py           SomaAutoGenMonitor
-├── hooks/                   Claude Code lifecycle hooks
-│   ├── pre_tool_use.py      Guidance (allow/block destructive ops)
-│   ├── post_tool_use.py     Record action + validate code + feedback
-│   ├── notification.py      Inject findings into agent context
-│   ├── stop.py              Save state + session summary
-│   └── statusline.py        Real-time status bar
-└── cli/                     Terminal UI + commands
+src/soma/                         84 modules, ~15,200 lines
+│
+├── Core Pipeline
+│   ├── engine.py                 22-step record_action() — the heart of SOMA
+│   ├── types.py                  Action, VitalsSnapshot, PressureVector, ResponseMode
+│   ├── errors.py                 SOMAError hierarchy
+│   ├── events.py                 Pub/sub EventBus (6 event types)
+│   ├── ring_buffer.py            Fixed-size circular action buffer
+│   └── models.py                 Context window lookup by model name
+│
+├── Signal Computation
+│   ├── vitals.py                 18 behavioral signals + uncertainty classification
+│   ├── pressure.py               Aggregate pressure (weighted mean + max + floors)
+│   ├── baseline.py               EMA baselines (α=0.15) with cold-start blending
+│   ├── reliability.py            Calibration score + verbal-behavioral divergence
+│   └── halflife.py               Temporal success rate modeling (exponential decay)
+│
+├── Behavioral Intelligence
+│   ├── patterns.py               9 behavioral pattern detectors (7 warning + 2 positive)
+│   ├── fingerprint.py            Agent behavioral signatures (JSD divergence)
+│   ├── rca.py                    Root cause analysis (5 detectors, plain English)
+│   ├── quality.py                A-F code quality grading
+│   ├── predictor.py              ~5-action-ahead pressure prediction (OLS + pattern boost)
+│   ├── cross_session.py          Historical trajectory matching (cosine > 0.8)
+│   ├── session_memory.py         Cross-session pattern matching for guidance
+│   ├── context.py                Workflow awareness + session context
+│   ├── task_tracker.py           Phase detection + scope drift tracking
+│   └── phase_drift.py            Phase-aware drift reduction (research/implement/test/debug)
+│
+├── Adaptation & Control
+│   ├── learning.py               Self-tuning thresholds + weight adaptation
+│   ├── graph.py                  Trust graph + vector propagation + SNR isolation
+│   ├── guidance.py               4-mode system (OBSERVE/GUIDE/WARN/BLOCK)
+│   ├── policy.py                 Declarative YAML/TOML rules + @guardrail decorator
+│   ├── budget.py                 Multi-dimensional budget tracking
+│   ├── threshold_tuner.py        Auto-calibration from benchmark data (percentile FP targeting)
+│   └── context_control.py        Context truncation by escalation level
+│
+├── Reflex System (14 reflexes)
+│   ├── reflexes.py               4 blocking reflexes (blind_edits, bash_failures, thrashing, retry_dedup)
+│   ├── signal_reflexes.py        5 signal reflexes (predictor, drift, handoff, RCA, commit gate)
+│   ├── advanced_signal_reflexes.py  3 advanced (smart throttle, fingerprint anomaly, context overflow)
+│   └── graph_reflexes.py         Circuit breaker state machine + session memory
+│
+├── Persistence & Observability
+│   ├── persistence.py            Atomic state persistence (fcntl + fsync + rename)
+│   ├── state.py                  Subsystem state getters (quality, predictor, fingerprint, tasks)
+│   ├── audit.py                  JSON Lines audit logging (rotatable, 10MB)
+│   ├── recorder.py               Session action recording
+│   ├── session_store.py          Cross-session history storage
+│   ├── analytics.py              SQLite historical analysis (WAL mode)
+│   ├── findings.py               Prioritized findings collector
+│   └── report.py                 Markdown report generation
+│
+├── Integration
+│   ├── wrap.py                   Universal client wrapper (sync + async + streaming)
+│   ├── sdk/
+│   │   ├── track.py              soma.track() context manager
+│   │   ├── langchain.py          SomaLangChainCallback
+│   │   ├── crewai.py             SomaCrewObserver
+│   │   └── autogen.py            SomaAutoGenMonitor
+│   └── exporters/
+│       ├── otel.py               OpenTelemetry metrics exporter
+│       └── webhook.py            Webhook event exporter
+│
+├── hooks/                        Claude Code lifecycle hooks
+│   ├── claude_code.py            Hook dispatcher (routes CLAUDE_HOOK env var)
+│   ├── pre_tool_use.py           Reflexes + guidance (allow/block)
+│   ├── post_tool_use.py          Record action + validate code + feedback
+│   ├── notification.py           Inject findings + all reflexes into agent context
+│   ├── stop.py                   Save state + update fingerprint + session summary
+│   ├── statusline.py             Real-time status bar
+│   ├── common.py                 Engine loading, action log, config, checkpoints
+│   ├── base.py                   Hook framework
+│   ├── cursor.py                 Cursor editor hooks
+│   └── windsurf.py               Windsurf editor hooks
+│
+├── cli/                          Terminal UI + commands
+│   ├── main.py                   CLI entry point (argparse router)
+│   ├── config_loader.py          Config parsing + 3 presets (strict/relaxed/autonomous)
+│   ├── hub.py                    Textual TUI dashboard
+│   ├── wizard.py                 Interactive setup wizard
+│   ├── setup_claude.py           Claude Code auto-setup
+│   ├── status.py                 Status printer
+│   ├── replay_cli.py             Session replay CLI
+│   └── tabs/                     Dashboard tabs (dashboard, config, replay, agents)
+│
+└── benchmark/                    Effectiveness measurement
+    ├── harness.py                Benchmark runner
+    ├── scenarios.py              Test scenarios
+    ├── metrics.py                Metric collection
+    ├── report.py                 Report generation
+    └── live.py                   Live 3-way comparison with real API calls
 ```
 
 3 runtime dependencies: `rich` + `tomli-w` + `textual`. Everything else is stdlib.
