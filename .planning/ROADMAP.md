@@ -54,7 +54,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 ### 🚧 Milestone 6 — Intelligence
 
-- [ ] **Phase 13: Intelligence** — Benchmark-first proof, cross-session learning, threshold tuning, phase-aware drift
+- [x] **Phase 13: Intelligence** — Benchmark-first proof, cross-session learning, threshold tuning, phase-aware drift (completed 2026-04-01)
 
 ### 📋 Milestone 7 — Platform
 
@@ -102,7 +102,7 @@ Plans:
 Plans:
 - [x] 13-01-PLAN.md — Benchmark harness, scenarios, and metrics collection (PRED-01)
 - [x] 13-02-PLAN.md — Session store, cross-session predictor, threshold tuner, phase-aware drift (TUNE-01, TASK-01, ANOM-01)
-- [ ] 13-03-PLAN.md — CLI wiring, report generation, docs/BENCHMARK.md with real results
+- [x] 13-03-PLAN.md — CLI wiring, report generation, docs/BENCHMARK.md with real results
 
 ### Phase 14: Platform
 **Goal**: Self-hosted web dashboard for multi-agent monitoring
@@ -122,7 +122,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
