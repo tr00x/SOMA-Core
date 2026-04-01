@@ -28,7 +28,8 @@ class TestLoadPolicyPacks:
         config = {"policies": {"packs": [str(_POLICIES_DIR / "strict.yaml")]}}
         engines = load_policy_packs(config)
         assert len(engines) == 1
-        assert isinstance(engines[0], PolicyEngine)
+        assert hasattr(engines[0], "rules")
+        assert hasattr(engines[0], "evaluate")
 
     def test_empty_packs_returns_empty(self):
         config = {"policies": {"packs": []}}

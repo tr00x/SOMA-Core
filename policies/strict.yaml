@@ -1,0 +1,26 @@
+version: "1"
+policies:
+  - name: "high-error-guard"
+    when:
+      - field: "error_rate"
+        op: ">="
+        value: 0.3
+    do:
+      action: "warn"
+      message: "Error rate exceeds 30% -- consider reviewing recent changes"
+  - name: "cost-limit"
+    when:
+      - field: "cost"
+        op: ">="
+        value: 5.0
+    do:
+      action: "block"
+      message: "Cost exceeds $5 limit"
+  - name: "drift-alert"
+    when:
+      - field: "drift"
+        op: ">="
+        value: 0.5
+    do:
+      action: "warn"
+      message: "Behavioral drift exceeds 50% -- agent may be off-track"
