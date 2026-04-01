@@ -118,7 +118,7 @@ Plans:
 
 Plans:
 - [x] 14-01-PLAN.md — Reflex engine module (reflexes.py) + config loader (mode, reflexes sections)
-- [ ] 14-02-PLAN.md — Hook integration (PreToolUse, Notification, Statusline) + agent awareness prompt
+- [x] 14-02-PLAN.md — Hook integration (PreToolUse, Notification, Statusline) + agent awareness prompt
 - [ ] 14-03-PLAN.md — Benchmark proof with reflex mode + docs/BENCHMARK.md update
 
 ### Phase 15: Signal Reflexes
@@ -151,7 +151,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
