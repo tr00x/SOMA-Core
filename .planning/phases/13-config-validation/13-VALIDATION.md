@@ -19,7 +19,7 @@ created: 2026-04-01
 |----------|-------|
 | **Framework** | pytest 8.x |
 | **Config file** | pyproject.toml |
-| **Quick run command** | `uv run python -m pytest tests/test_benchmark.py tests/test_session_history.py tests/test_cross_session.py -q --tb=short` |
+| **Quick run command** | `uv run python -m pytest tests/test_benchmark.py tests/test_session_store.py tests/test_cross_session_predictor.py tests/test_threshold_tuner.py tests/test_task_phase_drift.py -q --tb=short` |
 | **Full suite command** | `uv run python -m pytest tests/ -q --tb=short` |
 | **Estimated runtime** | ~2 seconds |
 
