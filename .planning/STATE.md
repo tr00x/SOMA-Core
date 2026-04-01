@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-04-01T05:21:59.423Z"
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-04-01T05:22:47.109Z"
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-30)
 ## Current Position
 
 Phase: 16 (advanced-reflexes) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Plan: 2 of 3
 | Phase 15 P01 | 2min | 1 tasks | 2 files |
 | Phase 15 P02 | 4min | 2 tasks | 6 files |
 | Phase 16 P02 | 2min | 1 tasks | 2 files |
+| Phase 16 P01 | 2min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Recent decisions affecting current work:
 - [Phase 16]: Cosine similarity on tool_distribution dicts with math.sqrt (no numpy)
 - [Phase 16]: Success filter: final_pressure <= 0.5 to skip failed sessions
 - [Phase 16]: 3-action minimum before memory injection fires
+- [Phase 16]: Circuit breaker uses frozen dataclass state machine (immutable transitions)
+- [Phase 16]: All advanced evaluators injection-only (never block) matching Phase 15 pattern
 
 ### Pending Todos
 
@@ -119,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T05:21:59.414Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-04-01T05:22:47.099Z
+Stopped at: Completed 16-01-PLAN.md
 Resume file: None

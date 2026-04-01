@@ -138,7 +138,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — Circuit breaker, smart throttle, anomaly detection, context overflow evaluators
+- [x] 16-01-PLAN.md — Circuit breaker, smart throttle, anomaly detection, context overflow evaluators
 - [x] 16-02-PLAN.md — Session memory matching and injection module
 - [ ] 16-03-PLAN.md — Hook integration for all advanced reflexes
 
@@ -160,7 +160,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
