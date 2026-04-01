@@ -28,6 +28,16 @@
 
 ---
 
+## Demo
+
+<p align="center">
+  <img src="demo.gif" alt="SOMA Demo" width="800" />
+</p>
+
+> Generate the demo with `vhs demo.tape` (requires [VHS](https://github.com/charmbracelet/vhs))
+
+---
+
 > **Your AI agent just edited 5 files without reading any of them. It's retrying the same failing command for the 8th time. It wandered from your auth module into unrelated config files. And you have no idea until it's too late.**
 >
 > SOMA sees all of this in real-time — and steers the agent back on track.
