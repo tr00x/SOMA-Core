@@ -313,6 +313,114 @@ def _cmd_uninstall_claude(args: argparse.Namespace) -> None:
     print()
 
 
+def _cmd_stats(args: argparse.Namespace) -> None:
+    """Show session statistics from session_store."""
+    import time as _time
+    from rich.console import Console
+    from rich.table import Table
+    from soma.session_store import load_sessions
+
+    console = Console()
+    sessions = load_sessions()
+
+    if not sessions:
+        console.print("  No session data found. Sessions are recorded when Claude Code exits.")
+        return
+
+    now = _time.time()
+    day_seconds = 86400
+
+    # Filter by time range
+    if getattr(args, "all", False):
+        filtered = sessions
+        label = "All time"
+    elif getattr(args, "week", False):
+        cutoff = now - 7 * day_seconds
+        filtered = [s for s in sessions if s.ended >= cutoff]
+        label = "Last 7 days"
+    else:
+        # Today (since midnight)
+        import datetime
+        midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        filtered = [s for s in sessions if s.ended >= midnight]
+        label = "Today"
+
+    if not filtered:
+        console.print(f"  No sessions found for: {label}")
+        return
+
+    # Compute stats
+    total_actions = sum(s.action_count for s in filtered)
+    total_errors = sum(s.error_count for s in filtered)
+    avg_pressure = sum(s.avg_pressure for s in filtered) / len(filtered)
+
+    # Peak pressure and which session
+    peak_session = max(filtered, key=lambda s: s.max_pressure)
+    peak_pressure = peak_session.max_pressure
+
+    # Error rate
+    error_rate = total_errors / total_actions if total_actions > 0 else 0.0
+
+    # Patterns caught (heuristic: sessions where tool_distribution has > 60% single tool)
+    patterns_caught = 0
+    for s in filtered:
+        if s.tool_distribution:
+            total_tools = sum(s.tool_distribution.values())
+            max_tool = max(s.tool_distribution.values()) if s.tool_distribution else 0
+            if total_tools > 5 and max_tool / total_tools > 0.6:
+                patterns_caught += 1
+
+    # Best/worst sessions
+    best_session = min(filtered, key=lambda s: s.error_count)
+    worst_session = max(filtered, key=lambda s: s.max_pressure)
+
+    # Grade from pressure
+    def _grade(p: float) -> str:
+        if p < 0.15:
+            return "A"
+        if p < 0.30:
+            return "B"
+        if p < 0.50:
+            return "C"
+        if p < 0.70:
+            return "D"
+        return "F"
+
+    console.print()
+    console.print(f"  [bold]SOMA Stats[/bold] -- {label}")
+    console.print()
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("metric", style="dim")
+    table.add_column("value")
+
+    table.add_row("Sessions", str(len(filtered)))
+    table.add_row("Total actions", str(total_actions))
+    table.add_row("Avg pressure", f"{avg_pressure:.0%}")
+    table.add_row("Peak pressure", f"{peak_pressure:.0%}")
+    table.add_row("Errors", f"{total_errors}/{total_actions} ({error_rate:.0%})")
+    table.add_row("Patterns caught", str(patterns_caught))
+    table.add_row("Best session", f"{best_session.action_count} actions, {best_session.error_count} errors, grade {_grade(best_session.avg_pressure)}")
+    table.add_row("Worst session", f"{worst_session.action_count} actions, peak {worst_session.max_pressure:.0%}, grade {_grade(worst_session.avg_pressure)}")
+
+    console.print(table)
+
+    # Week-over-week comparison
+    if getattr(args, "week", False) and len(sessions) > len(filtered):
+        prev_cutoff = now - 14 * day_seconds
+        this_cutoff = now - 7 * day_seconds
+        prev_week = [s for s in sessions if prev_cutoff <= s.ended < this_cutoff]
+        if prev_week:
+            prev_avg_p = sum(s.avg_pressure for s in prev_week) / len(prev_week)
+            curr_avg_p = avg_pressure
+            delta = curr_avg_p - prev_avg_p
+            direction = "up" if delta > 0 else "down"
+            console.print()
+            console.print(f"  Week-over-week: pressure {direction} {abs(delta):.0%} ({len(prev_week)} prev sessions vs {len(filtered)} this week)")
+
+    console.print()
+
+
 def _cmd_config(args: argparse.Namespace) -> None:
     import tomllib
     import tomli_w
@@ -745,6 +853,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("agents", help="List all agents from state file")
     subparsers.add_parser("status", help="Show current agent monitoring status")
 
+    # ---- Stats ----
+    stats_parser = subparsers.add_parser("stats", help="Session statistics")
+    stats_parser.add_argument("--week", action="store_true", help="Show last 7 days")
+    stats_parser.add_argument("--all", action="store_true", help="Show all time")
+
     # ---- Agent control ----
     rst = subparsers.add_parser("reset", help="Reset an agent's pressure baseline")
     rst.add_argument("agent_id", metavar="agent-id", nargs="?", default="claude-code",
@@ -852,6 +965,7 @@ def main() -> None:
         "init": _cmd_init,
         "install": _cmd_install,
         "update": _cmd_install,
+        "stats": _cmd_stats,
         "status": _cmd_status,
         "agents": _cmd_agents,
         "reset": _cmd_reset,
