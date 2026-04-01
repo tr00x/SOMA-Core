@@ -39,6 +39,20 @@ class TestConfigMigration:
         assert result["budget"] == {"tokens": 100000}
 
 
+class TestLoadConfigIsolation:
+    def test_default_config_not_mutated_by_caller(self):
+        """Mutating the returned config should not corrupt DEFAULT_CONFIG."""
+        from soma.cli.config_loader import DEFAULT_CONFIG
+        original_tokens = DEFAULT_CONFIG["budget"]["tokens"]
+
+        c1 = load_config("nonexistent_file.toml")
+        c1["budget"]["tokens"] = 999999
+
+        c2 = load_config("nonexistent_file.toml")
+        assert c2["budget"]["tokens"] == original_tokens
+        assert DEFAULT_CONFIG["budget"]["tokens"] == original_tokens
+
+
 class TestMigrationEndToEnd:
     def test_load_config_with_old_keys_returns_new(self, tmp_path):
         """load_config auto-migrates old threshold keys."""

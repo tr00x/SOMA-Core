@@ -351,6 +351,7 @@ class WrappedClient:
 
             # 4. Execute the real API call (non-streaming)
             start = time.time()
+            duration = 0.0
             error = False
             output_text = ""
             token_count = 0
@@ -421,6 +422,7 @@ class WrappedClient:
 
             # 3. Execute the real async API call
             start = time.time()
+            duration = 0.0
             error = False
             output_text = ""
             token_count = 0

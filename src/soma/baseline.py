@@ -99,8 +99,11 @@ class Baseline:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Baseline":
-        obj = cls(alpha=data["alpha"], min_samples=data["min_samples"])
-        obj._value = dict(data["value"])
-        obj._variance = dict(data["variance"])
-        obj._count = dict(data["count"])
+        obj = cls(
+            alpha=data.get("alpha", 0.15),
+            min_samples=data.get("min_samples", 10),
+        )
+        obj._value = dict(data.get("value", {}))
+        obj._variance = dict(data.get("variance", {}))
+        obj._count = dict(data.get("count", {}))
         return obj

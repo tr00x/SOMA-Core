@@ -106,3 +106,14 @@ class SomaAutoGenMonitor:
                 )
 
         agent.generate_reply = _wrapped_generate
+
+
+def wrap_autogen_agent(engine: SOMAEngine, agent: Any) -> Any:
+    """Wrap an AutoGen agent via SOMAProxy for tool-level monitoring.
+
+    Intercepts generate_reply and function_map entries through the proxy layer.
+    """
+    from soma.proxy import SOMAProxy
+    agent_id = getattr(agent, "name", f"autogen-{id(agent)}")
+    proxy = SOMAProxy(engine, agent_id)
+    return proxy.wrap_agent(agent)

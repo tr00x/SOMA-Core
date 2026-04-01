@@ -97,3 +97,15 @@ class SomaCrewObserver:
                 )
 
         agent.execute_task = _wrapped_execute
+
+
+def wrap_crewai_agent(engine: SOMAEngine, agent: Any) -> Any:
+    """Wrap a CrewAI agent via SOMAProxy for tool-level monitoring.
+
+    Intercepts execute_task and any tool calls through the proxy layer.
+    Subagent pressure propagates to parent if spawned via proxy.spawn_subagent().
+    """
+    from soma.proxy import SOMAProxy
+    agent_id = getattr(agent, "role", f"crewai-{id(agent)}")
+    proxy = SOMAProxy(engine, agent_id)
+    return proxy.wrap_agent(agent)

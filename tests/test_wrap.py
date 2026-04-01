@@ -262,6 +262,20 @@ class TestWrap:
         assert wrapped._pending_context_action == "truncate_50_block_tools"
 
 
+class TestWrapEdgeCases:
+    def test_duration_initialized_before_finally(self):
+        """duration must be initialized so finally block never gets UnboundLocalError."""
+        client = MockAnthropicClient()
+        # Make create raise SomaBlocked from within (simulating nested wrapper)
+        client.messages.create = MagicMock(
+            side_effect=SomaBlocked("nested", ResponseMode.BLOCK, 0.9)
+        )
+        wrapped = soma.wrap(client, auto_export=False)
+        with pytest.raises(SomaBlocked):
+            wrapped.messages.create(model="test", max_tokens=100, messages=[])
+        # If duration was unbound, we'd get UnboundLocalError instead of SomaBlocked
+
+
 class TestMultiAgentWrap:
     def test_shared_engine(self):
         """Multiple agents sharing one engine see each other."""

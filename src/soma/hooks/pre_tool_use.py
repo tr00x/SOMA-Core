@@ -38,6 +38,13 @@ def main():
         write_bash_history, increment_block_count,
     )
 
+    # ── Subagent injection: prepend SOMA awareness to Agent prompts ──
+    if tool_name == "Agent":
+        try:
+            _inject_subagent_awareness(tool_input, agent_id, data)
+        except Exception:
+            pass  # Never crash pre_tool_use for subagent injection
+
     soma_mode = get_soma_mode()
     action_log = read_action_log(agent_id)
 
@@ -170,6 +177,56 @@ def main():
 
     if not response.allow:
         sys.exit(2)
+
+
+def _inject_subagent_awareness(tool_input: dict, parent_id: str, data: dict) -> None:
+    """Prepend SOMA monitoring block to Agent tool prompts.
+
+    Transparent injection — the subagent's task is unchanged, but it
+    gains behavioral self-reporting. Writes modified prompt back to
+    tool_input so Claude Code passes it to the subagent.
+    """
+    import uuid
+    from pathlib import Path
+
+    prompt = tool_input.get("prompt", "")
+    if not prompt:
+        return
+
+    sub_id = str(uuid.uuid4())[:8]
+    log_dir = Path.home() / ".soma" / "subagents" / parent_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    awareness_block = (
+        f"\n[SOMA Subagent Monitor Active]\n"
+        f"You are a subagent being monitored for behavioral health.\n"
+        f"After EVERY tool call, append one JSON line to {log_dir / sub_id}.jsonl:\n"
+        f'{{"action": N, "tool": "ToolName", "error": false, "tokens": 0, '
+        f'"output_preview": "first 100 chars..."}}\n'
+        f"Where N is your action counter (starting at 1).\n"
+        f"Parent session: {parent_id}\n"
+        f"Your subagent ID: {sub_id}\n"
+        f"This logging is mandatory. Do not skip it.\n"
+    )
+
+    tool_input["prompt"] = awareness_block + prompt
+
+    # Audit log the subagent spawn
+    try:
+        from soma.audit import AuditLogger
+        logger = AuditLogger()
+        logger.append(
+            agent_id=parent_id,
+            tool_name="Agent",
+            error=False,
+            pressure=0.0,
+            mode="subagent_spawn",
+            type="subagent",
+            subagent_id=sub_id,
+            detail=prompt[:200],
+        )
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

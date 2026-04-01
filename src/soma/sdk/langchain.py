@@ -2,7 +2,7 @@
 
 Requires: langchain-core (pip install langchain-core)
 
-Usage:
+Usage (callback):
     from langchain_openai import ChatOpenAI
     from soma.sdk.langchain import SomaLangChainCallback
 
@@ -11,6 +11,12 @@ Usage:
 
     llm = ChatOpenAI(callbacks=[SomaLangChainCallback(engine, "lc-agent")])
     # Every LLM call and tool use is now monitored by SOMA.
+
+Usage (proxy — wraps tools directly):
+    from soma.sdk.langchain import wrap_langchain_tools
+
+    safe_tools = wrap_langchain_tools(engine, "lc-agent", tools)
+    # Each tool call goes through SOMA pre/post checks.
 """
 
 from __future__ import annotations
@@ -169,3 +175,18 @@ class SomaLangChainCallback(BaseCallbackHandler):
                 duration_sec=time.time() - start,
             ),
         )
+
+
+def wrap_langchain_tools(
+    engine: SOMAEngine,
+    agent_id: str,
+    tools: list,
+) -> list:
+    """Wrap LangChain tools via SOMAProxy for pre/post monitoring.
+
+    Each tool's _run/_arun methods are intercepted by SOMA. If pressure
+    reaches BLOCK, SOMABlockError is raised before the tool executes.
+    """
+    from soma.proxy import SOMAProxy
+    proxy = SOMAProxy(engine, agent_id)
+    return proxy.wrap_tools(tools)

@@ -174,6 +174,21 @@ def main():
         # Append pressure to per-session trajectory for cross-session intelligence
         append_pressure_trajectory(result.pressure, agent_id)
 
+        # Subagent cascade: propagate subagent error pressure to parent
+        try:
+            from soma.subagent_monitor import get_cascade_risk
+            cascade = get_cascade_risk(agent_id)
+            if cascade > 0:
+                # Boost parent pressure via graph — subagent errors cascade up
+                graph = engine._graph
+                if agent_id in graph.agents:
+                    current_internal = graph._nodes[agent_id].internal_pressure
+                    boosted = min(1.0, current_internal + cascade * 0.3)
+                    graph.set_internal_pressure(agent_id, boosted)
+                    graph.propagate()
+        except Exception:
+            pass  # Never crash for subagent cascade
+
         level_name = result.mode.name
         pressure = result.pressure
         vitals = result.vitals

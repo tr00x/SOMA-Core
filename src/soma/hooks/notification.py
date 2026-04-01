@@ -378,6 +378,21 @@ def main():
         except Exception:
             pass  # Never crash notification for advanced reflex failures
 
+        # ── Subagent summary (if any subagents active) ──
+        try:
+            from soma.subagent_monitor import get_subagent_summary, get_cascade_risk
+            sub_summary = get_subagent_summary(agent_id)
+            if sub_summary:
+                sub_count = len(sub_summary)
+                sub_errors = sum(s["errors"] for s in sub_summary.values())
+                cascade = get_cascade_risk(agent_id)
+                sub_line = f"[subagents] {sub_count} active, {sub_errors} errors"
+                if cascade > 0:
+                    sub_line += f", cascade risk={cascade:.0%}"
+                finding_lines.append(sub_line)
+        except Exception:
+            pass  # Never crash for subagent monitoring
+
         # ── Context control: limit injections by ResponseMode ──
         try:
             from soma.context_control import apply_context_control

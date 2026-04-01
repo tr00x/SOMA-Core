@@ -8,6 +8,7 @@ so the next session starts fresh.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from soma.hooks.common import (
     get_engine, save_state, read_action_log,
@@ -82,6 +83,18 @@ def main():
             append_session(record)
     except Exception:
         pass  # Never crash for session store failures
+
+    # Persist subagent data to session store
+    try:
+        from soma.subagent_monitor import aggregate as sub_aggregate
+        sub_vitals = sub_aggregate(agent_id)
+        if sub_vitals:
+            import json as _json
+            sub_path = Path.home() / ".soma" / "sessions" / agent_id / "subagents.json"
+            sub_path.parent.mkdir(parents=True, exist_ok=True)
+            sub_path.write_text(_json.dumps(sub_vitals, indent=2))
+    except Exception:
+        pass  # Never crash for subagent persistence
 
     try:
         snap = engine.get_snapshot(agent_id)

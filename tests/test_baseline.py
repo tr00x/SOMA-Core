@@ -91,3 +91,12 @@ def test_serialization_roundtrip():
     assert b2.get_std("cost") == pytest.approx(b.get_std("cost"))
     assert b2.get_count("cost") == b.get_count("cost")
     assert b2.get_count("error_rate") == b.get_count("error_rate")
+
+
+def test_from_dict_empty_dict_uses_defaults():
+    """from_dict({}) should not crash — should return a fresh Baseline with defaults."""
+    b = Baseline.from_dict({})
+    assert b.alpha == 0.15
+    assert b.min_samples == 10
+    assert b.get("uncertainty") == DEFAULTS["uncertainty"]
+    assert b.get_count("uncertainty") == 0
