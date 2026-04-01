@@ -48,17 +48,18 @@ def collect(
     findings: list[Finding] = []
 
     # ── Level status ──
+    u = vitals.get("uncertainty", 0)
+    d = vitals.get("drift", 0)
+    e = vitals.get("error_rate", 0)
     if level_name == "WARN":
         findings.append(Finding(
             priority=0, category="status",
-            message=f"Pressure elevated (p={pressure:.0%})",
-            action="Slow down. Read→Think→Act, not Act→Fix→Retry",
+            message=f"p={pressure:.0%} u={u:.2f} d={d:.2f} e={e:.0%}",
         ))
     elif level_name == "BLOCK":
         findings.append(Finding(
             priority=0, category="status",
-            message=f"Destructive ops blocked (p={pressure:.0%})",
-            action="Normal Read/Write/Edit/Bash/Agent still allowed",
+            message=f"p={pressure:.0%} u={u:.2f} d={d:.2f} e={e:.0%} — destructive ops blocked",
         ))
 
     # ── Quality ──
@@ -94,17 +95,9 @@ def collect(
                     pred = predictor.predict(next_boundary)
                     if pred.will_escalate:
                         reason = pred.dominant_reason
-                        advice = {
-                            "error_streak": "stop retrying, try something different",
-                            "blind_writes": "Read the target files before editing",
-                            "thrashing": "plan the complete change first, one clean edit",
-                            "retry_storm": "investigate root cause instead of retrying",
-                            "trend": "pressure climbing — slow down and verify",
-                        }.get(reason, "slow down and verify your approach")
                         findings.append(Finding(
                             priority=1, category="predict",
-                            message=f"escalation in ~{pred.actions_ahead} actions ({reason})",
-                            action=advice,
+                            message=f"escalation in ~{pred.actions_ahead} actions, trigger={reason}, confidence={pred.confidence:.0%}",
                         ))
         except Exception:
             pass
@@ -127,10 +120,14 @@ def collect(
                     message=pr.action,
                 ))
             else:
+                # Data tone: report the pattern and its data, not instructions
+                data_parts = [f"pattern={pr.kind}"]
+                if pr.data:
+                    for k, v in pr.data.items():
+                        data_parts.append(f"{k}={v}")
                 findings.append(Finding(
                     priority=1, category="pattern",
-                    message=pr.detail,
-                    action=pr.action,
+                    message=", ".join(data_parts),
                 ))
     except Exception:
         pass
@@ -144,13 +141,12 @@ def collect(
             if ctx.scope_drift >= 0.7 and ctx.drift_explanation:
                 findings.append(Finding(
                     priority=1, category="scope",
-                    message=ctx.drift_explanation,
-                    action="Finish current task before expanding scope",
+                    message=f"scope_drift={ctx.scope_drift:.2f}, {ctx.drift_explanation}",
                 ))
             elif ctx.scope_drift >= 0.5 and ctx.drift_explanation:
                 findings.append(Finding(
                     priority=2, category="scope",
-                    message=ctx.drift_explanation,
+                    message=f"scope_drift={ctx.scope_drift:.2f}, {ctx.drift_explanation}",
                 ))
         except Exception:
             pass

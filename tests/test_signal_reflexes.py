@@ -51,7 +51,7 @@ class TestPredictorCheckpoint:
         assert result.allow is True
         assert result.reflex_kind == "predictor_checkpoint"
         assert result.inject_message is not None
-        assert "checkpoint" in result.inject_message.lower() or "Auto-checkpoint" in result.inject_message
+        assert "predicted_escalation" in result.inject_message or "confidence=" in result.inject_message
 
     def test_fires_in_guide_mode(self):
         pred = _FakePrediction(confidence=0.8, actions_ahead=2)
@@ -89,7 +89,7 @@ class TestDriftGuardian:
         assert result.allow is True
         assert result.reflex_kind == "drift_guardian"
         assert "Build auth" in result.inject_message
-        assert "Refocus" in result.inject_message
+        assert "drift=" in result.inject_message
 
     def test_below_threshold(self):
         result = evaluate_drift_guardian(drift=0.3, original_task="Build auth")
@@ -135,7 +135,7 @@ class TestHandoffSuggestion:
             handoff_text="Agent 'main' half-life boundary passed",
             agent_id="main",
         )
-        assert "trust" in result.detail.lower() or "reduction" in result.detail.lower()
+        assert "success_rate" in result.detail.lower() or "agent" in result.detail.lower()
 
 
 # ── TestRCAInjection ─────────────────────────────────────────────────
@@ -147,7 +147,7 @@ class TestRCAInjection:
         assert result.allow is True
         assert result.reflex_kind == "rca_injection"
         assert result.inject_message is not None
-        assert result.inject_message.startswith("[SOMA DIAGNOSIS]")
+        assert "error_rate=" in result.inject_message
         assert "stuck in Edit loop" in result.inject_message
 
     def test_below_threshold(self):

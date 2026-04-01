@@ -9,28 +9,21 @@ Injects agent awareness prompt on first action of session (D-18/D-19/D-20).
 
 from __future__ import annotations
 
-# Agent awareness prompt — injected on first action only (per D-18/D-19)
-AGENT_AWARENESS_PROMPT = """[SOMA Active] This session is monitored by SOMA, a behavioral safety system.
-- SOMA may BLOCK actions that match harmful patterns (blind edits, retry loops, file thrashing)
-- When blocked, read the reason and follow the suggested fix
-- Do NOT retry blocked actions without changing approach
-- SOMA guidance appears in [SOMA] prefixed messages
-- Current mode: {mode}"""
+# Agent awareness prompt — injected on first action only
+AGENT_AWARENESS_PROMPT = """[SOMA Active] You have access to your own behavioral state.
+SOMA reports your vitals after each action — pressure, errors, drift, half-life.
+Use this data however you choose.
+Hard limits exist for destructive operations (reported if triggered).
+Current mode: {mode}"""
 
 
 def _format_finding(f) -> str:
-    """Format a Finding for Claude Code output."""
+    """Format a Finding for Claude Code output — data tone, not instructions."""
     if f.category == "positive":
         return f"[✓] {f.message}"
     if f.category == "status":
-        # Include level name explicitly for clarity
-        if "elevated" in f.message.lower():
-            return f"[⚡ WARN {f.message}] {f.action}"
-        if "blocked" in f.message.lower():
-            return f"[🚨 BLOCK {f.message}] {f.action}"
         return f"[status] {f.message}"
-    if f.action:
-        return f"[do] {f.action} — {f.message}" if f.message else f"[do] {f.action}"
+    # Data tone: report what IS, not what to DO
     return f"[{f.category}] {f.message}"
 
 
@@ -58,10 +51,25 @@ def main():
         # ── Load action log early (needed for awareness check) ──
         action_log = read_action_log(agent_id)
 
-        # ── Agent awareness prompt — first action only (per D-18/D-20) ──
+        # ── Agent awareness prompt + capacity data — first action only ──
         if len(action_log) == 0:
             soma_mode = get_soma_mode()
-            print(AGENT_AWARENESS_PROMPT.format(mode=soma_mode))
+            awareness = AGENT_AWARENESS_PROMPT.format(mode=soma_mode)
+
+            # Inject session capacity data
+            try:
+                from soma.planner import compute_session_capacity, format_capacity_line
+                cap = compute_session_capacity(
+                    current_pressure=pressure,
+                    action_count=actions,
+                    avg_error_rate=vitals.get("error_rate", 0.0),
+                )
+                cap_line = format_capacity_line(cap)
+                awareness = f"{awareness}\n{cap_line}"
+            except Exception:
+                pass
+
+            print(awareness)
             return  # Don't also print findings on first prompt
 
         hook_config = get_hook_config()
