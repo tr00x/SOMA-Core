@@ -39,6 +39,45 @@ def main():
     # These files are bounded (max 20 entries) and don't grow indefinitely.
     # Real cleanup happens when user runs `soma setup-claude` or `rm -rf ~/.soma`.
 
+    # Persist session to session_store for cross-session intelligence
+    try:
+        snap = engine.get_snapshot(agent_id)
+        log = read_action_log(agent_id)
+        if len(log) >= 3:
+            import time as _time
+            from soma.session_store import SessionRecord, append_session
+
+            tools_dist = {}
+            for e in log:
+                t = e.get("tool", "?")
+                tools_dist[t] = tools_dist.get(t, 0) + 1
+
+            # Reconstruct minimal pressure trajectory from action log timestamps
+            # (actual trajectory would require storing pressure per action)
+            pressure_traj = [snap["pressure"]]  # at least final pressure
+
+            record = SessionRecord(
+                session_id=agent_id,
+                agent_id=agent_id,
+                started=log[0].get("ts", 0.0) if log else 0.0,
+                ended=_time.time(),
+                action_count=snap["action_count"],
+                final_pressure=snap["pressure"],
+                max_pressure=snap["pressure"],
+                avg_pressure=snap["pressure"],
+                error_count=sum(1 for e in log if e.get("error")),
+                retry_count=0,
+                total_tokens=0,
+                mode_transitions=[],
+                pressure_trajectory=pressure_traj,
+                tool_distribution=tools_dist,
+                phase_sequence=[],
+                fingerprint_divergence=0.0,
+            )
+            append_session(record)
+    except Exception:
+        pass  # Never crash for session store failures
+
     try:
         snap = engine.get_snapshot(agent_id)
         action_count = snap['action_count']
