@@ -1,36 +1,21 @@
-# SOMA Demo — Behavioral Monitoring for AI Agents
+# SOMA Demo — Real behavioral monitoring of a degrading AI agent
 # Record with: vhs demo.tape
 # Requires: https://github.com/charmbracelet/vhs
 
 Output demo.gif
 Set FontSize 14
 Set Width 1200
-Set Height 600
+Set Height 700
 Set Theme "Catppuccin Mocha"
 Set Padding 20
-Set TypingSpeed 50ms
+Set TypingSpeed 40ms
 
-# --- Installation ---
-Type "pip install soma-ai"
+# --- Show what SOMA is ---
+Type "# SOMA — real-time behavioral monitoring for AI agents"
 Enter
-Sleep 2s
+Sleep 1.5s
 
-# --- Setup for Claude Code ---
-Type "soma setup-claude"
+# --- Run the real demo session ---
+Type "uv run python3 demo_session.py"
 Enter
-Sleep 2s
-
-# --- Check monitoring status ---
-Type "soma status"
-Enter
-Sleep 2s
-
-# --- Run a quick monitoring session ---
-Type "python3 demo_session.py"
-Enter
-Sleep 3s
-
-# --- Show final status ---
-Type "soma status"
-Enter
-Sleep 3s
+Sleep 12s
