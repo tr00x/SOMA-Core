@@ -484,6 +484,51 @@ def _cmd_analytics(args: argparse.Namespace) -> None:
     print()
 
 
+def _cmd_policy(args: argparse.Namespace) -> None:
+    """Manage community policy packs."""
+    from soma.cli.config_loader import load_config, save_config
+    from soma.policy import load_policy_packs
+
+    sub = getattr(args, "policy_command", None)
+    if sub is None or sub == "list":
+        config = load_config()
+        packs = config.get("policies", {}).get("packs", [])
+        if not packs:
+            print("  No policy packs configured.")
+            print("  Add one with: soma policy add <path-or-url>")
+            return
+        engines = load_policy_packs(config)
+        print(f"  {len(packs)} policy pack(s) configured:\n")
+        for i, entry in enumerate(packs):
+            rule_count = len(engines[i].rules) if i < len(engines) else 0
+            status = f"{rule_count} rules" if i < len(engines) else "failed to load"
+            print(f"    {entry}")
+            print(f"      {status}")
+        print()
+
+    elif sub == "add":
+        entry = args.pack_path
+        config = load_config()
+        packs = config.setdefault("policies", {}).setdefault("packs", [])
+        if entry in packs:
+            print(f"  Already configured: {entry}")
+            return
+        packs.append(entry)
+        save_config(config)
+        print(f"  Added policy pack: {entry}")
+
+    elif sub == "remove":
+        entry = args.pack_path
+        config = load_config()
+        packs = config.get("policies", {}).get("packs", [])
+        if entry not in packs:
+            print(f"  Not found: {entry}")
+            return
+        packs.remove(entry)
+        save_config(config)
+        print(f"  Removed policy pack: {entry}")
+
+
 def _cmd_tui() -> None:
     # First run? Auto-wizard
     if not Path("soma.toml").exists() and not (Path.home() / ".soma" / "state.json").exists():
@@ -552,6 +597,15 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init", help="Run the interactive setup wizard")
     subparsers.add_parser("setup-claude", help="Set up SOMA for Claude Code projects")
 
+    setup_parser = subparsers.add_parser("setup", help="Set up SOMA for a specific platform")
+    setup_group = setup_parser.add_mutually_exclusive_group(required=True)
+    setup_group.add_argument("--claude-code", action="store_true", dest="setup_claude_code",
+                             help="Set up SOMA for Claude Code")
+    setup_group.add_argument("--cursor", action="store_true", dest="setup_cursor",
+                             help="Set up SOMA for Cursor")
+    setup_group.add_argument("--windsurf", action="store_true", dest="setup_windsurf",
+                             help="Set up SOMA for Windsurf")
+
     # ---- Monitoring ----
     subparsers.add_parser("agents", help="List all agents from state file")
     subparsers.add_parser("status", help="Show current agent monitoring status")
@@ -575,6 +629,15 @@ def _build_parser() -> argparse.ArgumentParser:
     cs = config_subs.add_parser("set", help="Set a configuration value (e.g. thresholds.guide 0.20)")
     cs.add_argument("key", help="Dotted key path (e.g. thresholds.guide)")
     cs.add_argument("value", help="New value")
+
+    # ---- Policy packs ----
+    policy_parser = subparsers.add_parser("policy", help="Manage community policy packs")
+    policy_subs = policy_parser.add_subparsers(dest="policy_command")
+    policy_subs.add_parser("list", help="List configured policy packs")
+    pa = policy_subs.add_parser("add", help="Add a policy pack (local path or URL)")
+    pa.add_argument("pack_path", metavar="path-or-url", help="Path or URL to policy pack")
+    pr = policy_subs.add_parser("remove", help="Remove a policy pack")
+    pr.add_argument("pack_path", metavar="path-or-url", help="Path or URL to remove")
 
     # ---- Mode ----
     mode_parser = subparsers.add_parser("mode", help="Switch SOMA operating mode")
@@ -621,6 +684,14 @@ def main() -> None:
             parser.parse_args(["config", "--help"])
             return
         _cmd_config(args)
+        return
+
+    if args.command == "policy":
+        _cmd_policy(args)
+        return
+
+    if args.command == "setup":
+        _cmd_setup(args)
         return
 
     dispatch = {

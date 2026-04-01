@@ -195,6 +195,26 @@ class PolicyEngine:
         return cls.from_dict(_parse_policy_text(raw, url))
 
 
+def load_policy_packs(config: dict[str, Any]) -> list[PolicyEngine]:
+    """Load policy packs from soma.toml [policies] packs list.
+
+    Each entry can be a local file path or a URL.
+    Invalid entries are skipped with a warning (never crash).
+    """
+    packs_config = config.get("policies", {}).get("packs", [])
+    engines: list[PolicyEngine] = []
+    for entry in packs_config:
+        try:
+            if entry.startswith(("http://", "https://")):
+                engines.append(PolicyEngine.from_url(entry))
+            else:
+                engines.append(PolicyEngine.from_file(entry))
+        except Exception:
+            import sys
+            print(f"Warning: failed to load policy pack: {entry}", file=sys.stderr)
+    return engines
+
+
 def _parse_policy_text(text: str, source: str) -> dict[str, Any]:
     """Parse policy text as YAML or TOML based on file extension."""
     source_lower = source.lower()
