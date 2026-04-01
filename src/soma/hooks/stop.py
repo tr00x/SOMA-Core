@@ -13,6 +13,7 @@ from soma.hooks.common import (
     get_engine, save_state, read_action_log,
     get_fingerprint_engine, save_fingerprint_engine,
     get_quality_tracker,
+    read_pressure_trajectory,
 )
 
 
@@ -52,9 +53,13 @@ def main():
                 t = e.get("tool", "?")
                 tools_dist[t] = tools_dist.get(t, 0) + 1
 
-            # Reconstruct minimal pressure trajectory from action log timestamps
-            # (actual trajectory would require storing pressure per action)
-            pressure_traj = [snap["pressure"]]  # at least final pressure
+            # Read full trajectory from per-action buffer (written by post_tool_use)
+            pressure_traj = read_pressure_trajectory(agent_id)
+            if not pressure_traj:
+                pressure_traj = [snap["pressure"]]  # fallback: at least final pressure
+
+            max_p = max(pressure_traj) if pressure_traj else snap["pressure"]
+            avg_p = sum(pressure_traj) / len(pressure_traj) if pressure_traj else snap["pressure"]
 
             record = SessionRecord(
                 session_id=agent_id,
@@ -63,8 +68,8 @@ def main():
                 ended=_time.time(),
                 action_count=snap["action_count"],
                 final_pressure=snap["pressure"],
-                max_pressure=snap["pressure"],
-                avg_pressure=snap["pressure"],
+                max_pressure=max_p,
+                avg_pressure=avg_p,
                 error_count=sum(1 for e in log if e.get("error")),
                 retry_count=0,
                 total_tokens=0,
