@@ -47,6 +47,11 @@ If everything else fails, the closed-loop feedback system must work: actions →
 - ✓ Real API integration tests (Anthropic + OpenAI) — v0.5.0
 - ✓ CONTRIBUTING.md + PyPI 0.5.0 published — v0.5.0
 - ✓ 773 tests, 90%+ core coverage — v0.5.0
+- ✓ Cross-platform hook adapters (Cursor, Windsurf, ClaudeCode) with base protocol — Phase 12
+- ✓ TypeScript SDK prepared for NPM publishing — Phase 12
+- ✓ Community policy packs with YAML rules and CLI (`soma policy`) — Phase 12
+- ✓ Terminal demo (VHS tape + demo.gif, real engine data) — Phase 12
+- ✓ 890 tests passing — Phase 12
 
 ### Active
 
@@ -95,7 +100,10 @@ If everything else fails, the closed-loop feedback system must work: actions →
 - 8 research-backed intelligence features: goal coherence, uncertainty classification, vector pressure, SNR isolation, half-life, calibration, policy engine, framework adapters
 - Structured JSON Lines audit logging, context window tracking
 - OpenTelemetry optional dependency exists but no exporter implemented yet
-- 10,169 LOC Python, 773 tests
+- Cross-platform hook adapters: Cursor, Windsurf, ClaudeCode via unified HookAdapter protocol
+- TypeScript SDK prepped for NPM publishing, community policy packs with CLI
+- Terminal demo with real engine data (demo.gif)
+- ~10,500 LOC Python, 890 tests
 
 **Ecosystem opportunity:**
 - No established standard for AI agent behavioral monitoring exists
@@ -150,4 +158,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v0.5.0 milestone (Milestone 3: Production Ready)*
+*Last updated: 2026-04-01 after Phase 12 (Ecosystem: hooks, NPM, demo, policy packs)*
