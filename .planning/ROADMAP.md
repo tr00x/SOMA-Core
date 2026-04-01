@@ -47,7 +47,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 ### 🚧 Milestone 5 — Ecosystem
 
-- [ ] **Phase 12: Ecosystem** — Cursor/Windsurf hooks, NPM publish, demo, community policy packs
+- [x] **Phase 12: Ecosystem** — Cursor/Windsurf hooks, NPM publish, demo, community policy packs (completed 2026-04-01)
 
 ### 📋 Milestone 6 — Intelligence
 
@@ -88,7 +88,7 @@ Plans:
 Plans:
 - [x] 12-01-PLAN.md — Hook adapter protocol (LAYER-01) + Cursor/Windsurf adapters (HOOK-01)
 - [x] 12-02-PLAN.md — NPM publish prep (NPM-01) + community policy packs (POL-03)
-- [ ] 12-03-PLAN.md — Demo tape for README (DEMO-01)
+- [x] 12-03-PLAN.md — Demo tape for README (DEMO-01)
 
 ### Phase 13: Intelligence
 **Goal**: SOMA predicts problems before they happen using cross-session learning
@@ -114,7 +114,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
