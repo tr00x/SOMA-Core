@@ -15,6 +15,24 @@ from soma.types import AutonomyMode
 DEFAULT_CONFIG: dict[str, Any] = {
     "soma": {
         "store": "~/.soma/state.json",
+        "mode": "guide",  # "observe", "guide", "reflex"
+    },
+    "reflexes": {
+        "blind_edits": True,
+        "retry_dedup": True,
+        "bash_failures": True,
+        "thrashing": True,
+        "error_rate": True,
+        "research_stall": True,
+        "agent_spam": True,
+        "override_allowed": False,
+        "thresholds": {
+            "blind_edits_count": 3,
+            "bash_failures_count": 3,
+            "thrashing_count": 3,
+            "thrashing_window": 10,
+            "error_rate_threshold": 0.50,
+        },
     },
     "budget": {
         "tokens": 100000,
@@ -66,6 +84,24 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
     "soma": {
         "store": "~/.soma/state.json",
         "profile": "claude-code",
+        "mode": "guide",  # "observe", "guide", "reflex"
+    },
+    "reflexes": {
+        "blind_edits": True,
+        "retry_dedup": True,
+        "bash_failures": True,
+        "thrashing": True,
+        "error_rate": True,
+        "research_stall": True,
+        "agent_spam": True,
+        "override_allowed": False,
+        "thresholds": {
+            "blind_edits_count": 3,
+            "bash_failures_count": 3,
+            "thrashing_count": 3,
+            "thrashing_window": 10,
+            "error_rate_threshold": 0.50,
+        },
     },
     "hooks": {
         "verbosity": "normal",  # minimal, normal, verbose
