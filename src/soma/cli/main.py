@@ -71,6 +71,45 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         run_setup_windsurf()
 
 
+def _cmd_install(args: argparse.Namespace) -> None:
+    """Install (or update) SOMA for Claude Code with mode and profile."""
+    from soma.cli.setup_claude import run_setup_claude
+    from soma.cli.config_loader import load_config, save_config, apply_mode, CLAUDE_CODE_CONFIG
+
+    # 1. Run setup (hooks, statusline, engine state, soma.toml, skills)
+    run_setup_claude()
+
+    # 2. Apply mode and profile to soma.toml
+    mode = getattr(args, "mode", "reflex")
+    profile = getattr(args, "profile", "claude-code")
+
+    config = load_config()
+
+    # Set mode
+    config.setdefault("soma", {})["mode"] = mode
+
+    # Set profile
+    config["soma"]["profile"] = profile
+
+    # Apply profile defaults if claude-code
+    if profile == "claude-code":
+        for section in ("weights", "hooks", "vitals"):
+            if section in CLAUDE_CODE_CONFIG and section not in config:
+                config[section] = CLAUDE_CODE_CONFIG[section]
+
+    # Apply mode preset (strict/autonomous map to thresholds)
+    if mode in ("strict",):
+        config = apply_mode(config, "strict")
+    elif mode in ("autonomous",):
+        config = apply_mode(config, "autonomous")
+
+    save_config(config)
+
+    print(f"  Mode: {mode}")
+    print(f"  Profile: {profile}")
+    print()
+
+
 def _cmd_init(_args: argparse.Namespace) -> None:
     try:
         from soma.cli.wizard import run_wizard  # type: ignore[import]
@@ -685,6 +724,14 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init", help="Run the interactive setup wizard")
     subparsers.add_parser("setup-claude", help="Set up SOMA for Claude Code projects")
 
+    install_parser = subparsers.add_parser("install", help="Install SOMA for Claude Code")
+    install_parser.add_argument("--mode", choices=["observe", "guide", "reflex"], default="reflex")
+    install_parser.add_argument("--profile", choices=["claude-code", "strict", "relaxed", "autonomous"], default="claude-code")
+
+    update_parser = subparsers.add_parser("update", help="Update SOMA configuration (alias for install)")
+    update_parser.add_argument("--mode", choices=["observe", "guide", "reflex"], default="reflex")
+    update_parser.add_argument("--profile", choices=["claude-code", "strict", "relaxed", "autonomous"], default="claude-code")
+
     setup_parser = subparsers.add_parser("setup", help="Set up SOMA for a specific platform")
     setup_group = setup_parser.add_mutually_exclusive_group(required=True)
     setup_group.add_argument("--claude-code", action="store_true", dest="setup_claude_code",
@@ -803,6 +850,8 @@ def main() -> None:
 
     dispatch = {
         "init": _cmd_init,
+        "install": _cmd_install,
+        "update": _cmd_install,
         "status": _cmd_status,
         "agents": _cmd_agents,
         "reset": _cmd_reset,
