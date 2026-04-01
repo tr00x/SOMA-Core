@@ -135,7 +135,12 @@ Plans:
 **Goal**: Multi-agent circuit breakers, session memory, context management
 **Depends on**: Phase 15
 **Requirements**: RFX-10, RFX-11, RFX-12, RFX-13
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — Circuit breaker, smart throttle, anomaly detection, context overflow evaluators
+- [ ] 16-02-PLAN.md — Session memory matching and injection module
+- [ ] 16-03-PLAN.md — Hook integration for all advanced reflexes
 
 ### Phase 17: Dashboard
 **Goal**: Self-hosted web dashboard for multi-agent monitoring
