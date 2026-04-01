@@ -49,9 +49,16 @@ def evaluate_predictor_checkpoint(
 
     reason = getattr(prediction, "dominant_reason", "trend")
 
+    context = {
+        "error_streak": "consecutive failures detected",
+        "blind_writes": "writes without reading first",
+        "thrashing": "repeated edits to same file",
+        "retry_storm": "retrying same failing approach",
+        "trend": "steady pressure increase",
+    }.get(reason, "pressure climbing")
     msg = (
-        f"[SOMA] predicted_escalation in ~{actions_ahead} actions, "
-        f"confidence={confidence:.0%}, trigger={reason}"
+        f"[SOMA] escalation in ~{actions_ahead} actions, "
+        f"confidence={confidence:.0%}, trigger={reason} — {context}"
     )
     kind = "predictor_checkpoint" if mode == "reflex" else "predictor_warning"
 
@@ -78,12 +85,13 @@ def evaluate_drift_guardian(
 
     activity = current_activity or "something else"
 
+    similarity = max(0, 1.0 - drift)
     return ReflexResult(
         allow=True,
         reflex_kind="drift_guardian",
         inject_message=(
-            f"[SOMA] drift={drift:.2f}, original_task=\"{original_task}\", "
-            f"current_activity=\"{activity}\""
+            f"[SOMA] drift={drift:.2f}, original='{original_task}', "
+            f"current='{activity}' — {similarity:.0%} goal similarity"
         ),
         detail=f"drift={drift:.2f}",
     )
@@ -104,7 +112,7 @@ def evaluate_handoff(
     return ReflexResult(
         allow=True,
         reflex_kind="handoff_suggestion",
-        inject_message=f"[SOMA] success_rate={success_rate:.0%}, {handoff_text}",
+        inject_message=f"[SOMA] success_rate={success_rate:.0%} — session approaching limits",
         detail=f"success_rate={success_rate:.2f}, agent='{agent_id}'",
     )
 
@@ -124,7 +132,7 @@ def evaluate_rca_injection(
     return ReflexResult(
         allow=True,
         reflex_kind="rca_injection",
-        inject_message=f"[SOMA] error_rate={error_rate:.0%}, root_cause: {rca_text}",
+        inject_message=f"[SOMA] errors={error_rate:.0%}, root_cause: {rca_text}",
         detail=f"error_rate={error_rate:.2f}",
     )
 
