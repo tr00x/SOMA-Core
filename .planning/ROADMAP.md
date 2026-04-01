@@ -60,7 +60,7 @@ SOMA v0.5.0 — fully operational behavioral monitoring system with 773 tests, 1
 
 - [x] **Phase 14: Core Reflexes** — Reflex engine, 3 modes, pattern blocks, agent awareness, benchmark proof (completed 2026-04-01)
 - [x] **Phase 15: Signal Reflexes** — Auto-checkpoint, scope guardian, handoff, RCA injection, commit gate (completed 2026-04-01)
-- [ ] **Phase 16: Advanced Reflexes** — Circuit breaker, session memory, smart throttle, anomaly detection
+- [x] **Phase 16: Advanced Reflexes** — Circuit breaker, session memory, smart throttle, anomaly detection (completed 2026-04-01)
 
 ### 📋 Milestone 8 — Platform
 
@@ -140,7 +140,7 @@ Plans:
 Plans:
 - [x] 16-01-PLAN.md — Circuit breaker, smart throttle, anomaly detection, context overflow evaluators
 - [x] 16-02-PLAN.md — Session memory matching and injection module
-- [ ] 16-03-PLAN.md — Hook integration for all advanced reflexes
+- [x] 16-03-PLAN.md — Hook integration for all advanced reflexes
 
 ### Phase 17: Dashboard
 **Goal**: Self-hosted web dashboard for multi-agent monitoring
@@ -160,7 +160,7 @@ Plans:
 
 **Goal:** New guidance type that signals frameworks WHEN to shard/checkpoint based on half-life prediction + context_usage + success rate. Instead of just raising pressure, emit targeted "recommend state checkpoint and handoff" guidance with predicted success rate at N actions, context usage %, and optimal checkpoint moment. Framework (GSD, LangGraph, CrewAI) decides HOW to shard, SOMA tells WHEN. Differentiator: nobody else does this.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)

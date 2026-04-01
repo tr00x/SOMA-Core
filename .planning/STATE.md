@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-04-01T05:22:47.109Z"
+stopped_at: Completed 16-03-PLAN.md
+last_updated: "2026-04-01T05:28:29.702Z"
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -64,6 +64,7 @@ Plan: 3 of 3
 | Phase 15 P02 | 4min | 2 tasks | 6 files |
 | Phase 16 P02 | 2min | 1 tasks | 2 files |
 | Phase 16 P01 | 2min | 2 tasks | 4 files |
+| Phase 16 P03 | 4min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Recent decisions affecting current work:
 - [Phase 16]: 3-action minimum before memory injection fires
 - [Phase 16]: Circuit breaker uses frozen dataclass state machine (immutable transitions)
 - [Phase 16]: All advanced evaluators injection-only (never block) matching Phase 15 pattern
+- [Phase 16]: Circuit breaker state stored as JSON at ~/.soma/circuit_{agent_id}.json
+- [Phase 16]: Anomaly audit uses type='anomaly' distinct from type='reflex' for filtering
 
 ### Pending Todos
 
@@ -122,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01T05:22:47.099Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-04-01T05:28:29.693Z
+Stopped at: Completed 16-03-PLAN.md
 Resume file: None
