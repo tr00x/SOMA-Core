@@ -88,6 +88,41 @@ def main():
             print(reflex_result.block_message, file=sys.stderr)  # per D-17
             sys.exit(2)
 
+    # Signal reflex: commit gate (guide + reflex modes, per D-13/D-14)
+    try:
+        from soma.signal_reflexes import evaluate_commit_gate
+        from soma.hooks.common import get_quality_tracker
+
+        qt = get_quality_tracker(agent_id=agent_id)
+        report = qt.get_report()
+        gate_result = evaluate_commit_gate(report.grade, tool_name, tool_input)
+
+        if not gate_result.allow:
+            # Audit log commit gate block
+            try:
+                from soma.audit import AuditLogger
+                logger = AuditLogger()
+                logger.append(
+                    agent_id=agent_id,
+                    tool_name=tool_name,
+                    error=True,
+                    pressure=pressure,
+                    mode="reflex",
+                    type="reflex",
+                    reflex_kind="commit_gate",
+                    detail=gate_result.detail,
+                )
+            except Exception:
+                pass
+            increment_block_count(agent_id)
+            print(gate_result.block_message, file=sys.stderr)
+            sys.exit(2)
+
+        if gate_result.inject_message:
+            print(gate_result.inject_message, file=sys.stderr)
+    except Exception:
+        pass  # Never crash pre_tool_use for signal reflex failures
+
     # Guide + Reflex modes: existing guidance logic (per D-03 mode inheritance)
     thresholds = get_guidance_thresholds()
     gsd_active = False
