@@ -2,6 +2,8 @@
 
 This document is the formal technical specification for the SOMA behavioral monitoring system. It specifies every formula, constant, algorithm, and system property. All values are verified from source code and represent the canonical reference for implementation behavior.
 
+See also: [Architecture](ARCHITECTURE.md) for system design overview, [Research](RESEARCH.md) for academic foundations, [Paper](PAPER.md) for the full academic treatment.
+
 ---
 
 ## 1. System Overview
