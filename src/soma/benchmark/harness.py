@@ -108,7 +108,6 @@ def _collect_metrics(
 
     for idx, sa in enumerate(actions):
         # Guidance-responsive skipping
-        guidance_followed = False
         if soma_enabled and sa.guidance_responsive:
             current_level = engine.get_level(agent_id)
             if current_level >= ResponseMode.GUIDE:
@@ -128,7 +127,6 @@ def _collect_metrics(
                 continue  # skip this action
 
         # Reflex blocking (simulates PreToolUse reflex check)
-        reflex_blocked = False
         if reflex_mode:
             from soma.reflexes import evaluate as reflex_evaluate
 
@@ -150,7 +148,6 @@ def _collect_metrics(
                 bash_history=bash_hist,
             )
             if not rr.allow:
-                reflex_blocked = True
                 per_action.append(asdict(ActionMetric(
                     action_index=idx,
                     pressure=0.0,

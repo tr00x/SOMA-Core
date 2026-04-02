@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import sys
 
-from soma.hooks.base import HookAdapter, HookInput, HookResult, dispatch_hook
+from soma.hooks.base import HookInput, HookResult, dispatch_hook
 
 
 # Cursor uses camelCase event names

@@ -7,9 +7,7 @@ Pure stdlib implementation — no sklearn, numpy, or external ML libraries.
 
 from __future__ import annotations
 
-import statistics
 
-from soma.types import ResponseMode
 
 # Default thresholds (matching guidance.py)
 DEFAULT_THRESHOLDS: dict[str, float] = {"guide": 0.25, "warn": 0.50, "block": 0.75}

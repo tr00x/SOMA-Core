@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import soma as soma_mod
-from soma.types import Action, ResponseMode
+from soma.types import Action
 from soma.reflexes import evaluate as reflex_evaluate
 
 

@@ -10,7 +10,7 @@ from soma.types import Action, ResponseMode, AutonomyMode, VitalsSnapshot, Agent
 from soma.errors import AgentNotFound
 from soma.ring_buffer import RingBuffer
 from soma.vitals import (
-    compute_uncertainty, compute_drift, compute_behavior_vector,
+    compute_uncertainty, compute_behavior_vector,
     compute_resource_vitals, determine_drift_mode, compute_output_entropy,
     sigmoid_clamp, compute_goal_coherence, compute_baseline_integrity,
     classify_uncertainty, estimate_task_complexity,

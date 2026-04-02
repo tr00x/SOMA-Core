@@ -7,7 +7,7 @@ Produces two output modes from BenchmarkResult:
 
 from __future__ import annotations
 
-from soma.benchmark.metrics import BenchmarkResult, ScenarioResult
+from soma.benchmark.metrics import BenchmarkResult
 
 
 # ------------------------------------------------------------------

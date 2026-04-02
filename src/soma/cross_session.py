@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 
 from soma.predictor import Prediction, PressurePredictor
-from soma.session_store import SessionRecord, load_sessions
+from soma.session_store import load_sessions
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
