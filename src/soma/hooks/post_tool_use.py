@@ -16,6 +16,7 @@ from soma.hooks.common import get_engine, save_state, read_stdin, append_action_
 
 _prev_level: str | None = None
 _prev_pressure: float = 0.0
+_mirror = None  # Lazy-initialized Mirror instance
 
 
 def _validate_python_file(file_path: str) -> str | None:
@@ -83,9 +84,19 @@ def _extract_file_path(data: dict) -> str:
 def main():
     global _prev_level, _prev_pressure
 
+    global _mirror
+
     engine, agent_id = get_engine()
     if engine is None:
         return
+
+    # Lazy-init Mirror once per process
+    if _mirror is None:
+        try:
+            from soma.mirror import Mirror
+            _mirror = Mirror(engine)
+        except Exception:
+            pass  # Mirror is optional — never crash
 
     try:
         from soma.types import Action
@@ -173,6 +184,19 @@ def main():
 
         # Append pressure to per-session trajectory for cross-session intelligence
         append_pressure_trajectory(result.pressure, agent_id)
+
+        # Mirror: evaluate pending injections, then generate new context
+        if _mirror is not None:
+            try:
+                _mirror.evaluate_pending(agent_id, result.pressure)
+            except Exception:
+                pass  # Never crash for learning evaluation
+            try:
+                session_ctx = _mirror.generate(agent_id, action, output)
+                if session_ctx:
+                    print(session_ctx)  # stdout → appended to tool response
+            except Exception:
+                pass  # Mirror is optional — never crash
 
         # Subagent cascade: propagate subagent error pressure to parent
         try:
