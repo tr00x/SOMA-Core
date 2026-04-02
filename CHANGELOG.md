@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.6.0] — 2026-04-02
+
+Mirror: Proprioceptive Feedback — the agent sees itself.
+
+### Added
+- **Mirror module** (`soma.mirror`) — proprioceptive session context injected into tool responses via stdout
+- **Three generation modes**: PATTERN (cached, 0 cost), STATS (computed, 0 cost), SEMANTIC (LLM-powered)
+- **Self-learning**: Mirror tracks which contexts helped (pressure dropped ≥10%) and caches effective patterns in `~/.soma/patterns.json`
+- **Multi-provider LLM** for semantic mode: Gemini (free), Anthropic, OpenAI via raw httpx — no SDK dependencies
+- **VBD detection**: identifies verbal-behavioral divergence (edit without recent read of that file)
+- **Full pipeline integration test** (`test_full_pipeline.py`) — engine → vitals → pressure → mirror → persistence → fingerprint
+- **State loader tests** (`test_state_loaders.py`) — coverage for `state.py` lazy getters
+- **Planner tests** (`test_planner.py`) — coverage for session capacity computation
+
+### Changed
+- Session context delivered via **stdout** (environment augmentation) instead of stderr (system messages)
+- Agent sees behavioral data as part of tool response, not as external warnings
+- "Show don't tell" — facts about behavior, not instructions to change it
+
+### Removed
+- Dead code: `daemon.py`, `inbox.py`, `benchmark/loop_verification.py`
+
+### Architecture
+- Mirror replaces directive guidance with factual self-reflection
+- Three-tier escalation: silence (healthy) -> pattern/stats (elevated) -> semantic LLM (critical)
+- `[mirror]` config section in `soma.toml` for semantic_enabled, semantic_provider, semantic_threshold
+
+### Stats
+- 86 modules, 1208 tests, 0 dead code
+
+## [0.5.x] — Nervous System (March-April 2026, 124 commits unreleased)
+
+Phases 11-16: reflex blocking, cross-session intelligence, advanced behavioral analysis.
+
+### Added
+- **Context window tracking** (CTX-01) — cumulative token tracking, context exhaustion pressure signal, proactive warnings at 70%/90%
+- **OTel + webhook exporters** — `soma.exporters.otel`, `soma.exporters.webhook`, wired to EventBus
+- **Session reports** — `soma.report` generates per-agent session summaries on shutdown
+- **Core reflexes** (Phase 14) — pattern-based blocking in 3 modes: observe/guide/reflex. 80.2% error reduction proven in benchmark
+- **Signal reflexes** (Phase 15) — commit gate (blocks git commit at grade D/F), drift checkpoint, RCA-triggered pauses
+- **Advanced reflexes** (Phase 16) — circuit breaker, session memory with cosine similarity, smart throttle, fingerprint anomaly detection, context overflow evaluator
+- **CLI tools** — `soma replay --last/--worst`, `soma stats`, `soma install`, `soma update`
+- **Cross-session predictor** — blends local predictions with historical session trajectories
+- **Threshold tuner** — phase-aware drift computation, adaptive thresholds from benchmark results
+- **Session store** — append-only JSONL with automatic rotation at 10MB
+- **Enhanced stop hook** — session summary with duration, peak pressure, quality grade, pattern detection
+- **Subagent awareness** — SOMA monitoring block injected into Agent tool prompts
+
+### Fixed
+- **Bimodal pressure** — continuous ramp during grace period instead of step function (0 -> high cliff)
+- **Session state leaking** — recycled PID detection via PPID start time comparison
+- **Universal proxy layer** — SOMAProxy for any agent framework (LangChain, CrewAI, AutoGen)
+- **Hybrid tone** — data-first format with brief context, not instruction-first directives
+
 ## [0.5.0] — 2026-03-31
 
 Production Ready: 10 phases of behavioral analysis + full production API support.
