@@ -28,35 +28,57 @@ which soma-hook
 
 ## Configure Claude Code
 
-Add hooks to `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      { "type": "command", "command": "soma-hook" }
-    ],
-    "PostToolUse": [
-      { "type": "command", "command": "soma-hook" }
-    ],
-    "Stop": [
-      { "type": "command", "command": "soma-hook" }
-    ]
-  }
-}
-```
-
-Or run the wizard:
+Run the wizard:
 
 ```bash
 soma setup-claude
 ```
 
+Or add hooks manually to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "CLAUDE_HOOK=PreToolUse soma-hook", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "CLAUDE_HOOK=PostToolUse soma-hook", "timeout": 5 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "CLAUDE_HOOK=Stop soma-hook", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Check installation health:
+
+```bash
+soma doctor
+```
+
 ## What happens
 
-SOMA runs on every tool call. Here's what you'll see:
+SOMA runs on every tool call:
 
-**When the agent is healthy (pressure < 15%):** Nothing. Complete silence. SOMA monitors but does not interfere.
+- **PreToolUse** — reflex checks (block destructive ops, retry dedup, blind edit prevention)
+- **PostToolUse** — record action, validate code, compute pressure, Mirror injection
+- **Stop** — save state, update fingerprint, generate session summary
+
+**When the agent is healthy (pressure < 15%):** Silence. SOMA monitors but does not interfere.
 
 **When pressure rises (errors, retries, drift):** Session context appears in tool responses:
 
@@ -68,7 +90,7 @@ last_successful: action #8 (Read)
 ---
 ```
 
-The agent sees this as part of the tool output — not as a warning from an external system. It processes the facts and adjusts its behavior.
+The agent sees this as part of the tool output — not as a warning. It processes the facts and adjusts its behavior.
 
 **Status line** (always visible in Claude Code):
 
@@ -84,16 +106,18 @@ Create `soma.toml` in your project root (optional — defaults work well):
 
 ```toml
 [thresholds]
-guide = 0.40    # Start soft suggestions (stderr)
+guide = 0.40    # Start soft suggestions
 warn = 0.60     # Insistent warnings
 block = 0.80    # Block destructive ops only
 
 [weights]
-uncertainty = 1.2
-drift = 1.5
-error_rate = 2.5
+uncertainty = 2.0
+drift = 1.8
+error_rate = 1.5
+goal_coherence = 1.5
+context_exhaustion = 1.5
 cost = 1.0
-token_usage = 0.6
+token_usage = 0.8
 
 [mirror]
 semantic_enabled = true
@@ -105,11 +129,13 @@ validate_python = true
 lint_python = true
 quality = true
 predict = true
+fingerprint = true
+task_tracking = true
 ```
 
 ## Semantic mode (optional)
 
-For LLM-powered behavioral observation at high pressure (>=40%), provide an API key:
+For LLM-powered behavioral observation at high pressure (≥40%):
 
 ```bash
 # Gemini — free tier, recommended
@@ -124,21 +150,34 @@ export OPENAI_API_KEY=your_key
 
 Priority: Gemini > Anthropic > OpenAI. Auto-detected from env vars.
 
-Semantic mode produces observations like:
+## Programmatic API
+
+```python
+import soma
+
+# Quick start
+engine = soma.quickstart()
+
+# Wrap Anthropic or OpenAI client
+client = soma.wrap(anthropic.Anthropic())
+
+# Universal proxy for any framework
+proxy = soma.SOMAProxy(engine, "my-agent")
+safe_tool = proxy.wrap_tool(my_function)
 ```
---- session context ---
-actions: 18 | errors: 7/10
-Last 4 edits targeted test files. Original task was fixing engine.py.
----
-```
+
+See [API Reference](api.md) for the full programmatic interface.
 
 ## Verify it works
 
 ```bash
-# Clean state
-rm -f ~/.soma/engine_state.json
+soma doctor
+soma status
+```
 
-# Simulate 5 errors — run in a single script so PPID is consistent
+Or simulate pressure:
+
+```bash
 cat > /tmp/test_soma.sh << 'EOF'
 #!/bin/bash
 for i in 1 2 3 4 5; do
@@ -149,10 +188,30 @@ EOF
 bash /tmp/test_soma.sh
 ```
 
-By action 3-4, you should see `--- session context ---` on stdout.
+By action 3–4, you should see `--- session context ---` on stdout.
+
+## CLI commands
+
+```
+soma                    # TUI dashboard
+soma status             # Quick text summary
+soma setup-claude       # Install hooks
+soma doctor             # Check installation health
+soma agents             # List monitored agents
+soma replay <file>      # Replay recorded session
+soma init               # Create soma.toml via wizard
+soma stop / start       # Disable / re-enable hooks
+soma reset <id>         # Reset agent baseline
+soma config show/set    # View or change configuration
+soma mode <name>        # Switch mode (strict/relaxed/autonomous)
+soma report             # Generate session report
+soma analytics          # Show historical analytics
+```
 
 ## Next steps
 
+- [Guide](guide.md) — full user guide
 - [Architecture](ARCHITECTURE.md) — how the pipeline works
+- [API Reference](api.md) — programmatic interface
 - [Research](RESEARCH.md) — academic foundations
-- [CHANGELOG](../CHANGELOG.md) — version history
+- [Technical Reference](TECHNICAL.md) — every formula and constant
