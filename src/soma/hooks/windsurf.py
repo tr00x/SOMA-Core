@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 
-from soma.hooks.base import HookAdapter, HookInput, HookResult, dispatch_hook
+from soma.hooks.base import HookInput, HookResult, dispatch_hook
 
 
 # Windsurf has separate events per tool category

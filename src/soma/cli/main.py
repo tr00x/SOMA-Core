@@ -730,7 +730,7 @@ def _cmd_analytics(args: argparse.Namespace) -> None:
 
     tool_stats = store.get_tool_stats(agent_id)
     if tool_stats:
-        print(f"\n  Tool Usage:")
+        print("\n  Tool Usage:")
         for tool, count in tool_stats.items():
             print(f"    {tool}: {count}")
 
@@ -809,7 +809,7 @@ def _cmd_benchmark(args: argparse.Namespace) -> None:
         return
 
     from soma.benchmark import run_benchmark
-    from soma.benchmark.report import generate_markdown, render_terminal, render_progress
+    from soma.benchmark.report import generate_markdown, render_terminal
 
     runs = getattr(args, "runs", 5)
 
