@@ -4,6 +4,8 @@ SOMA is a closed-loop behavioral monitoring system. Actions produce vitals, vita
 
 This document describes the complete system architecture as implemented in v0.6.0.
 
+See also: [Technical Reference](TECHNICAL.md) for exact formulas and constants, [Research](RESEARCH.md) for academic foundations, [Paper](PAPER.md) for the full academic treatment, [Guide](guide.md) for practical usage, [API Reference](api.md) for programmatic interface.
+
 ## System overview
 
 ```
