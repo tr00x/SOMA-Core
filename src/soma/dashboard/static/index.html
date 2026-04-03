@@ -3,1191 +3,684 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SOMA -- Behavioral Monitoring</title>
+<title>SOMA — Behavioral Monitoring</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        soma: {
+          bg: '#0a0a0a',
+          card: '#111111',
+          border: '#1e1e1e',
+          pink: '#ff2d78',
+          'pink-light': '#ff6ba6',
+          success: '#00ff88',
+          warning: '#ffaa00',
+          error: '#ff4444',
+        }
+      },
+      fontFamily: {
+        mono: ["'SF Mono'", "'Cascadia Code'", "'Fira Code'", "'Consolas'", 'monospace'],
+      }
+    }
+  }
+}
+</script>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg: #0a0a0a;
-  --card: #141414;
-  --card-border: #1a1a1a;
-  --pink: #ff2d78;
-  --pink-light: #ff6ba6;
-  --text: #e0e0e0;
-  --text-muted: #666666;
-  --success: #00ff88;
-  --warning: #ffaa00;
-  --error: #ff4444;
-  --blue: #4488ff;
-  --radius: 8px;
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-
-html, body {
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #555; }
-
-/* Layout */
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* Header */
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  background: var(--card);
-  border-bottom: 2px solid transparent;
-  border-image: linear-gradient(90deg, var(--pink), var(--pink-light), transparent 80%) 1;
-  flex-shrink: 0;
-  z-index: 10;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--pink), var(--pink-light));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 15px;
-  color: #fff;
-  box-shadow: 0 0 20px rgba(255, 45, 120, 0.4);
-  flex-shrink: 0;
-}
-
-.logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 4px;
-  color: #fff;
-}
-
-.logo-sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 1px;
-  margin-left: 4px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.header-time {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
-  animation: pulse 2s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-.status-dot.warn { background: var(--warning); box-shadow: 0 0 8px rgba(255, 170, 0, 0.5); }
-.status-dot.error { background: var(--error); box-shadow: 0 0 8px rgba(255, 68, 68, 0.5); }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* Main content */
-main {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 20px 24px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* Section titles */
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-}
-
-/* Cards */
-.card {
-  background: var(--card);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius);
-  padding: 16px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.card:hover {
-  border-color: #2a2a2a;
-}
-
-/* Row 1: Agent cards */
-.agent-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.agent-card {
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-}
-
-.agent-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--pink-light));
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.agent-card:hover::before { opacity: 1; }
-
-.agent-card.selected {
-  border-color: var(--pink);
-  box-shadow: 0 0 24px rgba(255, 45, 120, 0.1);
-}
-
-.agent-card.selected::before { opacity: 1; }
-
-.agent-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.agent-id {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.mode-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.mode-badge.observe { background: rgba(0, 255, 136, 0.12); color: var(--success); border: 1px solid rgba(0, 255, 136, 0.2); }
-.mode-badge.guide { background: rgba(255, 170, 0, 0.12); color: var(--warning); border: 1px solid rgba(255, 170, 0, 0.2); }
-.mode-badge.warn { background: rgba(255, 140, 0, 0.12); color: #ff8c00; border: 1px solid rgba(255, 140, 0, 0.2); }
-.mode-badge.block { background: rgba(255, 68, 68, 0.12); color: var(--error); border: 1px solid rgba(255, 68, 68, 0.2); }
-
-/* Pressure bar */
-.pressure-bar-container {
-  margin-bottom: 12px;
-}
-
-.pressure-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 5px;
-}
-
-.pressure-value {
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.pressure-bar-track {
-  height: 6px;
-  background: #1e1e1e;
-  border-radius: 3px;
-  overflow: hidden;
-  position: relative;
-}
-
-.pressure-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.6s ease, background 0.6s ease, box-shadow 0.6s ease;
-}
-
-/* Vitals grid */
-.vitals-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 16px;
-  margin-bottom: 10px;
-}
-
-.vital-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.vital-label { color: var(--text-muted); }
-.vital-value { font-family: var(--font-mono); font-weight: 500; }
-
-.agent-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: 10px;
-  border-top: 1px solid #1e1e1e;
-  font-size: 12px;
-}
-
-.action-count {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.quality-grade {
-  font-family: var(--font-mono);
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.grade-a { color: var(--success); text-shadow: 0 0 12px rgba(0, 255, 136, 0.3); }
-.grade-b { color: #66ddaa; }
-.grade-c { color: var(--warning); }
-.grade-d { color: #ff8c00; }
-.grade-f { color: var(--error); text-shadow: 0 0 12px rgba(255, 68, 68, 0.3); }
-
-/* Row 2: Pressure chart + Findings */
-.row-split {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 16px;
-}
-
-.chart-container { min-height: 260px; }
-
-.chart-container svg {
-  width: 100%;
-  height: 220px;
-  display: block;
-}
-
-.panel-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.panel-title-accent {
-  width: 3px;
-  height: 14px;
-  background: var(--pink);
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
-/* Findings */
-.findings-list {
-  max-height: 230px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.finding-item {
-  padding: 10px 12px;
-  background: #111;
-  border-radius: 6px;
-  border-left: 3px solid var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  transition: background 0.15s;
-}
-
-.finding-item:hover { background: #1a1a1a; }
-
-.finding-item.critical { border-left-color: var(--error); }
-.finding-item.important { border-left-color: var(--warning); }
-.finding-item.info { border-left-color: var(--blue); }
-
-.finding-priority {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 3px;
-}
-
-.finding-priority.critical { color: var(--error); }
-.finding-priority.important { color: var(--warning); }
-.finding-priority.info { color: var(--blue); }
-
-/* Row 3 + 4 */
-.row-even {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-/* Tables */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.data-table th {
-  text-align: left;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 8px;
-  border-bottom: 1px solid #1e1e1e;
-  position: sticky;
-  top: 0;
-  background: var(--card);
-}
-
-.data-table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid #111;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-
-.data-table tbody tr { transition: background 0.1s; }
-.data-table tbody tr:hover { background: rgba(255, 45, 120, 0.03); }
-
-.table-scroll {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.status-ok { color: var(--success); }
-.status-err { color: var(--error); }
-
-/* Audit log */
-.audit-log {
-  max-height: 200px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.audit-entry {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 5px 8px;
-  background: #111;
-  border-radius: 4px;
-  color: var(--text-muted);
-  display: flex;
-  gap: 10px;
-  transition: background 0.1s;
-}
-
-.audit-entry:hover { background: #1a1a1a; }
-
-.audit-time { color: #444; white-space: nowrap; flex-shrink: 0; }
-.audit-agent { color: var(--pink-light); white-space: nowrap; flex-shrink: 0; }
-.audit-msg { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Patterns */
-.pattern-list {
-  max-height: 200px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pattern-item {
-  padding: 10px 12px;
-  background: #111;
-  border-radius: 6px;
-  font-size: 12px;
-  transition: background 0.15s;
-}
-
-.pattern-item:hover { background: #1a1a1a; }
-
-.pattern-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.pattern-name {
-  font-weight: 600;
-  color: #fff;
-}
-
-.severity-badge {
-  display: inline-block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-.severity-high { background: rgba(255, 68, 68, 0.15); color: var(--error); }
-.severity-medium { background: rgba(255, 170, 0, 0.15); color: var(--warning); }
-.severity-low { background: rgba(0, 255, 136, 0.12); color: var(--success); }
-
-.pattern-desc { color: var(--text-muted); line-height: 1.4; }
-
-/* Empty state */
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 13px;
-  min-height: 80px;
-  font-style: italic;
-}
-
-/* Connection status */
-.conn-status {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-weight: 500;
-  font-family: var(--font-mono);
-}
-
-.conn-status.connected { background: rgba(0, 255, 136, 0.08); color: var(--success); border: 1px solid rgba(0, 255, 136, 0.15); }
-.conn-status.disconnected { background: rgba(255, 68, 68, 0.08); color: var(--error); border: 1px solid rgba(255, 68, 68, 0.15); }
-.conn-status.connecting { background: rgba(102, 102, 102, 0.08); color: var(--text-muted); border: 1px solid rgba(102, 102, 102, 0.15); }
-
-/* Responsive */
-@media (max-width: 900px) {
-  .row-split, .row-even {
-    grid-template-columns: 1fr;
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #555; }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+  .pressure-bar-gradient {
+    background: linear-gradient(90deg, #00ff88 0%, #ffaa00 40%, #ff8c00 65%, #ff4444 100%);
   }
-  main { padding: 12px 12px 20px; }
-  header { padding: 10px 12px; }
-}
-
-@media (max-width: 600px) {
-  .agent-grid {
-    grid-template-columns: 1fr;
-  }
-  .logo-sub { display: none; }
-}
 </style>
 </head>
-<body>
-<div id="app">
-  <header>
-    <div class="logo">
-      <div class="logo-mark">S</div>
-      <span class="logo-text">SOMA</span>
-      <span class="logo-sub">Behavioral Monitoring</span>
+<body class="bg-soma-bg text-gray-200 font-sans min-h-screen" x-data="dashboard">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-50 bg-soma-bg border-b border-soma-border flex items-center justify-between px-6 py-3">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl font-bold tracking-[0.3em] text-soma-pink">SOMA</span>
+      <span class="text-sm text-gray-500 hidden sm:inline">Behavioral Monitoring</span>
     </div>
-    <div class="header-right">
-      <span class="conn-status connecting" id="conn-status">connecting</span>
-      <span class="header-time" id="clock"></span>
-      <div class="status-indicator">
-        <div class="status-dot" id="status-dot"></div>
-        <span id="overall-status">Nominal</span>
-      </div>
+    <div class="flex items-center gap-4">
+      <span class="text-gray-400 font-mono text-sm" x-text="clock"></span>
+      <span class="flex items-center gap-2 text-xs font-medium font-mono px-3 py-1 rounded-full"
+            :class="connected
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              : 'bg-red-500/10 text-red-400 border border-red-500/20'">
+        <span class="w-2 h-2 rounded-full animate-pulse-dot"
+              :class="connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(0,255,136,0.6)]' : 'bg-red-400 shadow-[0_0_6px_rgba(255,68,68,0.6)]'"></span>
+        <span x-text="connected ? 'live' : 'offline'"></span>
+      </span>
     </div>
   </header>
 
-  <main>
-    <!-- Row 1: Agent Cards -->
-    <section>
-      <div class="section-title">Monitored Agents</div>
-      <div class="agent-grid" id="agent-grid">
-        <div class="empty-state" style="grid-column:1/-1">Waiting for agent data...</div>
-      </div>
-    </section>
+  <!-- Agent Cards -->
+  <section class="p-6">
+    <div class="flex flex-wrap gap-4">
+      <template x-if="agents.length === 0">
+        <div class="text-gray-500 text-sm italic py-8 w-full text-center">Waiting for agent data...</div>
+      </template>
+      <template x-for="agent in agents" :key="agent.agent_id">
+        <div class="bg-soma-card rounded-xl p-5 border border-soma-border hover:border-soma-pink/30 transition cursor-pointer min-w-[280px] flex-1 max-w-md"
+             :class="selectedAgent && selectedAgent.agent_id === agent.agent_id ? 'border-soma-pink shadow-[0_0_15px_rgba(255,45,120,0.15)]' : ''"
+             @click="selectAgent(agent)">
 
-    <!-- Row 2: Pressure Chart + Findings -->
-    <section class="row-split">
-      <div class="card chart-container">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span id="chart-title">Pressure Trajectory</span>
-        </div>
-        <svg id="pressure-chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
-      </div>
-      <div class="card">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span>Findings</span>
-        </div>
-        <div class="findings-list" id="findings-list">
-          <div class="empty-state">No findings</div>
-        </div>
-      </div>
-    </section>
+          <!-- Header row -->
+          <div class="flex items-center justify-between mb-3">
+            <span class="font-mono font-semibold text-white text-sm" x-text="stripPrefix(agent.agent_id)"></span>
+            <span class="rounded-full px-3 py-0.5 text-xs font-bold uppercase"
+                  :class="modeBadgeClass(agent.level || agent.mode)">
+              <span x-text="modeLabel(agent.level || agent.mode)"></span>
+            </span>
+          </div>
 
-    <!-- Row 3: Recent Actions + Audit Log -->
-    <section class="row-even">
-      <div class="card">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span>Recent Actions</span>
+          <!-- Pressure -->
+          <div class="mb-4">
+            <div class="text-3xl font-mono font-bold" :style="'color:' + pressureColor(agent.pressure || 0)">
+              <span x-text="pctFmt(agent.pressure_pct != null ? agent.pressure_pct : (agent.pressure || 0) * 100)"></span><span class="text-lg">%</span>
+            </div>
+            <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden">
+              <div class="h-full rounded-full pressure-bar-gradient transition-all duration-500"
+                   :style="'width:' + Math.min(100, Math.max(0, agent.pressure_pct != null ? agent.pressure_pct : (agent.pressure || 0) * 100)) + '%'"></div>
+            </div>
+          </div>
+
+          <!-- Vitals grid -->
+          <div class="grid grid-cols-3 gap-x-4 gap-y-2 mb-3">
+            <template x-for="v in vitalsList(agent)" :key="v.label">
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase tracking-wider" x-text="v.label"></div>
+                <div class="text-sm font-mono" x-text="v.value"></div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="text-xs text-gray-500 pt-2 border-t border-soma-border">
+            <span x-text="(agent.action_count || 0) + ' actions'"></span>
+            <span class="mx-1">&middot;</span>
+            <span>Quality </span>
+            <span class="font-bold" :class="gradeColor(agent.quality_grade)" x-text="(agent.quality_grade || '--').toString().toUpperCase()"></span>
+          </div>
         </div>
-        <div class="table-scroll">
-          <table class="data-table" id="actions-table">
+      </template>
+    </div>
+  </section>
+
+  <!-- Main Content: Chart + Findings -->
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-4 px-6">
+
+    <!-- Pressure Chart -->
+    <div class="lg:col-span-2 bg-soma-card rounded-xl p-5 border border-soma-border">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('chart')">
+        <div class="flex items-center gap-2">
+          <i :data-lucide="expandedSections.chart ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
+          <h3 class="text-sm font-semibold text-white">
+            Pressure Trajectory
+            <span x-show="selectedAgent" class="text-gray-400">&mdash; #<span x-text="selectedAgent ? stripPrefix(selectedAgent.agent_id) : ''"></span></span>
+          </h3>
+        </div>
+        <div class="bg-soma-pink/10 text-soma-pink-light text-xs px-2 py-1 rounded hidden sm:block">Click and drag to zoom</div>
+      </div>
+      <div x-show="expandedSections.chart" x-transition>
+        <canvas id="pressureChart" class="w-full" style="height:250px"></canvas>
+      </div>
+    </div>
+
+    <!-- Findings -->
+    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
+      <h3 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+        <span class="w-0.5 h-4 bg-soma-pink rounded"></span>
+        Findings
+      </h3>
+      <div class="space-y-2 max-h-72 overflow-y-auto">
+        <template x-if="findings.length === 0">
+          <div class="text-soma-success text-sm py-4 text-center italic">No findings — system nominal</div>
+        </template>
+        <template x-for="(f, i) in findings" :key="i">
+          <div class="p-3 rounded-lg bg-white/[0.02] border-l-4 text-sm"
+               :class="findingBorderClass(f)">
+            <div class="text-xs font-bold uppercase tracking-wider mb-1" :class="findingTextClass(f)" x-text="f.priority || f.severity || 'info'"></div>
+            <div class="text-gray-300" x-text="f.message || f.description || f.title || ''"></div>
+            <div x-show="f.action" class="text-gray-500 text-xs mt-1" x-text="f.action || ''"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </section>
+
+  <!-- Actions & Audit Row -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4">
+
+    <!-- Recent Actions -->
+    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('actions')">
+        <div class="flex items-center gap-2">
+          <i :data-lucide="expandedSections.actions ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
+          <h3 class="text-sm font-semibold text-white">Recent Actions</h3>
+        </div>
+        <span class="text-xs text-gray-500" x-text="actions.length + ' total'"></span>
+      </div>
+      <div x-show="expandedSections.actions" x-transition>
+        <div class="overflow-y-auto" :style="actionsExpanded ? 'max-height:500px' : 'max-height:280px'">
+          <table class="w-full text-sm">
             <thead>
-              <tr><th>Tool</th><th>Status</th><th>Tokens</th><th>Time</th></tr>
+              <tr class="text-[10px] text-gray-500 uppercase tracking-wider">
+                <th class="text-left py-2 px-2">Tool</th>
+                <th class="text-left py-2 px-1">Status</th>
+                <th class="text-left py-2 px-1">File</th>
+                <th class="text-right py-2 px-2">Time</th>
+              </tr>
             </thead>
             <tbody>
-              <tr><td colspan="4" class="empty-state">No actions</td></tr>
+              <template x-for="(a, i) in actions.slice(0, actionsExpanded ? 20 : 8)" :key="i">
+                <tr class="font-mono text-xs" :class="i % 2 === 1 ? 'bg-white/[0.02]' : ''">
+                  <td class="py-1.5 px-2">
+                    <span x-text="toolEmoji(a.tool || a.tool_name)"></span>
+                    <span class="ml-1" x-text="a.tool || a.tool_name || '--'"></span>
+                  </td>
+                  <td class="py-1.5 px-1">
+                    <span class="inline-block w-2 h-2 rounded-full mr-1" :class="a.error ? 'bg-red-400' : 'bg-emerald-400'"></span>
+                  </td>
+                  <td class="py-1.5 px-1 text-gray-400 max-w-[150px] truncate" x-text="a.file || ''"></td>
+                  <td class="py-1.5 px-2 text-right text-gray-500" x-text="a.ago || a.time_fmt || ''"></td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
+        <button x-show="actions.length > 8" @click="actionsExpanded = !actionsExpanded"
+                class="text-xs text-soma-pink hover:text-soma-pink-light mt-2 transition">
+          <span x-text="actionsExpanded ? 'Show less' : 'Show more'"></span>
+        </button>
       </div>
-      <div class="card">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span>Audit Log</span>
-        </div>
-        <div class="audit-log" id="audit-log">
-          <div class="empty-state">No entries</div>
-        </div>
-      </div>
-    </section>
+    </div>
 
-    <!-- Row 4: Sessions + Patterns -->
-    <section class="row-even">
-      <div class="card">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span>Session History</span>
-        </div>
-        <div class="table-scroll">
-          <table class="data-table" id="sessions-table">
-            <thead>
-              <tr><th>Agent</th><th>Duration</th><th>Max Pressure</th><th>Errors</th></tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="4" class="empty-state">No sessions</td></tr>
-            </tbody>
-          </table>
+    <!-- Audit Log -->
+    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('audit')">
+        <div class="flex items-center gap-2">
+          <i :data-lucide="expandedSections.audit ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
+          <h3 class="text-sm font-semibold text-white">Audit Log</h3>
         </div>
       </div>
-      <div class="card">
-        <div class="panel-title">
-          <span class="panel-title-accent"></span>
-          <span>Detected Patterns</span>
-        </div>
-        <div class="pattern-list" id="pattern-list">
-          <div class="empty-state">No patterns detected</div>
+      <div x-show="expandedSections.audit" x-transition>
+        <div class="max-h-96 overflow-y-auto space-y-0.5 font-mono text-xs">
+          <template x-if="audit.length === 0">
+            <div class="text-gray-500 text-center py-4 italic">No entries</div>
+          </template>
+          <template x-for="(entry, i) in audit" :key="i">
+            <div class="flex gap-2 px-2 py-1 rounded"
+                 :class="entry.error ? 'bg-red-500/10' : (i % 2 === 1 ? 'bg-white/[0.02]' : '')">
+              <span class="text-gray-600 shrink-0" x-text="'[' + (entry.time_fmt || '--:--:--') + ']'"></span>
+              <span class="text-soma-pink-light shrink-0" x-text="entry.agent_id || ''"></span>
+              <span class="text-soma-pink shrink-0" x-text="entry.tool_name || ''"></span>
+              <span class="text-gray-400" x-text="fmtPct(entry.pressure)"></span>
+              <span class="font-bold shrink-0"
+                    :class="modeBadgeTextClass(entry.mode)" x-text="modeLabel(entry.mode)"></span>
+            </div>
+          </template>
         </div>
       </div>
-    </section>
-  </main>
-</div>
+    </div>
+  </section>
+
+  <!-- Bottom Row: Sessions + Config -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4 pb-8">
+
+    <!-- Session History -->
+    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('sessions')">
+        <div class="flex items-center gap-2">
+          <i :data-lucide="expandedSections.sessions ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
+          <h3 class="text-sm font-semibold text-white">Session History</h3>
+        </div>
+      </div>
+      <div x-show="expandedSections.sessions" x-transition>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-[10px] text-gray-500 uppercase tracking-wider">
+              <th class="text-left py-2 px-2">Agent</th>
+              <th class="text-left py-2 px-1">Duration</th>
+              <th class="text-left py-2 px-1">Actions</th>
+              <th class="text-left py-2 px-1">Max Pressure</th>
+              <th class="text-right py-2 px-2">Errors</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-if="sessions.length === 0">
+              <tr><td colspan="5" class="text-center text-gray-500 py-4 italic">No sessions</td></tr>
+            </template>
+            <template x-for="(s, i) in sessions" :key="i">
+              <tr class="font-mono text-xs" :class="i % 2 === 1 ? 'bg-white/[0.02]' : ''">
+                <td class="py-1.5 px-2" x-text="s.agent_id || '--'"></td>
+                <td class="py-1.5 px-1" x-text="s.duration_fmt || '--'"></td>
+                <td class="py-1.5 px-1" x-text="s.action_count || 0"></td>
+                <td class="py-1.5 px-1" :style="'color:' + pressureColor((s.max_pressure_pct || 0) / 100)">
+                  <span x-text="(s.max_pressure_pct != null ? s.max_pressure_pct.toFixed(1) : '--') + '%'"></span>
+                </td>
+                <td class="py-1.5 px-2 text-right" :class="(s.error_count || 0) > 0 ? 'text-red-400' : 'text-gray-500'" x-text="s.error_count || 0"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('config')">
+        <div class="flex items-center gap-2">
+          <i :data-lucide="expandedSections.config ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
+          <h3 class="text-sm font-semibold text-white">Configuration</h3>
+          <span class="text-xs text-gray-500">from soma.toml</span>
+        </div>
+      </div>
+      <div x-show="expandedSections.config" x-transition class="space-y-4">
+
+        <!-- Thresholds -->
+        <template x-if="config.thresholds">
+          <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Thresholds</div>
+            <div class="space-y-2">
+              <template x-for="key in ['guide', 'warn', 'block']" :key="key">
+                <div class="flex items-center gap-3" x-show="config.thresholds[key] != null">
+                  <span class="text-xs font-mono w-12 text-gray-400 uppercase" x-text="key"></span>
+                  <div class="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all"
+                         :class="key === 'guide' ? 'bg-yellow-500' : key === 'warn' ? 'bg-orange-500' : 'bg-red-500'"
+                         :style="'width:' + ((config.thresholds[key] || 0) * 100) + '%'"></div>
+                  </div>
+                  <span class="text-xs font-mono text-gray-300 w-10 text-right" x-text="(config.thresholds[key] || 0).toFixed(2)"></span>
+                </div>
+              </template>
+            </div>
+            <div class="bg-soma-pink/10 text-soma-pink-light text-xs p-2 rounded mt-2">Pressure above guide threshold triggers soft suggestions</div>
+          </div>
+        </template>
+
+        <!-- Weights -->
+        <template x-if="config.weights">
+          <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Signal Weights</div>
+            <div class="space-y-1.5">
+              <template x-for="(val, key) in config.weights" :key="key">
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono w-20 text-gray-500 truncate" x-text="key"></span>
+                  <div class="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full bg-soma-pink/60" :style="'width:' + Math.min(100, (val / 2.0) * 100) + '%'"></div>
+                  </div>
+                  <span class="text-[10px] font-mono text-gray-400 w-8 text-right" x-text="val.toFixed(1)"></span>
+                </div>
+              </template>
+            </div>
+            <div class="bg-soma-pink/10 text-soma-pink-light text-xs p-2 rounded mt-2">Higher weight = more influence on aggregate pressure</div>
+          </div>
+        </template>
+
+        <!-- Hooks -->
+        <template x-if="config.hooks">
+          <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Hooks</div>
+            <div class="flex flex-wrap gap-2">
+              <template x-for="(val, key) in config.hooks" :key="key">
+                <span class="text-xs font-mono px-2 py-0.5 rounded-full"
+                      :class="val ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-gray-800 text-gray-500 border border-gray-700'">
+                  <span x-text="key"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Budget -->
+        <template x-if="config.budget">
+          <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Budget</div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <template x-for="(val, key) in config.budget" :key="key">
+                <div class="bg-white/[0.03] rounded p-2">
+                  <div class="text-gray-500 text-[10px] uppercase" x-text="key"></div>
+                  <div class="text-gray-300" x-text="typeof val === 'number' ? val.toLocaleString() : val"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Mirror -->
+        <template x-if="config.mirror">
+          <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Mirror</div>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <template x-for="(val, key) in config.mirror" :key="key">
+                <div class="bg-white/[0.03] rounded p-2">
+                  <div class="text-gray-500 text-[10px] uppercase" x-text="key"></div>
+                  <div class="text-gray-300" x-text="String(val)"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  </section>
 
 <script>
-(function() {
-  'use strict';
+document.addEventListener('alpine:init', () => {
+  Alpine.data('dashboard', () => ({
+    agents: [],
+    selectedAgent: null,
+    audit: [],
+    sessions: [],
+    config: {},
+    trajectory: [],
+    actions: [],
+    quality: {},
+    findings: [],
+    fingerprints: {},
+    connected: false,
+    clock: '--:--:--',
+    actionsExpanded: false,
+    expandedSections: { chart: true, actions: false, audit: true, sessions: false, config: false },
+    chart: null,
+    _clockInterval: null,
+    _pollInterval: null,
 
-  // --- State ---
-  var agents = [];
-  var selectedAgentId = null;
-  var trajectory = [];
-  var connected = false;
-  var fetchOk = false;
+    async init() {
+      this.updateClock();
+      this._clockInterval = setInterval(() => this.updateClock(), 1000);
+      await this.fetchOverview();
+      await this.fetchConfig();
+      this._pollInterval = setInterval(() => this.fetchOverview(), 2000);
+      this.$nextTick(() => lucide.createIcons());
+    },
 
-  // --- Utilities ---
+    updateClock() {
+      const now = new Date();
+      this.clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+    },
 
-  function esc(s) {
-    if (s == null) return '';
-    var d = document.createElement('div');
-    d.textContent = String(s);
-    return d.innerHTML;
-  }
+    async fetchOverview() {
+      try {
+        const r = await fetch('/api/overview');
+        if (!r.ok) throw new Error(r.status);
+        const data = await r.json();
+        this.connected = true;
+        this.agents = data.agents || [];
+        this.audit = (data.audit || []).slice(0, 200);
+        this.sessions = data.sessions || [];
+        this.findings = data.findings || [];
 
-  function fmt(n, digits) {
-    if (n == null || isNaN(n)) return '--';
-    return Number(n).toFixed(digits != null ? digits : 2);
-  }
-
-  function pressureColor(p) {
-    if (p < 0.25) return '#00ff88';
-    if (p < 0.50) return '#ffaa00';
-    if (p < 0.75) return '#ff8c00';
-    return '#ff4444';
-  }
-
-  function pressureGradient(p) {
-    if (p < 0.25) return 'linear-gradient(90deg, #00cc66, #00ff88)';
-    if (p < 0.50) return 'linear-gradient(90deg, #44dd88, #ffaa00)';
-    if (p < 0.75) return 'linear-gradient(90deg, #ffaa00, #ff8c00)';
-    return 'linear-gradient(90deg, #ff8c00, #ff4444)';
-  }
-
-  function modeClass(mode) {
-    if (!mode) return 'observe';
-    var m = String(mode).toLowerCase();
-    if (m.includes('block') || m.includes('quarantine')) return 'block';
-    if (m.includes('warn') || m.includes('degrade')) return 'warn';
-    if (m.includes('guide') || m.includes('caution')) return 'guide';
-    return 'observe';
-  }
-
-  function modeLabel(mode) {
-    if (!mode) return 'OBSERVE';
-    var m = String(mode).toUpperCase();
-    if (m.includes('BLOCK') || m.includes('QUARANTINE')) return 'BLOCK';
-    if (m.includes('WARN') || m.includes('DEGRADE')) return 'WARN';
-    if (m.includes('GUIDE') || m.includes('CAUTION')) return 'GUIDE';
-    return 'OBSERVE';
-  }
-
-  function gradeClass(g) {
-    if (!g || g === '--') return '';
-    var c = String(g).toUpperCase()[0];
-    return { A: 'grade-a', B: 'grade-b', C: 'grade-c', D: 'grade-d', F: 'grade-f' }[c] || '';
-  }
-
-  function timeAgo(ts) {
-    if (!ts) return '--';
-    var d = typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : Date.parse(ts);
-    if (isNaN(d)) return '--';
-    var sec = Math.floor((Date.now() - d) / 1000);
-    if (sec < 0) sec = 0;
-    if (sec < 5) return 'now';
-    if (sec < 60) return sec + 's ago';
-    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
-    return Math.floor(sec / 3600) + 'h ago';
-  }
-
-  function formatDuration(sec) {
-    if (sec == null || isNaN(sec)) return '--';
-    sec = Math.round(Number(sec));
-    if (sec < 60) return sec + 's';
-    if (sec < 3600) return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
-    return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
-  }
-
-  // --- Clock ---
-  function updateClock() {
-    var now = new Date();
-    var h = String(now.getHours()).padStart(2, '0');
-    var m = String(now.getMinutes()).padStart(2, '0');
-    var s = String(now.getSeconds()).padStart(2, '0');
-    document.getElementById('clock').textContent = h + ':' + m + ':' + s;
-  }
-  setInterval(updateClock, 1000);
-  updateClock();
-
-  // --- Connection ---
-  function setConnected(ok) {
-    connected = ok;
-    var el = document.getElementById('conn-status');
-    if (ok) {
-      el.className = 'conn-status connected';
-      el.textContent = 'connected';
-    } else {
-      el.className = 'conn-status disconnected';
-      el.textContent = 'disconnected';
-    }
-  }
-
-  // --- API ---
-  async function api(path) {
-    try {
-      var r = await fetch(path);
-      if (!r.ok) throw new Error(r.status);
-      var data = await r.json();
-      if (!fetchOk) { setConnected(true); fetchOk = true; }
-      return data;
-    } catch (e) {
-      if (fetchOk) { setConnected(false); fetchOk = false; }
-      return null;
-    }
-  }
-
-  // --- Render: Agent Cards ---
-  function renderAgents(list) {
-    var grid = document.getElementById('agent-grid');
-    if (!list || list.length === 0) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No agents registered</div>';
-      return;
-    }
-
-    grid.innerHTML = list.map(function(a) {
-      var p = a.pressure != null ? a.pressure : 0;
-      var pPct = Math.min(100, Math.max(0, p * 100));
-      var mode = a.mode || a.response_mode || 'OBSERVE';
-      var mc = modeClass(mode);
-      var ml = modeLabel(mode);
-      var sel = a.agent_id === selectedAgentId ? ' selected' : '';
-      var v = a.vitals || {};
-      var grade = a.quality_grade || a.grade || '--';
-      var gc = gradeClass(grade);
-      var actions = a.action_count != null ? a.action_count : '--';
-      var pc = pressureColor(p);
-      var pg = pressureGradient(p);
-
-      return '<div class="card agent-card' + sel + '" data-agent="' + esc(a.agent_id) + '">' +
-        '<div class="agent-header">' +
-          '<span class="agent-id">' + esc(a.agent_id) + '</span>' +
-          '<span class="mode-badge ' + mc + '">' + ml + '</span>' +
-        '</div>' +
-        '<div class="pressure-bar-container">' +
-          '<div class="pressure-label">' +
-            '<span>Pressure</span>' +
-            '<span class="pressure-value" style="color:' + pc + '">' + fmt(pPct, 1) + '%</span>' +
-          '</div>' +
-          '<div class="pressure-bar-track">' +
-            '<div class="pressure-bar-fill" style="width:' + pPct + '%;background:' + pg + ';box-shadow:0 0 12px ' + pc + '44"></div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="vitals-grid">' +
-          '<div class="vital-item"><span class="vital-label">Uncertainty</span><span class="vital-value">' + fmt(v.uncertainty) + '</span></div>' +
-          '<div class="vital-item"><span class="vital-label">Drift</span><span class="vital-value">' + fmt(v.drift) + '</span></div>' +
-          '<div class="vital-item"><span class="vital-label">Error Rate</span><span class="vital-value">' + fmt(v.error_rate) + '</span></div>' +
-          '<div class="vital-item"><span class="vital-label">Coherence</span><span class="vital-value">' + fmt(v.goal_coherence != null ? v.goal_coherence : v.coherence) + '</span></div>' +
-        '</div>' +
-        '<div class="agent-footer">' +
-          '<span class="action-count">' + esc(actions) + ' actions</span>' +
-          '<span class="quality-grade ' + gc + '">' + esc(String(grade).toUpperCase()) + '</span>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-
-    grid.querySelectorAll('.agent-card').forEach(function(card) {
-      card.addEventListener('click', function() {
-        var id = card.dataset.agent;
-        selectedAgentId = selectedAgentId === id ? null : id;
-        renderAgents(agents);
-        fetchAgentDetail();
-      });
-    });
-  }
-
-  // --- Render: SVG Pressure Chart ---
-  function renderChart(data) {
-    var svg = document.getElementById('pressure-chart');
-    var titleEl = document.getElementById('chart-title');
-
-    titleEl.textContent = selectedAgentId
-      ? 'Pressure Trajectory \u2014 ' + selectedAgentId
-      : 'Pressure Trajectory';
-
-    if (!data || data.length === 0) {
-      svg.innerHTML = '<text x="400" y="120" fill="#444" text-anchor="middle" font-size="13" font-family="system-ui, sans-serif">No trajectory data</text>';
-      return;
-    }
-
-    var w = 800, h = 220;
-    var padL = 44, padR = 12, padT = 16, padB = 28;
-    var cw = w - padL - padR;
-    var ch = h - padT - padB;
-    var n = data.length;
-    var xStep = n > 1 ? cw / (n - 1) : 0;
-
-    var thresholds = [
-      { y: 0.40, label: 'GUIDE', color: '#ffaa00' },
-      { y: 0.60, label: 'WARN', color: '#ff8c00' },
-      { y: 0.80, label: 'BLOCK', color: '#ff4444' }
-    ];
-
-    var parts = [];
-
-    // Gradient defs
-    parts.push('<defs>');
-    parts.push('<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">');
-    parts.push('<stop offset="0%" stop-color="#ff2d78" stop-opacity="0.25"/>');
-    parts.push('<stop offset="100%" stop-color="#ff2d78" stop-opacity="0"/>');
-    parts.push('</linearGradient>');
-    parts.push('</defs>');
-
-    // Horizontal grid lines + Y labels
-    for (var i = 0; i <= 5; i++) {
-      var gy = padT + (ch * i / 5);
-      var gv = (1 - i / 5).toFixed(1);
-      parts.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - padR) + '" y2="' + gy + '" stroke="#1a1a1a" stroke-width="1"/>');
-      parts.push('<text x="' + (padL - 8) + '" y="' + (gy + 4) + '" fill="#444" font-size="10" font-family="monospace" text-anchor="end">' + gv + '</text>');
-    }
-
-    // Threshold dashed lines
-    thresholds.forEach(function(t) {
-      var ty = padT + ch * (1 - t.y);
-      parts.push('<line x1="' + padL + '" y1="' + ty + '" x2="' + (w - padR) + '" y2="' + ty + '" stroke="' + t.color + '" stroke-width="1" stroke-dasharray="6,4" opacity="0.35"/>');
-      parts.push('<text x="' + (w - padR - 4) + '" y="' + (ty - 5) + '" fill="' + t.color + '" font-size="9" font-family="system-ui, sans-serif" text-anchor="end" opacity="0.5">' + t.label + '</text>');
-    });
-
-    // Points
-    var points = data.map(function(d, idx) {
-      var p = typeof d === 'number' ? d : (d.pressure != null ? d.pressure : 0);
-      var x = padL + (n > 1 ? idx * xStep : cw / 2);
-      var y = padT + ch * (1 - Math.min(1, Math.max(0, p)));
-      return { x: x, y: y, p: p };
-    });
-
-    // Area fill
-    var area = 'M' + points[0].x + ',' + (padT + ch);
-    points.forEach(function(pt) { area += ' L' + pt.x + ',' + pt.y; });
-    area += ' L' + points[points.length - 1].x + ',' + (padT + ch) + ' Z';
-    parts.push('<path d="' + area + '" fill="url(#areaGrad)"/>');
-
-    // Line path
-    var line = 'M' + points[0].x + ',' + points[0].y;
-    for (var j = 1; j < points.length; j++) {
-      line += ' L' + points[j].x + ',' + points[j].y;
-    }
-    parts.push('<path d="' + line + '" fill="none" stroke="#ff2d78" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>');
-
-    // Dot on last point with glow
-    if (points.length > 0) {
-      var last = points[points.length - 1];
-      var lc = pressureColor(last.p);
-      parts.push('<circle cx="' + last.x + '" cy="' + last.y + '" r="6" fill="' + lc + '" opacity="0.2"/>');
-      parts.push('<circle cx="' + last.x + '" cy="' + last.y + '" r="3.5" fill="' + lc + '"/>');
-    }
-
-    // Dots for recent points
-    var dotStart = Math.max(0, points.length - 30);
-    for (var k = dotStart; k < points.length - 1; k++) {
-      var pt = points[k];
-      parts.push('<circle cx="' + pt.x + '" cy="' + pt.y + '" r="2" fill="' + pressureColor(pt.p) + '" opacity="0.6"/>');
-    }
-
-    // X-axis labels
-    var labelCount = Math.min(8, n);
-    if (labelCount > 1) {
-      for (var li = 0; li < labelCount; li++) {
-        var labelIdx = Math.round(li * (n - 1) / (labelCount - 1));
-        var lx = padL + (n > 1 ? labelIdx * xStep : cw / 2);
-        parts.push('<text x="' + lx + '" y="' + (h - 6) + '" fill="#444" font-size="9" font-family="monospace" text-anchor="middle">#' + (labelIdx + 1) + '</text>');
-      }
-    }
-
-    svg.innerHTML = parts.join('');
-  }
-
-  // --- Render: Findings ---
-  function renderFindings(data) {
-    var el = document.getElementById('findings-list');
-    if (!data || data.length === 0) {
-      el.innerHTML = '<div class="empty-state">No findings</div>';
-      return;
-    }
-
-    el.innerHTML = data.map(function(f) {
-      var prio = (f.priority || f.severity || 'info').toLowerCase();
-      var cls = (prio.includes('crit') || prio.includes('high')) ? 'critical' :
-                (prio.includes('import') || prio.includes('med') || prio.includes('warn')) ? 'important' : 'info';
-      return '<div class="finding-item ' + cls + '">' +
-        '<div class="finding-priority ' + cls + '">' + esc(cls) + '</div>' +
-        '<div>' + esc(f.message || f.description || f.title || '') + '</div>' +
-      '</div>';
-    }).join('');
-  }
-
-  // --- Render: Actions Table ---
-  function renderActions(data) {
-    var tbody = document.querySelector('#actions-table tbody');
-    if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No actions</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = data.slice(0, 50).map(function(a) {
-      var status = a.error
-        ? '<span class="status-err">&#9679; error</span>'
-        : '<span class="status-ok">&#9679; ok</span>';
-      var tokens = a.token_count != null ? a.token_count : (a.tokens != null ? a.tokens : '--');
-      return '<tr>' +
-        '<td>' + esc(a.tool_name || a.tool || '--') + '</td>' +
-        '<td>' + status + '</td>' +
-        '<td>' + esc(tokens) + '</td>' +
-        '<td>' + timeAgo(a.timestamp) + '</td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  // --- Render: Audit Log ---
-  function renderAudit(data) {
-    var el = document.getElementById('audit-log');
-    if (!data || data.length === 0) {
-      el.innerHTML = '<div class="empty-state">No entries</div>';
-      return;
-    }
-
-    el.innerHTML = data.slice(0, 100).map(function(entry) {
-      var ts = entry.timestamp || entry.time || '';
-      var t = ts ? new Date(typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : ts) : null;
-      var timeStr = (t && !isNaN(t)) ? t.toLocaleTimeString('en-US', { hour12: false }) : '--:--:--';
-      var agent = entry.agent_id || entry.agent || '';
-      return '<div class="audit-entry">' +
-        '<span class="audit-time">' + esc(timeStr) + '</span>' +
-        (agent ? '<span class="audit-agent">' + esc(agent) + '</span>' : '') +
-        '<span class="audit-msg">' + esc(entry.message || entry.event || entry.description || '') + '</span>' +
-      '</div>';
-    }).join('');
-  }
-
-  // --- Render: Sessions ---
-  function renderSessions(data) {
-    var tbody = document.querySelector('#sessions-table tbody');
-    if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No sessions</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = data.slice(0, 30).map(function(s) {
-      var mp = s.max_pressure != null ? s.max_pressure : (s.peak_pressure != null ? s.peak_pressure : null);
-      var ec = s.error_count != null ? s.error_count : (s.errors != null ? s.errors : '--');
-      return '<tr>' +
-        '<td>' + esc(s.agent_id || s.agent || '--') + '</td>' +
-        '<td>' + formatDuration(s.duration || s.duration_sec) + '</td>' +
-        '<td style="color:' + (mp != null ? pressureColor(mp) : 'inherit') + '">' + (mp != null ? fmt(mp * 100, 1) + '%' : '--') + '</td>' +
-        '<td>' + esc(ec) + '</td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  // --- Render: Patterns ---
-  function renderPatterns(data) {
-    var el = document.getElementById('pattern-list');
-    if (!data || (Array.isArray(data) && data.length === 0) || (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0)) {
-      el.innerHTML = '<div class="empty-state">No patterns detected</div>';
-      return;
-    }
-
-    var items = Array.isArray(data) ? data : Object.entries(data).map(function(pair) {
-      var obj = typeof pair[1] === 'object' ? pair[1] : { description: String(pair[1]) };
-      obj.name = pair[0];
-      return obj;
-    });
-
-    if (items.length === 0) {
-      el.innerHTML = '<div class="empty-state">No patterns detected</div>';
-      return;
-    }
-
-    el.innerHTML = items.slice(0, 20).map(function(p) {
-      var sev = (p.severity || p.level || 'low').toLowerCase();
-      var sc = (sev.includes('high') || sev.includes('crit')) ? 'high' :
-               (sev.includes('med') || sev.includes('warn')) ? 'medium' : 'low';
-      return '<div class="pattern-item">' +
-        '<div class="pattern-head">' +
-          '<span class="pattern-name">' + esc(p.name || p.pattern || p.type || 'Unknown') + '</span>' +
-          '<span class="severity-badge severity-' + sc + '">' + esc(sc) + '</span>' +
-        '</div>' +
-        '<div class="pattern-desc">' + esc(p.description || p.message || p.detail || '') + '</div>' +
-      '</div>';
-    }).join('');
-  }
-
-  // --- Overall Status ---
-  function updateOverallStatus() {
-    if (!agents || agents.length === 0) {
-      document.getElementById('overall-status').textContent = 'No Agents';
-      document.getElementById('overall-status').style.color = 'var(--text-muted)';
-      document.getElementById('status-dot').className = 'status-dot';
-      return;
-    }
-
-    var maxP = 0;
-    agents.forEach(function(a) {
-      if (a.pressure != null && a.pressure > maxP) maxP = a.pressure;
-    });
-
-    var dot = document.getElementById('status-dot');
-    var label = document.getElementById('overall-status');
-
-    if (maxP >= 0.75) {
-      dot.className = 'status-dot error';
-      label.textContent = 'Critical';
-      label.style.color = 'var(--error)';
-    } else if (maxP >= 0.50) {
-      dot.className = 'status-dot warn';
-      label.textContent = 'Elevated';
-      label.style.color = 'var(--warning)';
-    } else {
-      dot.className = 'status-dot';
-      label.textContent = 'Nominal';
-      label.style.color = 'var(--success)';
-    }
-  }
-
-  // --- Fetch Agent Detail ---
-  async function fetchAgentDetail() {
-    if (!selectedAgentId) {
-      renderChart(trajectory);
-      return;
-    }
-
-    var enc = encodeURIComponent(selectedAgentId);
-    var results = await Promise.all([
-      api('/api/agent/' + enc + '/trajectory'),
-      api('/api/agent/' + enc + '/actions'),
-      api('/api/agent/' + enc + '/quality')
-    ]);
-
-    var traj = results[0];
-    var actions = results[1];
-    var quality = results[2];
-
-    if (traj) {
-      trajectory = Array.isArray(traj) ? traj : (traj.trajectory || traj.data || []);
-    }
-    renderChart(trajectory);
-    renderActions(Array.isArray(actions) ? actions : (actions && actions.actions ? actions.actions : []));
-
-    if (quality) {
-      var agent = agents.find(function(a) { return a.agent_id === selectedAgentId; });
-      if (agent) {
-        agent.quality_grade = quality.grade || quality.quality_grade;
-        renderAgents(agents);
-      }
-    }
-  }
-
-  // --- Main Fetch Loop ---
-  async function fetchAll() {
-    var results = await Promise.all([
-      api('/api/agents'),
-      api('/api/findings'),
-      api('/api/audit'),
-      api('/api/sessions'),
-      api('/api/fingerprints'),
-      api('/api/engine')
-    ]);
-
-    var agentData = results[0];
-    var findings = results[1];
-    var audit = results[2];
-    var sessions = results[3];
-    var fingerprints = results[4];
-    var engine = results[5];
-
-    // Agents
-    if (agentData) {
-      agents = Array.isArray(agentData) ? agentData : (agentData.agents || []);
-
-      // Merge engine state
-      if (engine && engine.agents) {
-        var ea = engine.agents;
-        agents.forEach(function(a) {
-          var e = ea[a.agent_id];
-          if (e) {
-            if (a.pressure == null && e.pressure != null) a.pressure = e.pressure;
-            if (!a.vitals && e.vitals) a.vitals = e.vitals;
-            if (!a.mode && e.mode) a.mode = e.mode;
+        // Auto-select first agent if none selected
+        if (!this.selectedAgent && this.agents.length > 0) {
+          await this.selectAgent(this.agents[0]);
+        } else if (this.selectedAgent) {
+          // Refresh selected agent data
+          const current = this.agents.find(a => a.agent_id === this.selectedAgent.agent_id);
+          if (current) {
+            this.selectedAgent = current;
+            await this.fetchTrajectory(current.agent_id);
+            await this.fetchActions(current.agent_id);
           }
-        });
+        }
+        this.$nextTick(() => lucide.createIcons());
+      } catch (e) {
+        this.connected = false;
       }
+    },
 
-      renderAgents(agents);
-      updateOverallStatus();
-    }
+    async selectAgent(agent) {
+      this.selectedAgent = agent;
+      this.actionsExpanded = false;
+      if (!this.expandedSections.actions) this.expandedSections.actions = true;
+      await this.fetchTrajectory(agent.agent_id);
+      await this.fetchActions(agent.agent_id);
+      await this.fetchQuality(agent.agent_id);
+    },
 
-    // Chart + actions
-    if (!selectedAgentId) {
-      if (engine && engine.trajectory) {
-        trajectory = engine.trajectory;
-      } else if (agents.length > 0 && agents[0].agent_id) {
-        var t = await api('/api/agent/' + encodeURIComponent(agents[0].agent_id) + '/trajectory');
-        if (t) trajectory = Array.isArray(t) ? t : (t.trajectory || t.data || []);
+    async fetchTrajectory(id) {
+      try {
+        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/trajectory');
+        if (r.ok) {
+          const data = await r.json();
+          this.trajectory = Array.isArray(data) ? data : (data.trajectory || data.data || []);
+          this.updateChart();
+        }
+      } catch (e) {}
+    },
+
+    async fetchActions(id) {
+      try {
+        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/actions');
+        if (r.ok) {
+          const data = await r.json();
+          this.actions = Array.isArray(data) ? data : (data.actions || []);
+        }
+      } catch (e) {}
+    },
+
+    async fetchQuality(id) {
+      try {
+        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/quality');
+        if (r.ok) {
+          this.quality = await r.json();
+        }
+      } catch (e) {}
+    },
+
+    async fetchConfig() {
+      try {
+        const r = await fetch('/api/config');
+        if (r.ok) {
+          this.config = await r.json();
+        }
+      } catch (e) {}
+    },
+
+    toggleSection(name) {
+      this.expandedSections[name] = !this.expandedSections[name];
+      this.$nextTick(() => lucide.createIcons());
+      if (name === 'chart' && this.expandedSections.chart) {
+        this.$nextTick(() => this.updateChart());
       }
-      renderChart(trajectory);
+    },
 
-      if (agents.length > 0 && agents[0].agent_id) {
-        var act = await api('/api/agent/' + encodeURIComponent(agents[0].agent_id) + '/actions');
-        renderActions(Array.isArray(act) ? act : (act && act.actions ? act.actions : []));
+    // Chart.js management
+    updateChart() {
+      const canvas = document.getElementById('pressureChart');
+      if (!canvas) return;
+      if (this.chart) {
+        this.chart.destroy();
+        this.chart = null;
       }
-    } else {
-      await fetchAgentDetail();
-    }
+      if (!this.trajectory || this.trajectory.length === 0) return;
 
-    // Findings
-    renderFindings(Array.isArray(findings) ? findings : (findings && findings.findings ? findings.findings : []));
+      const labels = this.trajectory.map((_, i) => '#' + (i + 1));
+      const values = this.trajectory.map(v => typeof v === 'number' ? v : (v.pressure || 0));
+      const lastIdx = values.length - 1;
+      const lastColor = this.pressureColor(values[lastIdx] || 0);
 
-    // Audit
-    var auditList = Array.isArray(audit) ? audit :
-      (audit && audit.entries ? audit.entries : (audit && audit.log ? audit.log : []));
-    renderAudit(auditList);
+      this.chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            borderColor: '#ff2d78',
+            backgroundColor: 'rgba(255,45,120,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: values.map((_, i) => i === lastIdx ? 4 : 0),
+            pointBackgroundColor: values.map((_, i) => i === lastIdx ? lastColor : 'transparent'),
+            pointBorderColor: values.map((_, i) => i === lastIdx ? lastColor : 'transparent'),
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 300 },
+          plugins: {
+            legend: { display: false },
+            annotation: undefined,
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.03)' },
+              ticks: { color: '#444', font: { family: 'monospace', size: 10 }, maxTicksLimit: 10 },
+            },
+            y: {
+              min: 0,
+              max: 1,
+              grid: { color: 'rgba(255,255,255,0.03)' },
+              ticks: { color: '#444', font: { family: 'monospace', size: 10 }, stepSize: 0.2 },
+            }
+          }
+        },
+        plugins: [{
+          id: 'thresholdLines',
+          afterDraw(chart) {
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            const xAxis = chart.scales.x;
+            const thresholds = [
+              { value: 0.40, label: 'GUIDE', color: '#ffaa00' },
+              { value: 0.60, label: 'WARN', color: '#ff8c00' },
+              { value: 0.80, label: 'BLOCK', color: '#ff4444' },
+            ];
+            thresholds.forEach(t => {
+              const y = yAxis.getPixelForValue(t.value);
+              ctx.save();
+              ctx.beginPath();
+              ctx.setLineDash([6, 4]);
+              ctx.strokeStyle = t.color;
+              ctx.globalAlpha = 0.4;
+              ctx.lineWidth = 1;
+              ctx.moveTo(xAxis.left, y);
+              ctx.lineTo(xAxis.right, y);
+              ctx.stroke();
+              ctx.globalAlpha = 0.5;
+              ctx.setLineDash([]);
+              ctx.fillStyle = t.color;
+              ctx.font = '9px system-ui';
+              ctx.textAlign = 'right';
+              ctx.fillText(t.label, xAxis.right - 4, y - 4);
+              ctx.restore();
+            });
+          }
+        }]
+      });
+    },
 
-    // Sessions
-    renderSessions(Array.isArray(sessions) ? sessions : (sessions && sessions.sessions ? sessions.sessions : []));
+    // Helpers
+    stripPrefix(id) {
+      if (!id) return '';
+      return id.replace(/^cc-/, '');
+    },
 
-    // Patterns
-    renderPatterns(fingerprints);
-  }
+    modeLabel(mode) {
+      if (!mode) return 'OBSERVE';
+      const m = String(mode).toUpperCase();
+      if (m.includes('BLOCK')) return 'BLOCK';
+      if (m.includes('WARN')) return 'WARN';
+      if (m.includes('GUIDE')) return 'GUIDE';
+      return 'OBSERVE';
+    },
 
-  // --- Start ---
-  fetchAll();
-  setInterval(fetchAll, 2000);
+    modeBadgeClass(mode) {
+      const m = this.modeLabel(mode);
+      return {
+        'OBSERVE': 'bg-emerald-500/20 text-emerald-400',
+        'GUIDE': 'bg-yellow-500/20 text-yellow-400',
+        'WARN': 'bg-orange-500/20 text-orange-400',
+        'BLOCK': 'bg-pink-500/20 text-pink-400',
+      }[m] || 'bg-emerald-500/20 text-emerald-400';
+    },
 
-})();
+    modeBadgeTextClass(mode) {
+      const m = this.modeLabel(mode);
+      return {
+        'OBSERVE': 'text-emerald-400',
+        'GUIDE': 'text-yellow-400',
+        'WARN': 'text-orange-400',
+        'BLOCK': 'text-pink-400',
+      }[m] || 'text-emerald-400';
+    },
+
+    pressureColor(p) {
+      if (p < 0.25) return '#00ff88';
+      if (p < 0.50) return '#ffaa00';
+      if (p < 0.75) return '#ff8c00';
+      return '#ff4444';
+    },
+
+    pctFmt(v) {
+      if (v == null || isNaN(v)) return '--';
+      return Number(v).toFixed(1);
+    },
+
+    fmtPct(p) {
+      if (p == null) return '';
+      return (p * 100).toFixed(1) + '%';
+    },
+
+    vitalsList(agent) {
+      const v = agent.vitals || {};
+      return [
+        { label: 'uncertainty', value: this.fmtVal(v.uncertainty) },
+        { label: 'drift', value: this.fmtVal(v.drift) },
+        { label: 'error rate', value: this.fmtVal(v.error_rate) },
+        { label: 'cost', value: this.fmtVal(v.cost) },
+        { label: 'tokens', value: v.token_usage != null ? v.token_usage.toLocaleString() : '--' },
+        { label: 'coherence', value: this.fmtVal(v.coherence || v.goal_coherence) },
+      ];
+    },
+
+    fmtVal(n) {
+      if (n == null || isNaN(n)) return '--';
+      return Number(n).toFixed(3);
+    },
+
+    gradeColor(grade) {
+      if (!grade) return 'text-gray-500';
+      const g = String(grade).toUpperCase()[0];
+      return { A: 'text-soma-success', B: 'text-emerald-300', C: 'text-yellow-400', D: 'text-orange-400', F: 'text-red-400' }[g] || 'text-gray-500';
+    },
+
+    toolEmoji(tool) {
+      if (!tool) return '';
+      const map = { Read: '\u{1F4D6}', Edit: '\u270F\uFE0F', Write: '\u270D\uFE0F', Bash: '\u{1F527}', Grep: '\u{1F50D}', Glob: '\u{1F4C1}', Agent: '\u{1F916}', WebSearch: '\u{1F310}', WebFetch: '\u{1F310}' };
+      return map[tool] || '';
+    },
+
+    findingBorderClass(f) {
+      const p = (f.priority || f.severity || 'info').toLowerCase();
+      if (p.includes('crit') || p.includes('high') || p.includes('error')) return 'border-red-500';
+      if (p.includes('warn') || p.includes('med') || p.includes('important')) return 'border-orange-500';
+      return 'border-blue-500';
+    },
+
+    findingTextClass(f) {
+      const p = (f.priority || f.severity || 'info').toLowerCase();
+      if (p.includes('crit') || p.includes('high') || p.includes('error')) return 'text-red-400';
+      if (p.includes('warn') || p.includes('med') || p.includes('important')) return 'text-orange-400';
+      return 'text-blue-400';
+    },
+  }));
+});
 </script>
 </body>
 </html>
