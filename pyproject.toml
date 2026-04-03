@@ -27,13 +27,15 @@ dependencies = [
 
 [project.optional-dependencies]
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20", "opentelemetry-exporter-otlp-proto-grpc>=1.20"]
+dashboard = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
 dev = ["pytest>=8.0", "pytest-cov", "pytest-asyncio>=0.21", "ruff", "pyyaml>=6.0"]
-all = ["soma-ai[otel,dev]"]
+all = ["soma-ai[otel,dashboard,dev]"]
 
 [project.scripts]
 soma = "soma.cli.main:main"
 soma-hook = "soma.hooks.claude_code:main"
 soma-statusline = "soma.hooks.statusline:main"
+soma-dashboard = "soma.dashboard.server:main"
 
 [project.urls]
 Homepage = "https://github.com/tr00x/SOMA-Core"
