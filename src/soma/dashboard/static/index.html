@@ -122,7 +122,7 @@ tailwind.config = {
             <div class="soma-card flex items-center gap-0 text-xs overflow-x-auto" style="height:36px">
               <!-- Max pressure -->
               <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
-                <span class="text-gray-500">P:</span>
+                <span class="text-gray-500">Max Pressure:</span>
                 <span class="num font-bold" :style="'color:' + pressureColor(overviewMaxPressure())"
                       x-text="(overviewMaxPressure() * 100).toFixed(1) + '%'"></span>
               </div>
@@ -134,13 +134,13 @@ tailwind.config = {
               </div>
               <!-- Budget health -->
               <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
-                <span class="text-gray-500">Budget:</span>
+                <span class="text-gray-500">Budget Left:</span>
                 <span class="num font-bold" :class="overviewBudgetHealth() < 30 ? 'text-soma-error' : overviewBudgetHealth() < 60 ? 'text-soma-warning' : 'text-soma-success'"
                       x-text="overviewBudgetHealth() + '%'"></span>
               </div>
               <!-- Active agents -->
               <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
-                <span class="text-gray-500">Agents:</span>
+                <span class="text-gray-500">Active Agents:</span>
                 <span class="num font-bold text-white" x-text="overviewAgentCount()"></span>
               </div>
               <!-- Session capacity -->

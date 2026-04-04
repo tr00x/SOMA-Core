@@ -69,7 +69,12 @@ SOMA.api = (() => {
       _sseSource.addEventListener('finding', (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.message || data.title) ctx.findings = [data, ...(ctx.findings || [])].slice(0, 20);
+          if (data.message || data.title) {
+            // Dedup: don't add if same message already in list
+            const msg = data.message || data.title;
+            const exists = (ctx.findings || []).some(f => (f.message || f.title) === msg);
+            if (!exists) ctx.findings = [data, ...(ctx.findings || [])].slice(0, 20);
+          }
         } catch (_) {}
       });
 
@@ -127,7 +132,10 @@ SOMA.api = (() => {
       try {
         const overview = await fetchOverview();
         _updateAgents(ctx, overview.agents || []);
-        ctx.findings = overview.findings || ctx.findings;
+        // Only replace findings if API has data (don't clear with empty)
+        if (overview.findings && overview.findings.length > 0) {
+          ctx.findings = overview.findings;
+        }
       } catch (_) { ctx.connected = false; }
       try {
         ctx.budgetData = await fetchBudget();
