@@ -83,13 +83,27 @@ def main():
         from soma.findings import collect as collect_findings
         findings = collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
 
-        # Persist findings for dashboard
+        # Persist findings for dashboard (merge with existing, dedup by message, keep last 20)
         try:
             import json as _json
             from pathlib import Path as _Path
-            findings_data = [{"priority": f.priority, "category": f.category, "message": f.message, "action": f.action} for f in findings]
+            import time as _time
             fp = _Path.home() / ".soma" / "findings.json"
-            fp.write_text(_json.dumps(findings_data))
+            existing = []
+            try:
+                existing = _json.loads(fp.read_text()) if fp.exists() else []
+            except Exception:
+                pass
+            now = _time.time()
+            new_data = [{"priority": f.priority, "category": f.category, "message": f.message, "action": f.action, "ts": now} for f in findings]
+            # Merge: add new, dedup by message, keep freshest, expire after 5 min
+            seen = {}
+            for item in new_data + existing:
+                msg = item.get("message", "")
+                if msg not in seen and (now - item.get("ts", now)) < 300:
+                    seen[msg] = item
+            merged = sorted(seen.values(), key=lambda x: x.get("ts", 0), reverse=True)[:20]
+            fp.write_text(_json.dumps(merged))
         except Exception:
             pass
 
