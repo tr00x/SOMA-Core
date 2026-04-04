@@ -61,7 +61,8 @@ SOMA.tabs.analytics = () => ({
       } else {
         this.analyticsTools = tools || [];
       }
-      this.analyticsMirror = mirror || {};
+      const mr = mirror || {};
+      this.analyticsMirror = { ...(mr.stats || {}), patterns: mr.stats?.patterns || mr.patterns || {} };
       this.analyticsThreshold = threshold || {};
       console.log('[SOMA analytics] trends:', this.analyticsTrends.length, 'tools:', this.analyticsTools.length);
     } catch (e) { console.error('[SOMA analytics] error:', e); }
@@ -191,7 +192,11 @@ SOMA.tabs.analytics = () => ({
 
   mirrorPatternCount() {
     const m = this.analyticsMirror;
-    return (m && m.pattern_count) || (m && m.patterns && m.patterns.length) || 0;
+    if (!m) return 0;
+    if (m.pattern_count != null) return m.pattern_count;
+    if (Array.isArray(m.patterns)) return m.patterns.length;
+    if (m.patterns && typeof m.patterns === 'object') return Object.keys(m.patterns).length;
+    return 0;
   },
 
   mirrorPrunedCount() {
