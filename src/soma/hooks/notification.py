@@ -83,6 +83,16 @@ def main():
         from soma.findings import collect as collect_findings
         findings = collect_findings(action_log, vitals, pressure, level_name, actions, hook_config)
 
+        # Persist findings for dashboard
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+            findings_data = [{"priority": f.priority, "category": f.category, "message": f.message, "action": f.action} for f in findings]
+            fp = _Path.home() / ".soma" / "findings.json"
+            fp.write_text(_json.dumps(findings_data))
+        except Exception:
+            pass
+
         # ── Build header ──
         lines = []
         u = vitals.get("uncertainty", 0)

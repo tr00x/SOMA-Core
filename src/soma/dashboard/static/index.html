@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SOMA — Behavioral Monitoring</title>
+<title>SOMA -- Behavioral Monitoring for AI Agents</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+
+<!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
 <script>
 tailwind.config = {
   theme: {
@@ -21,6 +22,7 @@ tailwind.config = {
           'pink-light': '#ff6ba6',
           success: '#00ff88',
           warning: '#ffaa00',
+          orange: '#ff8c00',
           error: '#ff4444',
         }
       },
@@ -31,656 +33,1772 @@ tailwind.config = {
   }
 }
 </script>
-<style>
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #555; }
-  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
-  .pressure-bar-gradient {
-    background: linear-gradient(90deg, #00ff88 0%, #ffaa00 40%, #ff8c00 65%, #ff4444 100%);
-  }
-</style>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<!-- SortableJS -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+
+<!-- App modules (order matters: api + charts before tabs, tabs before app) -->
+<script src="/api.js"></script>
+<script src="/charts.js"></script>
+<script src="/tabs/overview.js"></script>
+<script src="/tabs/deep-dive.js"></script>
+<script src="/tabs/settings.js"></script>
+<script src="/tabs/logs.js"></script>
+<script src="/tabs/sessions.js"></script>
+<script src="/tabs/analytics.js"></script>
+<script src="/app.js"></script>
+
+<!-- Alpine.js (must load AFTER all data registrations) -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="bg-soma-bg text-gray-200 font-sans min-h-screen" x-data="dashboard">
+
+<body class="bg-soma-bg text-gray-200 font-mono min-h-screen" x-data="dashboard">
 
   <!-- Header -->
-  <header class="sticky top-0 z-50 bg-soma-bg border-b border-soma-border flex items-center justify-between px-6 py-3">
-    <div class="flex items-center gap-3">
-      <span class="text-2xl font-bold tracking-[0.3em] text-soma-pink">SOMA</span>
-      <span class="text-sm text-gray-500 hidden sm:inline">Behavioral Monitoring</span>
+  <header class="sticky top-0 z-50 bg-soma-bg/95 backdrop-blur-sm border-b border-soma-border">
+    <div class="flex items-center justify-between px-4 py-2">
+      <!-- Logo + connection -->
+      <div class="flex items-center gap-3">
+        <span class="text-xl font-bold tracking-[0.25em] text-soma-pink">SOMA</span>
+        <span class="text-[10px] text-gray-500 hidden sm:inline tracking-wide uppercase">Agent Behavioral Monitor</span>
+        <span class="inline-block w-2 h-2 rounded-full ml-2"
+              :class="connected ? 'bg-soma-success animate-pulse-dot' : 'bg-soma-error'"
+              :title="connected ? 'Connected' : 'Disconnected'"></span>
+      </div>
+
+      <!-- Right side: clock, search, help -->
+      <div class="flex items-center gap-3 text-xs">
+        <button @click="showSearch = true"
+                class="text-gray-500 hover:text-gray-300 flex items-center gap-1 px-2 py-1 rounded border border-soma-border hover:border-gray-600 transition">
+          <i data-lucide="search" class="w-3 h-3"></i>
+          <span class="hidden sm:inline">Search</span>
+          <kbd class="text-[9px] bg-white/5 px-1 rounded ml-1 hidden sm:inline">Ctrl+K</kbd>
+        </button>
+        <button @click="showHelp = true"
+                class="text-gray-500 hover:text-gray-300 px-2 py-1 rounded border border-soma-border hover:border-gray-600 transition">
+          <kbd class="text-[9px]">?</kbd>
+        </button>
+        <span class="text-gray-500 num text-xs" x-text="clock"></span>
+      </div>
     </div>
-    <div class="flex items-center gap-4">
-      <span class="text-gray-400 font-mono text-sm" x-text="clock"></span>
-      <span class="flex items-center gap-2 text-xs font-medium font-mono px-3 py-1 rounded-full"
-            :class="connected
-              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-              : 'bg-red-500/10 text-red-400 border border-red-500/20'">
-        <span class="w-2 h-2 rounded-full animate-pulse-dot"
-              :class="connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(0,255,136,0.6)]' : 'bg-red-400 shadow-[0_0_6px_rgba(255,68,68,0.6)]'"></span>
-        <span x-text="connected ? 'live' : 'offline'"></span>
-      </span>
-    </div>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-scroll flex gap-0 px-4 border-t border-soma-border">
+      <template x-for="(tab, idx) in tabs" :key="tab.id">
+        <button @click="switchTab(tab.id)"
+                :class="activeTab === tab.id ? 'tab-active' : 'tab-inactive'"
+                class="px-4 py-2 text-xs whitespace-nowrap transition-colors flex items-center gap-2">
+          <span x-text="tab.label"></span>
+          <kbd class="text-[9px] bg-white/5 px-1 rounded opacity-50" x-text="idx + 1"></kbd>
+        </button>
+      </template>
+    </nav>
   </header>
 
-  <!-- Agent Cards -->
-  <section class="p-6">
-    <div class="flex flex-wrap gap-4">
-      <template x-if="agents.length === 0">
-        <div class="text-gray-500 text-sm italic py-8 w-full text-center">Waiting for agent data...</div>
+  <!-- Tab Content -->
+  <main class="p-4">
+    <div x-show="activeTab === 'overview'" x-transition id="tab-overview"
+         x-init="$watch('activeTab', v => { if (v === 'overview') loadOverviewTab(); })">
+
+      <!-- Empty state: no agents -->
+      <template x-if="!agents || agents.length === 0">
+        <div class="empty-state py-16">
+          <i data-lucide="radio" class="w-8 h-8 mx-auto mb-3 text-gray-600"></i>
+          <p>No agents connected. Run <code class="text-soma-pink">soma setup</code> to start monitoring.</p>
+        </div>
       </template>
-      <template x-for="agent in agents" :key="agent.agent_id">
-        <div class="bg-soma-card rounded-xl p-5 border border-soma-border hover:border-soma-pink/30 transition cursor-pointer min-w-[280px] flex-1 max-w-md"
-             :class="selectedAgent && selectedAgent.agent_id === agent.agent_id ? 'border-soma-pink shadow-[0_0_15px_rgba(255,45,120,0.15)]' : ''"
-             @click="selectAgent(agent)">
 
-          <!-- Header row -->
-          <div class="flex items-center justify-between mb-3">
-            <span class="font-mono font-semibold text-white text-sm" x-text="stripPrefix(agent.agent_id)"></span>
-            <span class="rounded-full px-3 py-0.5 text-xs font-bold uppercase"
-                  :class="modeBadgeClass(agent.level || agent.mode)">
-              <span x-text="modeLabel(agent.level || agent.mode)"></span>
-            </span>
-          </div>
+      <template x-if="agents && agents.length > 0">
+        <div class="flex flex-col lg:flex-row gap-6">
 
-          <!-- Pressure -->
-          <div class="mb-4">
-            <div class="text-3xl font-mono font-bold" :style="'color:' + pressureColor(agent.pressure || 0)">
-              <span x-text="pctFmt(agent.pressure_pct != null ? agent.pressure_pct : (agent.pressure || 0) * 100)"></span><span class="text-lg">%</span>
+          <!-- ==================== MAIN CONTENT ==================== -->
+          <div class="flex-1 min-w-0 flex flex-col gap-6">
+
+            <!-- ===== STATUS BAR ===== -->
+            <div class="soma-card flex items-center gap-0 text-xs overflow-x-auto" style="height:36px">
+              <!-- Max pressure -->
+              <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
+                <span class="text-gray-500">P:</span>
+                <span class="num font-bold" :style="'color:' + pressureColor(overviewMaxPressure())"
+                      x-text="(overviewMaxPressure() * 100).toFixed(1) + '%'"></span>
+              </div>
+              <!-- Worst mode badge -->
+              <div class="flex items-center px-4 border-r border-soma-border">
+                <span class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+                      :class="modeBadgeClass(overviewWorstMode())"
+                      x-text="overviewWorstMode()"></span>
+              </div>
+              <!-- Budget health -->
+              <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
+                <span class="text-gray-500">Budget:</span>
+                <span class="num font-bold" :class="overviewBudgetHealth() < 30 ? 'text-soma-error' : overviewBudgetHealth() < 60 ? 'text-soma-warning' : 'text-soma-success'"
+                      x-text="overviewBudgetHealth() + '%'"></span>
+              </div>
+              <!-- Active agents -->
+              <div class="flex items-center gap-2 px-4 border-r border-soma-border whitespace-nowrap">
+                <span class="text-gray-500">Agents:</span>
+                <span class="num font-bold text-white" x-text="overviewAgentCount()"></span>
+              </div>
+              <!-- Session capacity -->
+              <div class="flex items-center gap-2 px-4 whitespace-nowrap" x-show="overviewCapacity() != null">
+                <span class="text-gray-500">Cap:</span>
+                <span class="num text-white" x-text="'~' + overviewCapacity() + ' actions'"></span>
+              </div>
+              <!-- Cascade risk -->
+              <div class="flex items-center gap-2 px-4 border-l border-soma-border whitespace-nowrap" x-show="overviewHasCascadeRisk()">
+                <i data-lucide="git-branch" class="w-3 h-3 text-soma-warning"></i>
+                <span class="text-soma-warning">Cascade risk</span>
+              </div>
             </div>
-            <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden">
-              <div class="h-full rounded-full pressure-bar-gradient transition-all duration-500"
-                   :style="'width:' + Math.min(100, Math.max(0, agent.pressure_pct != null ? agent.pressure_pct : (agent.pressure || 0) * 100)) + '%'"></div>
-            </div>
-          </div>
 
-          <!-- Vitals grid -->
-          <div class="grid grid-cols-3 gap-x-4 gap-y-2 mb-3">
-            <template x-for="v in vitalsList(agent)" :key="v.label">
+            <!-- ===== AGENT CARDS ===== -->
+            <div class="flex gap-3 overflow-x-auto pb-2" style="scrollbar-width:thin">
+              <template x-for="(agent, idx) in agents" :key="agent.agent_id">
+                <button @click="selectAgent(agent)"
+                        class="soma-card flex-shrink-0 p-4 cursor-pointer text-left transition-all hover:border-soma-pink/30 focus:outline-none focus:ring-2 focus:ring-soma-pink/30"
+                        style="min-width:260px;max-width:400px;flex:1">
+                  <!-- Header: agent name + mode badge -->
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-bold text-white truncate max-w-[160px]" :title="agent.agent_id"
+                          x-text="stripPrefix(agent.agent_id)"></span>
+                    <span class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ml-2 flex-shrink-0"
+                          :class="modeBadgeClass(agent.level || agent.mode)"
+                          x-text="modeLabel(agent.level || agent.mode)"></span>
+                  </div>
+
+                  <!-- Pressure number -->
+                  <div class="text-2xl font-bold num mb-1" :style="'color:' + pressureColor(agent.pressure || 0)"
+                       x-text="((agent.pressure || 0) * 100).toFixed(0) + '%'"></div>
+
+                  <!-- Pressure bar -->
+                  <div class="w-full h-1 rounded-full overflow-hidden mb-3" style="background:rgba(255,255,255,0.05)">
+                    <div class="h-full rounded-full pressure-bar-gradient transition-all duration-500"
+                         :style="'width:' + Math.min(100, (agent.pressure || 0) * 100) + '%'"></div>
+                  </div>
+
+                  <!-- Vitals row -->
+                  <div class="flex gap-4 text-[11px] text-gray-500 mb-1.5">
+                    <span>U: <span class="num text-gray-400" x-text="(agent.vitals?.uncertainty ?? 0).toFixed(2)"></span></span>
+                    <span>D: <span class="num text-gray-400" x-text="(agent.vitals?.drift ?? 0).toFixed(2)"></span></span>
+                    <span>E: <span class="num text-gray-400" x-text="(agent.vitals?.error_rate ?? 0).toFixed(2)"></span></span>
+                  </div>
+
+                  <!-- Quality + phase + half-life row -->
+                  <div class="flex items-center gap-4 text-[11px] text-gray-500 mb-2">
+                    <span>Q: <span class="font-bold" :class="agent.quality_grade === 'A' ? 'text-soma-success' : agent.quality_grade === 'F' ? 'text-soma-error' : 'text-gray-300'"
+                                   x-text="agent.quality_grade || '\u2014'"></span></span>
+                    <span x-show="agent.phase">P: <span class="text-gray-400" x-text="agent.phase"></span></span>
+                    <span class="flex items-center gap-1">
+                      HL: <span class="inline-block w-2 h-2 rounded-full" :style="'background:' + halfLifeColor(agent)"></span>
+                    </span>
+                    <!-- Circuit breaker -->
+                    <span x-show="agent.circuit_breaker_state"
+                          class="px-1.5 py-0 rounded-full text-[9px] font-bold"
+                          :class="circuitBreakerBadge(agent.circuit_breaker_state)"
+                          x-text="agent.circuit_breaker_state"></span>
+                  </div>
+
+                  <!-- Sparkline -->
+                  <div class="w-full" style="height:24px">
+                    <canvas :id="'sparkline-' + idx" width="200" height="24" style="width:100%;height:24px"></canvas>
+                  </div>
+                </button>
+              </template>
+            </div>
+
+            <!-- ===== RCA STRIP ===== -->
+            <template x-for="agent in overviewRCAAgents()" :key="'rca-' + agent.agent_id">
+              <div class="flex items-start gap-3 px-4 py-3 rounded-lg text-xs"
+                   style="background:rgba(255,68,68,0.08);border:1px solid rgba(255,68,68,0.25)">
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-soma-error flex-shrink-0 mt-0.5"></i>
+                <div>
+                  <span class="font-bold text-soma-error" x-text="stripPrefix(agent.agent_id)"></span>
+                  <span class="text-gray-400 ml-1" x-text="agent.rca_diagnosis"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- ===== PREDICTIONS ALERT STRIP ===== -->
+            <template x-for="esc in overviewEscalationAgents()" :key="'esc-' + esc.agent_id">
+              <div class="flex items-start gap-3 px-4 py-3 rounded-lg text-xs"
+                   style="background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.25)">
+                <i data-lucide="trending-up" class="w-4 h-4 text-soma-orange flex-shrink-0 mt-0.5"></i>
+                <div>
+                  <span class="font-bold text-soma-orange" x-text="stripPrefix(esc.agent_id)"></span>
+                  <span class="text-gray-400 ml-1">predicted to escalate in ~<span class="num text-white" x-text="esc.actions_ahead"></span> actions</span>
+                  <span class="text-gray-500 ml-1" x-text="'(' + esc.reason + ')'"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- ===== FINDINGS ===== -->
+            <div>
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Findings</h3>
+              <template x-if="overviewTopFindings().length === 0">
+                <div class="soma-card p-4 text-center text-xs text-gray-500 flex items-center justify-center gap-2">
+                  <i data-lucide="check-circle" class="w-4 h-4 text-soma-success"></i>
+                  No findings — all clear.
+                </div>
+              </template>
+              <div class="flex flex-col gap-2">
+                <template x-for="(finding, fi) in overviewTopFindings()" :key="'f-' + fi">
+                  <div class="soma-card px-4 py-3 text-xs flex items-start gap-3"
+                       :style="'border-left:3px solid ' + findingColor(finding.priority, finding.category).border + ';background:' + findingColor(finding.priority, finding.category).bg">
+                    <i :data-lucide="findingColor(finding.priority, finding.category).icon" class="w-4 h-4 flex-shrink-0 mt-0.5"
+                       :style="'color:' + findingColor(finding.priority, finding.category).text"></i>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-0.5">
+                        <span class="font-bold uppercase text-[10px] tracking-wider"
+                              :style="'color:' + findingColor(finding.priority, finding.category).text"
+                              x-text="finding.category || (finding.priority === 0 ? 'critical' : finding.priority === 1 ? 'important' : 'info')"></span>
+                        <span class="text-gray-500" x-show="finding.agent_id" x-text="stripPrefix(finding.agent_id)"></span>
+                      </div>
+                      <div class="text-gray-300" x-text="finding.message || finding.title"></div>
+                      <div class="text-gray-500 mt-0.5" x-show="finding.action" x-text="finding.action"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- ===== PATTERNS ===== -->
+            <div x-show="overviewPatterns && overviewPatterns.length > 0">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Detected Patterns</h3>
+              <div class="flex flex-wrap gap-2">
+                <template x-for="(pat, pi) in (Array.isArray(overviewPatterns) ? overviewPatterns : Object.entries(overviewPatterns).map(([k,v]) => ({name:k,...(typeof v === 'object' ? v : {count:v})}))).slice(0, 10)" :key="'p-' + pi">
+                  <div class="soma-card px-3 py-2 text-xs flex items-center gap-2">
+                    <i :data-lucide="patternIcon(pat.type || pat.kind)" class="w-3 h-3 text-soma-pink"></i>
+                    <span class="text-gray-300" x-text="pat.name || pat.pattern || pat.description || JSON.stringify(pat)"></span>
+                    <span x-show="pat.count" class="num text-gray-500" x-text="'x' + pat.count"></span>
+                    <span x-show="pat.success_rate != null" class="num text-gray-500"
+                          x-text="(pat.success_rate * 100).toFixed(0) + '%'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+          </div><!-- /main content -->
+
+          <!-- ==================== SIDEBAR (desktop) ==================== -->
+          <aside class="w-full lg:w-[280px] flex-shrink-0 flex flex-col gap-4">
+
+            <!-- Budget gauges -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Budget</h3>
+              <template x-if="overviewBudgetDimensions().length === 0">
+                <div class="text-[11px] text-gray-600 text-center py-2">No budget configured</div>
+              </template>
+              <div class="flex flex-col gap-3">
+                <template x-for="dim in overviewBudgetDimensions()" :key="dim.name">
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1">
+                      <span class="text-gray-400" x-text="formatDimName(dim.name)"></span>
+                      <span class="num text-gray-500" x-text="(dim.pct * 100).toFixed(0) + '%'"></span>
+                    </div>
+                    <div class="w-full h-1 rounded-full" style="background:rgba(255,255,255,0.05)">
+                      <div class="h-full rounded-full transition-all duration-500"
+                           :style="'width:' + Math.min(100, dim.pct * 100) + '%;background:' + budgetBarColor(dim.pct)"></div>
+                    </div>
+                    <div class="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span x-text="Math.round(dim.spent).toLocaleString() + ' used'"></span>
+                      <span x-text="Math.round(dim.remaining).toLocaleString() + ' left'"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Tool usage top-5 -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Top Tools</h3>
+              <template x-if="!overviewToolUsage || overviewToolUsage.length === 0">
+                <div class="text-[11px] text-gray-600 text-center py-2">No tool data yet</div>
+              </template>
+              <div style="height:140px" x-show="overviewToolUsage && overviewToolUsage.length > 0">
+                <canvas id="overview-tool-usage" style="width:100%;height:100%"></canvas>
+              </div>
+            </div>
+
+            <!-- 24h Activity Heatmap -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">24h Activity</h3>
+              <template x-if="!overviewHeatmap || overviewHeatmap.length === 0">
+                <div class="text-[11px] text-gray-600 text-center py-2">No activity data</div>
+              </template>
+              <div style="height:80px" x-show="overviewHeatmap && overviewHeatmap.length > 0">
+                <canvas id="overview-heatmap" style="width:100%;height:100%"></canvas>
+              </div>
+            </div>
+
+          </aside>
+
+        </div><!-- /flex row -->
+      </template>
+
+    </div>
+    <div x-show="activeTab === 'deep-dive'" x-transition id="tab-deep-dive"
+         x-init="$watch('activeTab', v => { if (v === 'deep-dive') loadDeepDiveTab(); })">
+
+      <!-- Agent selector -->
+      <div class="flex items-center gap-3 mb-4">
+        <label class="text-xs text-gray-500">Agent</label>
+        <select @change="ddSelectAgent($event.target.value)"
+                class="bg-soma-bg border border-soma-border rounded px-3 py-1.5 text-xs text-gray-200 touch-input">
+          <option value="" disabled :selected="!ddAgentId">Select agent...</option>
+          <template x-for="a in agents" :key="a.agent_id">
+            <option :value="a.agent_id" :selected="a.agent_id === ddAgentId" x-text="stripPrefix(a.agent_id)"></option>
+          </template>
+        </select>
+        <span x-show="ddLoading" class="text-xs text-gray-500 animate-pulse">Loading...</span>
+      </div>
+
+      <!-- Empty state when no agent selected -->
+      <div x-show="!ddAgentId" class="empty-state">
+        <i data-lucide="user-search" class="w-8 h-8 mx-auto mb-3 text-gray-600"></i>
+        <p>Select an agent to view detailed metrics.</p>
+      </div>
+
+      <div x-show="ddAgentId && ddAgent" class="space-y-3">
+
+        <!-- ==================== ROW 1: HEADER ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('header')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Agent Header</span>
+            <i :data-lucide="ddSections.header ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.header" class="px-4 pb-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <!-- Agent ID + Mode -->
               <div>
-                <div class="text-[10px] text-gray-500 uppercase tracking-wider" x-text="v.label"></div>
-                <div class="text-sm font-mono" x-text="v.value"></div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Agent</div>
+                <div class="text-sm font-bold text-white truncate" x-text="stripPrefix(ddAgentId)"></div>
+                <span class="inline-block mt-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full tracking-wider"
+                      :class="modeBadgeClass(ddAgent?.level || ddAgent?.mode)"
+                      x-text="modeLabel(ddAgent?.level || ddAgent?.mode)"></span>
+              </div>
+              <!-- Pressure big number -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Pressure</div>
+                <div class="text-[40px] leading-none font-bold num"
+                     :style="'color:' + pressureColor(ddAgent?.pressure || 0)"
+                     x-text="ddPressurePercent() + '%'"></div>
+                <div class="mt-1 h-1 rounded-full bg-white/5 overflow-hidden">
+                  <div class="h-full pressure-bar-gradient rounded-full transition-all duration-500"
+                       :style="'width:' + ddPressurePercent() + '%'"></div>
+                </div>
+              </div>
+              <!-- Phase -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Phase</div>
+                <div class="text-sm text-white" x-text="ddPhaseLabel()"></div>
+              </div>
+              <!-- Half-life -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Half-life</div>
+                <div class="flex items-center gap-2">
+                  <span class="inline-block w-3 h-3 rounded-full" :style="'background:' + ddHalfLifeColor()"></span>
+                  <span class="text-xs text-gray-300 num" x-text="((ddCapacity?.success_rate || 0) * 100).toFixed(0) + '% success'"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mt-0.5" x-text="ddCapacity?.handoff_suggestion || ''"></div>
+              </div>
+              <!-- Session capacity -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Capacity</div>
+                <div class="text-sm text-white num" x-text="ddCapacityRemaining() + ' actions'"></div>
+                <div class="text-[10px] text-gray-500" x-text="ddUptimeStr()"></div>
+              </div>
+              <!-- Circuit breaker -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-1">Circuit Breaker</div>
+                <template x-if="ddCbState()">
+                  <div>
+                    <span class="inline-block text-[9px] font-bold uppercase px-2 py-0.5 rounded-full"
+                          :class="ddCbBadgeClass()" x-text="ddCbState()"></span>
+                    <div class="text-[10px] text-gray-500 mt-1 num"
+                         x-text="'Consecutive: ' + (ddCircuitBreaker?.consecutive_failures || 0)"></div>
+                  </div>
+                </template>
+                <template x-if="!ddCbState()">
+                  <span class="text-xs text-gray-600">N/A</span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 2: CHARTS ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('charts')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Charts</span>
+            <i :data-lucide="ddSections.charts ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.charts" class="px-4 pb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <!-- Pressure timeline -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Pressure Timeline</div>
+                <div class="relative h-52">
+                  <canvas id="dd-pressure-chart"></canvas>
+                  <div x-show="!ddTrajectory || ddTrajectory.length === 0" class="absolute inset-0 flex items-center justify-center">
+                    <span class="text-xs text-gray-600">Waiting for trajectory data...</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Vitals radar -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Vitals Radar</div>
+                <div class="flex justify-center">
+                  <div class="radar-container">
+                    <canvas id="dd-radar-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 3: SIGNAL BREAKDOWN ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('signals')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Signal Breakdown</span>
+            <i :data-lucide="ddSections.signals ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.signals" class="px-4 pb-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <!-- Pressure vector -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Pressure Vector</div>
+                <div class="space-y-1.5">
+                  <template x-for="s in ddPressureVector()" :key="s.signal">
+                    <div>
+                      <div class="flex justify-between text-[11px] mb-0.5">
+                        <span class="text-gray-400" x-text="s.signal"></span>
+                        <span class="text-white num" x-text="(s.value * s.weight).toFixed(3)"></span>
+                      </div>
+                      <div class="h-[6px] bg-white/5 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-300"
+                             :style="'width:' + Math.min(s.value * s.weight * 100, 100) + '%;background:' + pressureColor(s.value * s.weight)"></div>
+                      </div>
+                    </div>
+                  </template>
+                  <div x-show="ddPressureVector().length === 0" class="text-xs text-gray-600">No signal data</div>
+                </div>
+              </div>
+              <!-- Calibration panel -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Calibration</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Score</span>
+                    <span class="text-white num" x-text="ddCalibration().score != null ? ddCalibration().score.toFixed(2) : '--'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Verbal-Behavioral Div.</span>
+                    <span :class="ddCalibration().verbal_behavioral_divergence ? 'text-soma-warning' : 'text-gray-400'"
+                          x-text="ddCalibration().verbal_behavioral_divergence ? 'YES' : 'no'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Hedging Rate</span>
+                    <span class="text-white num" x-text="pctFmt(ddCalibration().hedging_rate)"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Error Rate</span>
+                    <span class="text-white num" x-text="pctFmt(ddCalibration().error_rate)"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Uncertainty Type</span>
+                    <span class="text-gray-300" x-text="ddCalibration().uncertainty_type || '--'"></span>
+                  </div>
+                </div>
+              </div>
+              <!-- Baseline health -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Baseline Health</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Integrity</span>
+                    <span :class="ddBaselineHealth().integrity ? 'text-soma-success' : 'text-soma-error'"
+                          x-text="ddBaselineHealth().integrity == null ? '--' : ddBaselineHealth().integrity ? 'OK' : 'DEGRADED'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Warmup Progress</span>
+                    <span class="text-white num" x-text="pctFmt(ddBaselineHealth().warmup_progress)"></span>
+                  </div>
+                  <template x-for="signal in Object.keys(ddBaselineHealth().signals || {})" :key="signal">
+                    <div>
+                      <div class="flex justify-between mb-0.5">
+                        <span class="text-gray-500" x-text="signal"></span>
+                        <span class="text-white num">
+                          <span x-text="(ddBaselineHealth().signals[signal]?.ema || 0).toFixed(3)"></span>
+                          <span class="text-gray-600 mx-0.5">vs</span>
+                          <span x-text="(ddBaselineHealth().signals[signal]?.current || 0).toFixed(3)"></span>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+                  <div x-show="!ddBaselineHealth().signals" class="text-gray-600">No baseline data</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 4: INTELLIGENCE ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('intelligence')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Intelligence</span>
+            <i :data-lucide="ddSections.intelligence ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.intelligence" class="px-4 pb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Predictions -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Predictions</div>
+                <template x-if="ddPredictions.will_escalate != null">
+                  <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Will Escalate</span>
+                      <span :class="ddPredictions.will_escalate ? 'text-soma-error font-bold' : 'text-soma-success'"
+                            x-text="ddPredictions.will_escalate ? 'YES' : 'No'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Confidence</span>
+                      <span class="text-white num" x-text="pctFmt(ddPredictions.confidence)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Dominant Reason</span>
+                      <span class="text-gray-300" x-text="ddPredictions.dominant_reason || '--'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Actions Ahead</span>
+                      <span class="text-white num" x-text="ddPredictions.actions_ahead || '--'"></span>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="ddPredictions.will_escalate == null">
+                  <div class="text-xs text-gray-600">No prediction data</div>
+                </template>
+              </div>
+              <!-- Fingerprint -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Fingerprint</div>
+                <template x-if="ddFingerprint.divergence != null">
+                  <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Divergence</span>
+                      <span class="num" :style="'color:' + pressureColor(ddFingerprint.divergence || 0)"
+                            x-text="(ddFingerprint.divergence * 100).toFixed(1) + '%'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Read/Write Ratio</span>
+                      <span class="text-white num" x-text="(ddFingerprint.read_write_ratio || 0).toFixed(2)"></span>
+                    </div>
+                    <!-- Tool distribution comparison -->
+                    <div x-show="ddFingerprint.tool_distribution" class="mt-2">
+                      <div class="text-[10px] text-gray-500 mb-1">Tool Distribution (current vs historical)</div>
+                      <template x-for="tool in Object.keys(ddFingerprint.tool_distribution || {})" :key="tool">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-gray-500 w-16 text-[10px] truncate" x-text="tool"></span>
+                          <div class="flex-1 flex gap-1 items-center h-3">
+                            <div class="h-[5px] bg-soma-pink/60 rounded-full"
+                                 :style="'width:' + ((ddFingerprint.tool_distribution[tool]?.current || 0) * 100) + '%'"></div>
+                            <div class="h-[5px] bg-white/10 rounded-full"
+                                 :style="'width:' + ((ddFingerprint.tool_distribution[tool]?.historical || 0) * 100) + '%'"></div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="ddFingerprint.divergence == null">
+                  <div class="text-xs text-gray-600">No fingerprint data</div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 5: REFLEXES & RCA ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('reflexes')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Reflexes & RCA</span>
+            <span class="flex items-center gap-2">
+              <span x-show="ddReflexes.length > 0" class="text-[9px] text-soma-warning num" x-text="ddReflexes.length + ' triggers'"></span>
+              <i :data-lucide="ddSections.reflexes ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+            </span>
+          </button>
+          <div x-show="ddSections.reflexes" class="px-4 pb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Reflex timeline -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Reflex Timeline</div>
+                <div x-show="ddReflexes.length > 0" class="space-y-1.5 max-h-48 overflow-y-auto">
+                  <template x-for="(r, i) in ddReflexes" :key="i">
+                    <div class="flex items-center gap-2 text-[11px] px-2 py-1.5 rounded bg-white/[0.02]">
+                      <span class="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                            :class="r.action === 'block' ? 'bg-soma-error' : 'bg-soma-warning'"></span>
+                      <span class="text-gray-400 font-bold" x-text="r.kind || 'reflex'"></span>
+                      <span class="text-gray-600" x-text="r.action === 'block' ? 'BLOCKED' : 'injected'"></span>
+                      <span x-show="r.overridden" class="text-soma-pink text-[9px]">overridden</span>
+                      <span class="text-gray-600 ml-auto text-[10px] num" x-text="r.timestamp || ''"></span>
+                    </div>
+                  </template>
+                </div>
+                <div x-show="ddReflexes.length === 0" class="text-xs text-gray-600">No reflex triggers</div>
+              </div>
+              <!-- RCA -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Root Cause Analysis</div>
+                <template x-if="ddRCA.current || ddRCA.diagnosis">
+                  <div class="space-y-2">
+                    <div class="text-xs text-soma-warning px-3 py-2 rounded bg-soma-warning/10 border border-soma-warning/20"
+                         x-text="ddRCA.current || ddRCA.diagnosis"></div>
+                    <div x-show="ddRCA.history && ddRCA.history.length > 0">
+                      <div class="text-[10px] text-gray-500 mb-1">History</div>
+                      <template x-for="(h, i) in (ddRCA.history || [])" :key="i">
+                        <div class="text-[11px] text-gray-500 py-0.5" x-text="h.diagnosis || h"></div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!ddRCA.current || ddRCA.diagnosis">
+                  <div class="text-xs text-gray-600">No diagnosis</div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 6: MIRROR & CONTEXT ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('mirror')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Mirror & Context</span>
+            <i :data-lucide="ddSections.mirror ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.mirror" class="px-4 pb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Mirror system -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Mirror System</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Injection Effectiveness</span>
+                    <span class="text-white num" x-text="pctFmt(ddMirror.effectiveness)"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Semantic Calls</span>
+                    <span class="text-white num" x-text="ddMirror.semantic_call_count || '--'"></span>
+                  </div>
+                  <div x-show="ddMirror.patterns && ddMirror.patterns.length > 0" class="mt-2">
+                    <div class="text-[10px] text-gray-500 mb-1">Top Patterns</div>
+                    <template x-for="(p, i) in (Array.isArray(ddMirror.patterns) ? ddMirror.patterns : Object.entries(ddMirror.patterns || {}).map(([k,v]) => ({name:k,...(typeof v==='object'?v:{count:v})}))).slice(0, 5)" :key="i">
+                      <div class="flex justify-between text-[11px] py-0.5">
+                        <span class="text-gray-400 truncate max-w-[60%]" x-text="p.name || p.pattern"></span>
+                        <span class="text-gray-500 num" x-text="pctFmt(p.success_rate)"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div x-show="ddMirror.effectiveness == null && ddMirror.total_injections == null && (!ddMirror.patterns || Object.keys(ddMirror.patterns).length === 0)" class="text-gray-600">No mirror data</div>
+                </div>
+              </div>
+              <!-- Context control -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Context Control</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Message Retention</span>
+                    <span class="text-white num" x-text="(ddContext.retention_pct != null ? ddContext.retention_pct + '%' : '--')"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Context Reductions</span>
+                    <span class="text-white num" x-text="ddContext.reduction_events || '--'"></span>
+                  </div>
+                  <div x-show="ddContext.available_tools" class="mt-2">
+                    <div class="text-[10px] text-gray-500 mb-1">Available Tools at Current Mode</div>
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="tool in (ddContext.available_tools || [])" :key="tool">
+                        <span class="text-[9px] bg-white/5 px-1.5 py-0.5 rounded text-gray-400" x-text="tool"></span>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="!ddContext.retention_pct && !ddContext.available_tools" class="text-gray-600">No context data</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 7: SESSION MEMORY & SCOPE ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('session')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Session Memory & Scope</span>
+            <i :data-lucide="ddSections.session ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.session" class="px-4 pb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Session memory -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Session Memory</div>
+                <template x-if="ddSessionMemory.matched_session">
+                  <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Matched Session</span>
+                      <span class="text-gray-300" x-text="ddSessionMemory.matched_session"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Similarity</span>
+                      <span class="text-white num" x-text="pctFmt(ddSessionMemory.similarity)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Outcome</span>
+                      <span class="text-gray-300" x-text="ddSessionMemory.outcome || '--'"></span>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!ddSessionMemory.matched_session">
+                  <div class="text-xs text-gray-600">No similar session found</div>
+                </template>
+              </div>
+              <!-- Scope drift -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Scope Drift</div>
+                <template x-if="ddScope.drift_score != null">
+                  <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Drift Score</span>
+                      <span class="num" :style="'color:' + pressureColor(ddScope.drift_score || 0)"
+                            x-text="pctFmt(ddScope.drift_score)"></span>
+                    </div>
+                    <div x-show="ddScope.drift_explanation" class="text-gray-400 text-[11px]" x-text="ddScope.drift_explanation"></div>
+                    <div x-show="ddScope.focus_files && ddScope.focus_files.length > 0" class="mt-1">
+                      <div class="text-[10px] text-gray-500 mb-0.5">Focus Files</div>
+                      <template x-for="f in (ddScope.focus_files || []).slice(0, 5)" :key="f">
+                        <div class="text-[10px] text-gray-400 path-truncate" :title="f" x-text="f"></div>
+                      </template>
+                    </div>
+                    <div x-show="ddScope.focus_dirs && ddScope.focus_dirs.length > 0" class="mt-1">
+                      <div class="text-[10px] text-gray-500 mb-0.5">Focus Dirs</div>
+                      <template x-for="d in (ddScope.focus_dirs || []).slice(0, 5)" :key="d">
+                        <div class="text-[10px] text-gray-400 path-truncate" :title="d" x-text="d"></div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="ddScope.drift_score == null">
+                  <div class="text-xs text-gray-600">No scope data</div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 8: GRAPH ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('graph'); $nextTick(() => { if (ddSections.graph) _ddRenderGraph(); })"
+                  class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Agent Graph</span>
+            <i :data-lucide="ddSections.graph ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.graph" class="px-4 pb-4">
+            <div x-show="agents && agents.length > 1">
+              <div class="text-[10px] text-gray-500 mb-2">Drag nodes to rearrange. Double-click a node to select that agent.</div>
+              <canvas id="dd-graph-canvas" class="graph-canvas"></canvas>
+            </div>
+            <div x-show="!agents || agents.length <= 1" class="text-xs text-gray-600 py-4 text-center">
+              Graph requires multiple agents.
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 9: SUBAGENTS ==================== -->
+        <section class="soma-card" x-show="ddHasSubagents()">
+          <button @click="ddToggle('subagents')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">Subagents</span>
+            <span class="flex items-center gap-2">
+              <span class="text-[9px] num" :style="'color:' + pressureColor(ddSubagents.cascade_risk || 0)"
+                    x-text="'Cascade: ' + ((ddSubagents.cascade_risk || 0) * 100).toFixed(0) + '%'"></span>
+              <i :data-lucide="ddSections.subagents ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+            </span>
+          </button>
+          <div x-show="ddSections.subagents" class="px-4 pb-4">
+            <!-- Cascade risk gauge -->
+            <div class="mb-3">
+              <div class="text-[10px] text-gray-500 uppercase mb-1">Cascade Risk</div>
+              <div class="h-2 bg-white/5 rounded-full overflow-hidden w-48">
+                <div class="h-full pressure-bar-gradient rounded-full transition-all duration-300"
+                     :style="'width:' + ((ddSubagents.cascade_risk || 0) * 100) + '%'"></div>
+              </div>
+            </div>
+            <!-- Subagent matrix table -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-gray-500 text-[10px] uppercase border-b border-soma-border">
+                    <th class="text-left py-1.5 px-2">ID</th>
+                    <th class="text-right py-1.5 px-2">Actions</th>
+                    <th class="text-right py-1.5 px-2">Errors</th>
+                    <th class="text-right py-1.5 px-2">Error Rate</th>
+                    <th class="text-left py-1.5 px-2">Top Tool</th>
+                    <th class="text-right py-1.5 px-2">Pressure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="sub in ddSubagents.subagents" :key="sub.agent_id">
+                    <tr class="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                      <td class="py-1.5 px-2 text-gray-300" x-text="stripPrefix(sub.agent_id)"></td>
+                      <td class="py-1.5 px-2 text-right num" x-text="sub.action_count || 0"></td>
+                      <td class="py-1.5 px-2 text-right num" x-text="sub.error_count || 0"></td>
+                      <td class="py-1.5 px-2 text-right num" x-text="pctFmt(sub.error_rate)"></td>
+                      <td class="py-1.5 px-2 text-gray-400" x-text="sub.top_tool || '--'"></td>
+                      <td class="py-1.5 px-2 text-right num" :style="'color:' + pressureColor(sub.pressure || 0)" x-text="pctFmt(sub.pressure)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== ROW 10: HISTORY ==================== -->
+        <section class="soma-card">
+          <button @click="ddToggle('history')" class="w-full flex items-center justify-between px-4 py-2.5 text-left">
+            <span class="text-xs font-bold text-soma-pink uppercase tracking-wider">History</span>
+            <i :data-lucide="ddSections.history ? 'chevron-up' : 'chevron-down'" class="w-3.5 h-3.5 text-gray-500"></i>
+          </button>
+          <div x-show="ddSections.history" class="px-4 pb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <!-- Intervention history -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Intervention History</div>
+                <div x-show="ddInterventionHistory().length > 0" class="space-y-1 max-h-64 overflow-y-auto">
+                  <template x-for="(iv, i) in ddInterventionHistory()" :key="i">
+                    <div class="flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-white/[0.02]">
+                      <span class="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                            :class="iv.outcome === 'success' ? 'bg-soma-success' : iv.outcome === 'failure' ? 'bg-soma-error' : 'bg-gray-500'"></span>
+                      <span class="text-gray-400" x-text="(iv.from_mode || '?') + ' -> ' + (iv.to_mode || '?')"></span>
+                      <span class="text-gray-600 ml-auto text-[10px] num" x-text="iv.timestamp || ''"></span>
+                    </div>
+                  </template>
+                </div>
+                <div x-show="ddInterventionHistory().length === 0" class="text-xs text-gray-600">No interventions</div>
+              </div>
+              <!-- Actions feed -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Recent Actions (last 20)</div>
+                <div x-show="ddRecentActions().length > 0" class="space-y-0.5 max-h-64 overflow-y-auto">
+                  <template x-for="(act, i) in ddRecentActions()" :key="i">
+                    <div class="flex items-center gap-2 text-[11px] px-2 py-1 rounded"
+                         :class="act.error ? 'bg-soma-error/5 border-l-2 border-soma-error' : 'bg-white/[0.02]'">
+                      <span class="text-gray-400 font-bold w-14 flex-shrink-0 truncate" x-text="act.tool_name || act.tool || '--'"></span>
+                      <span class="text-gray-500 path-truncate flex-1" :title="act.file || ''" x-text="act.file || ''"></span>
+                      <span x-show="act.error" class="text-soma-error text-[9px]">ERR</span>
+                      <span class="text-gray-600 text-[10px] num flex-shrink-0" x-text="act.timestamp || ''"></span>
+                    </div>
+                  </template>
+                </div>
+                <div x-show="ddRecentActions().length === 0" class="text-xs text-gray-600">No actions recorded</div>
+              </div>
+              <!-- Context burn -->
+              <div>
+                <div class="text-[10px] text-gray-500 uppercase mb-2">Context Burn</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Burn Rate</span>
+                    <span class="text-white num" x-text="ddContextBurn().burn_rate != null ? ddContextBurn().burn_rate.toFixed(1) + '/action' : '--'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Remaining Estimate</span>
+                    <span class="text-white num" x-text="ddContextBurn().remaining_estimate != null ? ddContextBurn().remaining_estimate + ' tokens' : '--'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Trend</span>
+                    <span :class="(ddContextBurn().trend || '') === 'increasing' ? 'text-soma-error' : (ddContextBurn().trend || '') === 'decreasing' ? 'text-soma-success' : 'text-gray-400'"
+                          x-text="ddContextBurn().trend || '--'"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /agent content -->
+    </div>
+    <!-- ============================================================ -->
+    <!-- Tab 3: Settings                                              -->
+    <!-- ============================================================ -->
+    <div x-show="activeTab === 'settings'" x-transition id="tab-settings"
+         x-init="$watch('activeTab', v => { if (v === 'settings') loadSettingsTab(); })">
+
+      <template x-if="settingsLoading">
+        <div class="empty-state py-12">Loading settings...</div>
+      </template>
+
+      <template x-if="!settingsLoading">
+        <div class="flex flex-col md:flex-row gap-4 min-h-[600px]">
+          <!-- Vertical sub-tab nav (desktop) / horizontal scroll (mobile) -->
+          <nav class="shrink-0 w-full md:w-48 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0 border-b md:border-b-0 md:border-r border-soma-border pr-0 md:pr-3">
+            <template x-for="st in settingsSubTabs" :key="st.id">
+              <button @click="settingsSubTab = st.id; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); })"
+                      :class="settingsSubTab === st.id ? 'bg-white/5 text-soma-pink border-soma-pink' : 'text-gray-500 border-transparent hover:text-gray-400 hover:bg-white/[0.02]'"
+                      class="flex items-center gap-2 px-3 py-2 text-xs whitespace-nowrap rounded-md md:rounded-none md:rounded-l-md border-l-2 transition-colors min-h-[36px]">
+                <i :data-lucide="st.icon" class="w-3.5 h-3.5"></i>
+                <span x-text="st.label"></span>
+              </button>
+            </template>
+          </nav>
+
+          <!-- Sub-tab content -->
+          <div class="flex-1 min-w-0">
+
+            <!-- ===== Mode ===== -->
+            <div x-show="settingsSubTab === 'mode'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">SOMA Mode</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('mode')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('mode')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <template x-for="m in ['reflex', 'advisory', 'strict']" :key="m">
+                  <button @click="settingsMode = m"
+                          :class="settingsMode === m ? 'border-soma-pink bg-[rgba(255,45,120,0.08)]' : 'border-soma-border hover:border-gray-600'"
+                          class="soma-card p-4 text-left cursor-pointer transition-all">
+                    <div class="text-sm font-semibold capitalize" :class="settingsMode === m ? 'text-soma-pink' : 'text-white'" x-text="m"></div>
+                    <div class="text-[11px] text-gray-500 mt-1">
+                      <span x-show="m === 'reflex'">Auto-correct common mistakes silently</span>
+                      <span x-show="m === 'advisory'">Suggest corrections, agent decides</span>
+                      <span x-show="m === 'strict'">Block risky actions, require confirmation</span>
+                    </div>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- ===== Thresholds ===== -->
+            <div x-show="settingsSubTab === 'thresholds'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Pressure Thresholds</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('thresholds')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('thresholds')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <!-- Visual zone bar -->
+              <div class="h-6 rounded-full overflow-hidden flex text-[9px] font-bold text-center leading-6">
+                <div class="bg-[rgba(0,255,136,0.25)] text-soma-success" :style="'width:' + (settingsThresholds.guide * 100) + '%'">OBSERVE</div>
+                <div class="bg-[rgba(255,170,0,0.25)] text-soma-warning" :style="'width:' + ((settingsThresholds.warn - settingsThresholds.guide) * 100) + '%'">GUIDE</div>
+                <div class="bg-[rgba(255,140,0,0.25)] text-soma-orange" :style="'width:' + ((settingsThresholds.block - settingsThresholds.warn) * 100) + '%'">WARN</div>
+                <div class="bg-[rgba(255,68,68,0.25)] text-soma-error" :style="'width:' + ((1 - settingsThresholds.block) * 100) + '%'">BLOCK</div>
+              </div>
+              <template x-for="key in ['guide', 'warn', 'block']" :key="key">
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400 capitalize" x-text="key"></span>
+                    <span class="text-white num" x-text="settingsThresholds[key].toFixed(2)"></span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.01" x-model.number="settingsThresholds[key]">
+                  <div class="text-[10px] text-gray-600" x-text="thresholdZoneLabel(settingsThresholds[key])"></div>
+                </div>
+              </template>
+            </div>
+
+            <!-- ===== Weights ===== -->
+            <div x-show="settingsSubTab === 'weights'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Signal Weights</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('weights')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('weights')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <template x-for="key in Object.keys(settingsWeights)" :key="key">
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400" x-text="key.replace('_', ' ')"></span>
+                    <span class="text-white num" x-text="settingsWeights[key].toFixed(2)"></span>
+                  </div>
+                  <input type="range" min="0" max="2" step="0.05" x-model.number="settingsWeights[key]">
+                </div>
+              </template>
+            </div>
+
+            <!-- ===== Budget ===== -->
+            <div x-show="settingsSubTab === 'budget'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Budget Limits</h3>
+                <div class="flex gap-2">
+                  <button @click="resetBudget()" class="text-[10px] text-soma-error hover:text-red-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset Spent</button>
+                  <button @click="resetDefaults('budget')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Defaults</button>
+                  <button @click="saveSettings('budget')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="soma-card p-4 space-y-3">
+                  <div class="text-xs text-gray-400">Token Budget</div>
+                  <input type="number" x-model.number="settingsBudget.tokens"
+                         class="w-full bg-soma-bg border border-soma-border rounded-md px-3 text-sm text-white touch-input num">
+                  <div class="flex justify-between text-[11px]">
+                    <span class="text-gray-500">Spent</span>
+                    <span class="text-white num" x-text="settingsBudgetSpent.tokens.toLocaleString()"></span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div class="h-full bg-soma-pink rounded-full transition-all" :style="'width:' + Math.min(100, (settingsBudgetSpent.tokens / Math.max(1, settingsBudget.tokens)) * 100) + '%'"></div>
+                  </div>
+                </div>
+                <div class="soma-card p-4 space-y-3">
+                  <div class="text-xs text-gray-400">Cost Budget (USD)</div>
+                  <input type="number" x-model.number="settingsBudget.cost_usd" step="0.01"
+                         class="w-full bg-soma-bg border border-soma-border rounded-md px-3 text-sm text-white touch-input num">
+                  <div class="flex justify-between text-[11px]">
+                    <span class="text-gray-500">Spent</span>
+                    <span class="text-white num" x-text="'$' + settingsBudgetSpent.cost_usd.toFixed(2)"></span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div class="h-full bg-soma-pink rounded-full transition-all" :style="'width:' + Math.min(100, (settingsBudgetSpent.cost_usd / Math.max(0.01, settingsBudget.cost_usd)) * 100) + '%'"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ===== Graph ===== -->
+            <div x-show="settingsSubTab === 'graph'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Graph Parameters</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('graph')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('graph')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <template x-for="key in Object.keys(settingsGraph)" :key="key">
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400" x-text="key.replace(/_/g, ' ')"></span>
+                    <span class="text-white num" x-text="settingsGraph[key].toFixed(3)"></span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.005" x-model.number="settingsGraph[key]">
+                </div>
+              </template>
+            </div>
+
+            <!-- ===== Vitals ===== -->
+            <div x-show="settingsSubTab === 'vitals'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Vitals Parameters</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('vitals')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('vitals')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <div class="space-y-3">
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Goal coherence threshold</span>
+                    <span class="text-white num" x-text="settingsVitals.goal_coherence_threshold.toFixed(2)"></span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.01" x-model.number="settingsVitals.goal_coherence_threshold">
+                </div>
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Warmup actions</span>
+                    <span class="text-white num" x-text="settingsVitals.warmup"></span>
+                  </div>
+                  <input type="range" min="1" max="20" step="1" x-model.number="settingsVitals.warmup">
+                </div>
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Error ratio</span>
+                    <span class="text-white num" x-text="settingsVitals.error_ratio.toFixed(2)"></span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.01" x-model.number="settingsVitals.error_ratio">
+                </div>
+                <div class="space-y-1">
+                  <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Min samples</span>
+                    <span class="text-white num" x-text="settingsVitals.min_samples"></span>
+                  </div>
+                  <input type="range" min="1" max="20" step="1" x-model.number="settingsVitals.min_samples">
+                </div>
+              </div>
+            </div>
+
+            <!-- ===== Hooks ===== -->
+            <div x-show="settingsSubTab === 'hooks'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Feature Toggles</h3>
+                <div class="flex gap-2">
+                  <button @click="resetDefaults('hooks')" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Reset</button>
+                  <button @click="saveSettings('hooks')" :disabled="settingsSaving"
+                          class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <template x-for="key in Object.keys(settingsHooks)" :key="key">
+                  <div class="flex items-center justify-between py-2 border-b border-soma-border">
+                    <span class="text-xs text-gray-400" x-text="key.replace(/_/g, ' ')"></span>
+                    <div @click="settingsHooks[key] = !settingsHooks[key]"
+                         :class="settingsHooks[key] ? 'active' : 'inactive'"
+                         class="toggle-switch" role="switch"
+                         :aria-checked="String(settingsHooks[key])"
+                         :aria-label="key"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- ===== Agents ===== -->
+            <div x-show="settingsSubTab === 'agents'" class="space-y-4">
+              <h3 class="text-sm font-semibold text-white">Per-Agent Configuration</h3>
+              <template x-if="settingsAgents.length === 0">
+                <div class="empty-state">No agents registered. Agents appear here after running <code class="text-soma-pink">soma setup</code>.</div>
+              </template>
+              <template x-for="(agent, idx) in settingsAgents" :key="agent.agent_id">
+                <div class="soma-card p-4 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-white" x-text="agent.agent_id"></span>
+                    <button @click="settingsSelectedAgentIdx = settingsSelectedAgentIdx === idx ? -1 : idx"
+                            class="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">
+                      <span x-text="settingsSelectedAgentIdx === idx ? 'Collapse' : 'Edit'"></span>
+                    </button>
+                  </div>
+                  <div x-show="settingsSelectedAgentIdx === idx" x-transition class="space-y-3 pt-2 border-t border-soma-border">
+                    <div class="space-y-1">
+                      <label class="text-[11px] text-gray-500">Autonomy Mode</label>
+                      <select x-model="agent.autonomy"
+                              class="w-full bg-soma-bg border border-soma-border rounded-md px-3 text-xs text-white touch-input">
+                        <option value="supervised">Supervised</option>
+                        <option value="human_in_the_loop">Human in the Loop</option>
+                        <option value="autonomous">Autonomous</option>
+                      </select>
+                    </div>
+                    <div class="space-y-1">
+                      <div class="flex justify-between text-[11px]">
+                        <span class="text-gray-500">Sensitivity</span>
+                        <span class="text-white num" x-text="agent.sensitivity.toFixed(2)"></span>
+                      </div>
+                      <input type="range" min="0.1" max="3.0" step="0.1" x-model.number="agent.sensitivity">
+                    </div>
+                    <div class="space-y-1">
+                      <label class="text-[11px] text-gray-500">Allowed tools (comma-separated)</label>
+                      <input type="text" x-model="agent.tools"
+                             class="w-full bg-soma-bg border border-soma-border rounded-md px-3 py-2 text-xs text-white"
+                             placeholder="Bash, Edit, Write, ...">
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- ===== Policies ===== -->
+            <div x-show="settingsSubTab === 'policies'" class="space-y-4">
+              <h3 class="text-sm font-semibold text-white">Policy Rules</h3>
+              <template x-if="settingsPolicies.length === 0">
+                <div class="empty-state">No policies configured. Add rules to automate SOMA responses.</div>
+              </template>
+              <div class="space-y-2">
+                <template x-for="(policy, idx) in settingsPolicies" :key="policy.name || idx">
+                  <div class="soma-card p-3 flex items-start gap-3">
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs font-bold text-white" x-text="policy.name || 'Rule ' + (idx + 1)"></div>
+                      <div class="text-[11px] text-gray-500 mt-1" x-show="policy.condition">
+                        <span class="text-gray-400">if</span> <span x-text="policy.condition"></span>
+                      </div>
+                      <div class="text-[11px] text-gray-500" x-show="policy.action">
+                        <span class="text-gray-400">then</span> <span x-text="policy.action"></span>
+                      </div>
+                    </div>
+                    <button @click="deletePolicy(policy.name)"
+                            class="text-soma-error hover:text-red-300 text-xs shrink-0 p-1 min-w-[28px] min-h-[28px] flex items-center justify-center"
+                            title="Delete rule">&times;</button>
+                  </div>
+                </template>
+              </div>
+              <!-- Add new policy -->
+              <div class="soma-card p-4 space-y-3" style="border-style:dashed">
+                <div class="text-xs font-semibold text-gray-400">Add New Rule</div>
+                <input type="text" x-model="settingsNewPolicyName" placeholder="Rule name"
+                       class="w-full bg-soma-bg border border-soma-border rounded-md px-3 py-2 text-xs text-white">
+                <input type="text" x-model="settingsNewPolicyCondition" placeholder="Condition (e.g., pressure > 0.8)"
+                       class="w-full bg-soma-bg border border-soma-border rounded-md px-3 py-2 text-xs text-white">
+                <input type="text" x-model="settingsNewPolicyAction" placeholder="Action (e.g., block, warn, notify)"
+                       class="w-full bg-soma-bg border border-soma-border rounded-md px-3 py-2 text-xs text-white">
+                <button @click="addPolicy()" :disabled="!settingsNewPolicyName.trim()"
+                        class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1.5 rounded transition-colors disabled:opacity-40">Add Rule</button>
+              </div>
+            </div>
+
+            <!-- ===== Raw TOML ===== -->
+            <div x-show="settingsSubTab === 'raw'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white">Raw Configuration (TOML)</h3>
+                <button @click="saveRawToml()" :disabled="settingsSaving"
+                        class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40">Save</button>
+              </div>
+              <textarea x-model="rawToml"
+                        class="w-full h-96 bg-soma-bg border border-soma-border rounded-lg p-4 text-xs text-white font-mono resize-y leading-relaxed"
+                        spellcheck="false"
+                        placeholder="# soma.toml configuration will appear here"></textarea>
+            </div>
+
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Tab 4: Logs                                                  -->
+    <!-- ============================================================ -->
+    <div x-show="activeTab === 'logs'" x-transition id="tab-logs"
+         x-init="$watch('activeTab', v => { if (v === 'logs') loadLogsTab(); })">
+
+      <!-- Filters bar -->
+      <div class="soma-card p-3 mb-3 flex flex-wrap items-center gap-3">
+        <!-- Agent filter -->
+        <select x-model="logsAgentFilter" @change="logsPage = 0"
+                class="bg-soma-bg border border-soma-border rounded-md px-3 text-xs text-white touch-input">
+          <option value="">All agents</option>
+          <template x-for="aid in getLogsUniqueAgents()" :key="aid">
+            <option :value="aid" x-text="aid"></option>
+          </template>
+        </select>
+
+        <!-- Text search -->
+        <div class="flex-1 min-w-[160px] max-w-xs relative">
+          <input type="text" x-model="logsTextFilter" @input="logsPage = 0"
+                 placeholder="Search logs..."
+                 class="w-full bg-soma-bg border border-soma-border rounded-md px-3 pl-8 text-xs text-white touch-input">
+          <i data-lucide="search" class="w-3 h-3 text-gray-600 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+        </div>
+
+        <!-- Mode checkboxes -->
+        <div class="flex gap-1.5">
+          <template x-for="m in logsModeOptions" :key="m">
+            <button @click="toggleModeFilter(m)"
+                    :class="isModeActive(m) ? 'border-soma-pink bg-[rgba(255,45,120,0.1)] text-white' : 'border-soma-border text-gray-500 hover:text-gray-300'"
+                    class="text-[10px] px-2 py-1 rounded border transition-colors min-h-[28px]"
+                    x-text="m"></button>
+          </template>
+        </div>
+
+        <!-- Type filters -->
+        <div class="flex gap-1.5">
+          <template x-for="t in logsTypeOptions" :key="t">
+            <button @click="toggleTypeFilter(t)"
+                    :class="isTypeActive(t) ? 'border-soma-pink bg-[rgba(255,45,120,0.1)] text-white' : 'border-soma-border text-gray-500 hover:text-gray-300'"
+                    class="text-[10px] px-2 py-1 rounded border transition-colors min-h-[28px]"
+                    x-text="t"></button>
+          </template>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2 ml-auto">
+          <button @click="clearLogsFilters()" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors">Clear</button>
+          <button @click="exportLogsCSV()" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors flex items-center gap-1">
+            <i data-lucide="download" class="w-3 h-3"></i> CSV
+          </button>
+          <button @click="loadLogsTab()" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading state -->
+      <template x-if="logsLoading">
+        <div class="empty-state py-8">Loading logs...</div>
+      </template>
+
+      <!-- Empty state -->
+      <template x-if="!logsLoading && getFilteredLogs().length === 0">
+        <div class="empty-state py-12">
+          <i data-lucide="file-text" class="w-8 h-8 mx-auto mb-3 text-gray-700"></i>
+          <div>No log entries. Actions will appear here as agents work.</div>
+        </div>
+      </template>
+
+      <!-- Table -->
+      <template x-if="!logsLoading && getFilteredLogs().length > 0">
+        <div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[900px]" role="table" aria-label="Audit logs">
+              <thead>
+                <tr class="text-[11px] text-gray-500 uppercase border-b border-soma-border">
+                  <th @click="sortLogs('timestamp')" class="text-left px-3 py-2 cursor-pointer hover:text-gray-300 transition-colors">
+                    Time <span class="text-[9px]" x-text="sortIcon('timestamp')"></span>
+                  </th>
+                  <th @click="sortLogs('agent_id')" class="text-left px-3 py-2 cursor-pointer hover:text-gray-300 transition-colors">
+                    Agent <span class="text-[9px]" x-text="sortIcon('agent_id')"></span>
+                  </th>
+                  <th @click="sortLogs('tool_name')" class="text-left px-3 py-2 cursor-pointer hover:text-gray-300 transition-colors">
+                    Tool <span class="text-[9px]" x-text="sortIcon('tool_name')"></span>
+                  </th>
+                  <th class="text-left px-3 py-2">File</th>
+                  <th @click="sortLogs('pressure')" class="text-right px-3 py-2 cursor-pointer hover:text-gray-300 transition-colors">
+                    Pressure <span class="text-[9px]" x-text="sortIcon('pressure')"></span>
+                  </th>
+                  <th class="text-center px-3 py-2">Mode</th>
+                  <th class="text-left px-3 py-2">Error</th>
+                  <th class="text-left px-3 py-2">Reflex</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(entry, idx) in getPagedLogs()" :key="entry.timestamp || idx">
+                  <tr :class="logRowClass(entry)" :style="'background:' + logRowBg(entry, idx)">
+                    <td class="px-3 py-1.5 text-gray-400 whitespace-nowrap num" x-text="entry.time_fmt || '--'"></td>
+                    <td class="px-3 py-1.5 text-ellipsis overflow-hidden max-w-[120px]" :title="entry.agent_id">
+                      <button @click="switchTab('deep-dive'); $nextTick(() => ddSelectAgent(entry.agent_id))" class="text-soma-pink hover:text-soma-pink-light hover:underline transition" x-text="stripPrefix(entry.agent_id)"></button>
+                    </td>
+                    <td class="px-3 py-1.5 text-gray-300" x-text="entry.tool_name || entry.tool || '--'"></td>
+                    <td class="px-3 py-1.5">
+                      <span class="path-truncate text-gray-500" :title="entry.file || entry.path || ''" x-text="entry.file || entry.path || '--'"></span>
+                    </td>
+                    <td class="px-3 py-1.5 text-right num" :style="'color:' + pressureColor(entry.pressure || 0)" x-text="entry.pressure != null ? (entry.pressure * 100).toFixed(1) + '%' : '--'"></td>
+                    <td class="px-3 py-1.5 text-center">
+                      <span :class="modeBadgeClass(entry.mode || entry.level)"
+                            class="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+                            x-text="modeLabel(entry.mode || entry.level)"></span>
+                    </td>
+                    <td class="px-3 py-1.5 text-soma-error text-ellipsis overflow-hidden max-w-[150px]" :title="entry.error || ''" x-text="entry.error || ''"></td>
+                    <td class="px-3 py-1.5 text-gray-400" x-text="entry.reflex_kind || ''"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
+            <span x-text="getFilteredLogs().length + ' entries'"></span>
+            <div class="flex items-center gap-2">
+              <button @click="logsPrevPage()" :disabled="logsPage === 0"
+                      class="px-2 py-1 border border-soma-border rounded hover:text-gray-300 disabled:opacity-30 transition-colors">&laquo;</button>
+              <span class="num" x-text="(logsPage + 1) + ' / ' + getLogsTotalPages()"></span>
+              <button @click="logsNextPage()" :disabled="logsPage >= getLogsTotalPages() - 1"
+                      class="px-2 py-1 border border-soma-border rounded hover:text-gray-300 disabled:opacity-30 transition-colors">&raquo;</button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Tab 5: Sessions                                              -->
+    <!-- ============================================================ -->
+    <div x-show="activeTab === 'sessions'" x-transition id="tab-sessions"
+         x-init="$watch('activeTab', v => { if (v === 'sessions') loadSessionsTab(); })">
+
+      <!-- List view -->
+      <div x-show="sessionsView === 'list'">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-white">Session History</h2>
+          <button @click="loadSessionsTab()" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Refresh
+          </button>
+        </div>
+
+        <template x-if="sessionsLoading">
+          <div class="empty-state py-8">Loading sessions...</div>
+        </template>
+
+        <template x-if="!sessionsLoading && sessionsList.length === 0">
+          <div class="empty-state py-12">
+            <i data-lucide="clock" class="w-8 h-8 mx-auto mb-3 text-gray-700"></i>
+            <div>No past sessions. Session data is saved after each agent run.</div>
+          </div>
+        </template>
+
+        <template x-if="!sessionsLoading && sessionsList.length > 0">
+          <div>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[800px]" role="table" aria-label="Session history">
+                <thead>
+                  <tr class="text-[11px] text-gray-500 uppercase border-b border-soma-border">
+                    <th @click="sortSessions('agent_id')" class="text-left px-3 py-2 cursor-pointer hover:text-gray-300">
+                      Agent <span class="text-[9px]" x-text="sessionSortIcon('agent_id')"></span>
+                    </th>
+                    <th @click="sortSessions('action_count')" class="text-right px-3 py-2 cursor-pointer hover:text-gray-300">
+                      Actions <span class="text-[9px]" x-text="sessionSortIcon('action_count')"></span>
+                    </th>
+                    <th class="text-right px-3 py-2">Duration</th>
+                    <th @click="sortSessions('max_pressure')" class="text-right px-3 py-2 cursor-pointer hover:text-gray-300">
+                      Max P <span class="text-[9px]" x-text="sessionSortIcon('max_pressure')"></span>
+                    </th>
+                    <th class="text-right px-3 py-2">Quality</th>
+                    <th class="text-center px-3 py-2">Transitions</th>
+                    <th class="text-left px-3 py-2">Phases</th>
+                    <th class="text-center px-3 py-2">Replay</th>
+                    <th class="text-right px-3 py-2">Started</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(s, idx) in sortedSessions" :key="s.session_id || s.agent_id || idx">
+                    <tr @click="loadSessionDetail(s)"
+                        class="h-9 text-xs border-b border-soma-border hover:bg-white/5 cursor-pointer transition-colors"
+                        :style="idx % 2 === 0 ? '' : 'background:rgba(255,255,255,0.02)'">
+                      <td class="px-3 py-1.5 text-white font-semibold" x-text="stripPrefix(s.agent_id || s.session_id || '')"></td>
+                      <td class="px-3 py-1.5 text-right num text-gray-300" x-text="s.action_count || 0"></td>
+                      <td class="px-3 py-1.5 text-right num text-gray-400" x-text="s.duration_fmt || '--'"></td>
+                      <td class="px-3 py-1.5 text-right num" :style="'color:' + pressureColor(s.max_pressure || 0)" x-text="s.max_pressure_pct != null ? s.max_pressure_pct + '%' : '--'"></td>
+                      <td class="px-3 py-1.5 text-right num" :style="'color:' + qualityColor(s.quality_score)">
+                        <span x-text="s.quality_score != null ? s.quality_score : '--'"></span>
+                      </td>
+                      <td class="px-3 py-1.5 text-center num text-gray-400" x-text="modeTransitions(s)"></td>
+                      <td class="px-3 py-1.5">
+                        <div class="flex gap-0.5">
+                          <template x-for="(block, bi) in phaseSequenceBlocks(s)" :key="bi">
+                            <span :style="'background:' + block.color" class="inline-block w-5 h-3 rounded-sm text-[7px] text-center leading-3 text-black font-bold" :title="block.label" x-text="block.label"></span>
+                          </template>
+                          <span x-show="phaseSequenceBlocks(s).length === 0" class="text-gray-600">--</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-1.5 text-center">
+                        <span x-show="hasReplay(s)" class="text-soma-success text-[10px]">&#9654;</span>
+                        <span x-show="!hasReplay(s)" class="text-gray-700">--</span>
+                      </td>
+                      <td class="px-3 py-1.5 text-right text-gray-500 num" x-text="s.started_fmt || '--'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Cross-session trends -->
+            <template x-if="sessionsList.length >= 2">
+              <div class="soma-card p-4 mt-4"
+                   x-init="$nextTick(() => { if (sessionsList.length >= 2) { sessionTrendChart = SOMA.charts.destroyChart(sessionTrendChart); sessionTrendChart = SOMA.charts.createTrendChart('session-trend-chart', sessionsList); } })">
+                <h3 class="text-xs font-semibold text-gray-400 mb-3">Cross-Session Trends</h3>
+                <div class="h-48">
+                  <canvas id="session-trend-chart"></canvas>
+                </div>
               </div>
             </template>
           </div>
+        </template>
+      </div>
 
-          <!-- Footer -->
-          <div class="text-xs text-gray-500 pt-2 border-t border-soma-border">
-            <span x-text="(agent.action_count || 0) + ' actions'"></span>
-            <span class="mx-1">&middot;</span>
-            <span>Quality </span>
-            <span class="font-bold" :class="gradeColor(agent.quality_grade)" x-text="(agent.quality_grade || '--').toString().toUpperCase()"></span>
+      <!-- Detail view -->
+      <div x-show="sessionsView === 'detail'">
+        <div class="flex items-center gap-3 mb-4">
+          <button @click="backToSessionList()" class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors min-w-[44px] min-h-[44px]">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back
+          </button>
+          <h2 class="text-sm font-semibold text-white" x-text="'Session: ' + stripPrefix(selectedSession?.agent_id || selectedSession?.session_id || '')"></h2>
+          <div class="ml-auto flex gap-2">
+            <button @click="exportSessionJSON()" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors flex items-center gap-1">
+              <i data-lucide="download" class="w-3 h-3"></i> Export JSON
+            </button>
           </div>
+        </div>
+
+        <template x-if="sessionDetailLoading">
+          <div class="empty-state py-8">Loading session detail...</div>
+        </template>
+
+        <template x-if="!sessionDetailLoading">
+          <div class="space-y-4">
+            <!-- Summary cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="soma-card p-3 text-center">
+                <div class="text-[10px] text-gray-500 uppercase">Actions</div>
+                <div class="text-lg font-bold text-white num" x-text="selectedSession?.action_count || 0"></div>
+              </div>
+              <div class="soma-card p-3 text-center">
+                <div class="text-[10px] text-gray-500 uppercase">Max Pressure</div>
+                <div class="text-lg font-bold num" :style="'color:' + pressureColor(selectedSession?.max_pressure || 0)" x-text="selectedSession?.max_pressure_pct != null ? selectedSession.max_pressure_pct + '%' : '--'"></div>
+              </div>
+              <div class="soma-card p-3 text-center">
+                <div class="text-[10px] text-gray-500 uppercase">Duration</div>
+                <div class="text-lg font-bold text-white" x-text="selectedSession?.duration_fmt || '--'"></div>
+              </div>
+              <div class="soma-card p-3 text-center">
+                <div class="text-[10px] text-gray-500 uppercase">Quality</div>
+                <div class="text-lg font-bold num" :style="'color:' + qualityColor(selectedSession?.quality_score)" x-text="selectedSession?.quality_score ?? '--'"></div>
+              </div>
+            </div>
+
+            <!-- Pressure chart -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Pressure Trajectory</h3>
+              <div class="h-48">
+                <canvas id="session-pressure-chart"></canvas>
+              </div>
+              <div x-show="!(sessionRecord?.trajectory || sessionRecord?.pressure_trajectory || []).length" class="empty-state py-4">Waiting for trajectory data...</div>
+            </div>
+
+            <!-- Tool distribution + Similar sessions -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="soma-card p-4">
+                <h3 class="text-xs font-semibold text-gray-400 mb-3">Tool Distribution</h3>
+                <div class="h-48">
+                  <canvas id="session-tool-chart"></canvas>
+                </div>
+                <div x-show="!Object.keys(sessionRecord?.tool_distribution || sessionDetail?.tool_distribution || {}).length" class="empty-state py-4">No tool data available.</div>
+              </div>
+
+              <div class="soma-card p-4">
+                <h3 class="text-xs font-semibold text-gray-400 mb-3">Similar Sessions</h3>
+                <template x-if="sessionDetail?.similar_sessions && sessionDetail.similar_sessions.length > 0">
+                  <div class="space-y-2">
+                    <template x-for="(sim, si) in sessionDetail.similar_sessions" :key="si">
+                      <div class="flex justify-between text-xs py-1.5 border-b border-soma-border">
+                        <span class="text-gray-300" x-text="sim.session_id || sim.agent_id || 'Session ' + (si + 1)"></span>
+                        <span class="num text-soma-pink" x-text="((sim.similarity || 0) * 100).toFixed(0) + '% match'"></span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <div x-show="!sessionDetail?.similar_sessions || !sessionDetail?.similar_sessions?.length" class="empty-state py-4">No similar sessions found.</div>
+              </div>
+            </div>
+
+            <!-- Session report -->
+            <div x-show="sessionDetail?.report || sessionDetail?.summary" class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Session Report</h3>
+              <div class="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap" x-text="sessionDetail?.report || sessionDetail?.summary || ''"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Tab 6: Analytics                                             -->
+    <!-- ============================================================ -->
+    <div x-show="activeTab === 'analytics'" x-transition id="tab-analytics"
+         x-init="$watch('activeTab', v => { if (v === 'analytics') loadAnalyticsTab(); })"
+
+      <!-- Agent selector -->
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-sm font-semibold text-white">Analytics</h2>
+        <select x-model="analyticsSelectedAgent" @change="loadAnalyticsTab(analyticsSelectedAgent)"
+                class="bg-soma-bg border border-soma-border rounded-md px-3 text-xs text-white touch-input">
+          <template x-for="a in agents" :key="a.agent_id">
+            <option :value="a.agent_id" x-text="a.agent_id"></option>
+          </template>
+        </select>
+        <button @click="loadAnalyticsTab(analyticsSelectedAgent)" class="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-1 border border-soma-border rounded transition-colors flex items-center gap-1">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+        </button>
+      </div>
+
+      <template x-if="analyticsLoading">
+        <div class="empty-state py-8">Loading analytics...</div>
+      </template>
+
+      <!-- No agents fallback -->
+      <template x-if="!analyticsLoading && (!agents || agents.length === 0)">
+        <div class="empty-state py-12">
+          <i data-lucide="bar-chart-2" class="w-8 h-8 mx-auto mb-3 text-gray-700"></i>
+          <div>Not enough session data for trends. Complete 2+ sessions to unlock.</div>
+        </div>
+      </template>
+
+      <template x-if="!analyticsLoading && agents && agents.length > 0">
+        <div class="space-y-4">
+
+          <!-- Agent Trends -->
+          <div class="soma-card p-4">
+            <h3 class="text-xs font-semibold text-gray-400 mb-3">Agent Trends (across sessions)</h3>
+            <template x-if="analyticsTrends.length >= 2">
+              <div class="h-56">
+                <canvas id="analytics-trend-chart"></canvas>
+              </div>
+            </template>
+            <template x-if="analyticsTrends.length < 2">
+              <div class="empty-state py-4">Need 2+ sessions for trend data.</div>
+            </template>
+          </div>
+
+          <!-- Tool Stats + Mirror effectiveness -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Tool histogram -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Tool Usage Histogram</h3>
+              <template x-if="analyticsTools.length > 0">
+                <div class="h-56">
+                  <canvas id="analytics-tool-chart"></canvas>
+                </div>
+              </template>
+              <template x-if="analyticsTools.length === 0">
+                <div class="empty-state py-4">No tool data available.</div>
+              </template>
+            </div>
+
+            <!-- Mirror effectiveness -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Mirror Effectiveness</h3>
+              <div class="grid grid-cols-3 gap-3 mb-4">
+                <div class="text-center">
+                  <div class="text-[10px] text-gray-500 uppercase">Success Rate</div>
+                  <div class="text-lg font-bold text-soma-pink num" x-text="mirrorEffectiveness()"></div>
+                </div>
+                <div class="text-center">
+                  <div class="text-[10px] text-gray-500 uppercase">Patterns</div>
+                  <div class="text-lg font-bold text-white num" x-text="mirrorPatternCount()"></div>
+                </div>
+                <div class="text-center">
+                  <div class="text-[10px] text-gray-500 uppercase">Pruned</div>
+                  <div class="text-lg font-bold text-gray-400 num" x-text="mirrorPrunedCount()"></div>
+                </div>
+              </div>
+              <template x-if="(analyticsMirror?.effectiveness_history || []).length >= 2">
+                <div class="h-32">
+                  <canvas id="analytics-mirror-chart"></canvas>
+                </div>
+              </template>
+              <template x-if="(analyticsMirror?.effectiveness_history || []).length < 2">
+                <div class="empty-state py-4">Not enough history for chart.</div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Session Comparison + Threshold Performance -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Session comparison picker -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Session Comparison</h3>
+              <div class="flex gap-2 mb-3">
+                <select x-model="analyticsCompareA" class="flex-1 bg-soma-bg border border-soma-border rounded-md px-2 text-xs text-white touch-input">
+                  <option value="">Session A</option>
+                  <template x-for="s in sessionsList" :key="'cmpA-' + (s.session_id || s.agent_id)">
+                    <option :value="s.session_id || s.agent_id" x-text="(s.session_id || s.agent_id || '') + ' (' + (s.duration_fmt || '--') + ')'"></option>
+                  </template>
+                </select>
+                <select x-model="analyticsCompareB" class="flex-1 bg-soma-bg border border-soma-border rounded-md px-2 text-xs text-white touch-input">
+                  <option value="">Session B</option>
+                  <template x-for="s in sessionsList" :key="'cmpB-' + (s.session_id || s.agent_id)">
+                    <option :value="s.session_id || s.agent_id" x-text="(s.session_id || s.agent_id || '') + ' (' + (s.duration_fmt || '--') + ')'"></option>
+                  </template>
+                </select>
+                <button @click="loadComparison()" :disabled="!analyticsCompareA || !analyticsCompareB"
+                        class="text-[10px] bg-soma-pink hover:bg-soma-pink-light text-white px-3 py-1 rounded transition-colors disabled:opacity-40 whitespace-nowrap">Compare</button>
+              </div>
+              <template x-if="analyticsCompareDataA && analyticsCompareDataB">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="text-[11px] text-gray-500 uppercase border-b border-soma-border">
+                      <th class="text-left py-1.5">Metric</th>
+                      <th class="text-right py-1.5">A</th>
+                      <th class="text-right py-1.5">B</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="row in comparisonMetrics()" :key="row.label">
+                      <tr class="border-b border-soma-border">
+                        <td class="py-1.5 text-gray-400" x-text="row.label"></td>
+                        <td class="py-1.5 text-right text-white num" x-text="row.a"></td>
+                        <td class="py-1.5 text-right text-white num" x-text="row.b"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </template>
+              <div x-show="!analyticsCompareDataA || !analyticsCompareDataB" class="empty-state py-4">Select two sessions to compare.</div>
+            </div>
+
+            <!-- Threshold performance -->
+            <div class="soma-card p-4">
+              <h3 class="text-xs font-semibold text-gray-400 mb-3">Threshold Performance</h3>
+              <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="text-center">
+                  <div class="text-[10px] text-gray-500 uppercase">False Positive Rate</div>
+                  <div class="text-lg font-bold text-white num" x-text="thresholdFPR()"></div>
+                </div>
+                <div class="text-center">
+                  <div class="text-[10px] text-gray-500 uppercase">Optimal Guide</div>
+                  <div class="text-lg font-bold text-soma-warning num" x-text="thresholdOptimal()?.guide != null ? thresholdOptimal().guide.toFixed(2) : '--'"></div>
+                </div>
+              </div>
+              <template x-if="thresholdAdjustments().length > 0">
+                <div>
+                  <div class="text-[11px] text-gray-500 mb-2">Adjustment History</div>
+                  <div class="space-y-1 max-h-40 overflow-y-auto">
+                    <template x-for="(adj, ai) in thresholdAdjustments()" :key="ai">
+                      <div class="flex justify-between text-[11px] py-1 border-b border-soma-border">
+                        <span class="text-gray-400" x-text="adj.signal || adj.type || ''"></span>
+                        <span class="num" :class="adj.delta > 0 ? 'text-soma-error' : 'text-soma-success'" x-text="(adj.delta > 0 ? '+' : '') + (adj.delta || 0).toFixed(3)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <template x-if="thresholdAdjustments().length === 0">
+                <div class="empty-state py-4">No threshold adjustments recorded.</div>
+              </template>
+            </div>
+          </div>
+
         </div>
       </template>
     </div>
-  </section>
+  </main>
 
-  <!-- Main Content: Chart + Findings -->
-  <section class="grid grid-cols-1 lg:grid-cols-3 gap-4 px-6">
-
-    <!-- Pressure Chart -->
-    <div class="lg:col-span-2 bg-soma-card rounded-xl p-5 border border-soma-border">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('chart')">
-        <div class="flex items-center gap-2">
-          <i :data-lucide="expandedSections.chart ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
-          <h3 class="text-sm font-semibold text-white">
-            Pressure Trajectory
-            <span x-show="selectedAgent" class="text-gray-400">&mdash; #<span x-text="selectedAgent ? stripPrefix(selectedAgent.agent_id) : ''"></span></span>
-          </h3>
+  <!-- Toast Container -->
+  <div class="fixed bottom-4 left-4 z-[100] flex flex-col gap-2 max-w-sm">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div :class="toast.removing ? 'toast-exit' : 'toast-enter'"
+           class="px-4 py-3 rounded border text-xs flex items-start gap-2"
+           :style="'background:' + (toast.type === 'error' ? '#1a0a0a' : toast.type === 'warn' ? '#1a1400' : '#0a1a10') +
+                    ';border-color:' + (toast.type === 'error' ? '#ff4444' : toast.type === 'warn' ? '#ffaa00' : '#00ff88')">
+        <div class="flex-1">
+          <div class="font-bold" x-text="toast.title"
+               :style="'color:' + (toast.type === 'error' ? '#ff4444' : toast.type === 'warn' ? '#ffaa00' : '#00ff88')"></div>
+          <div class="text-gray-400 mt-0.5" x-text="toast.message"></div>
         </div>
-        <div class="bg-soma-pink/10 text-soma-pink-light text-xs px-2 py-1 rounded hidden sm:block">Click and drag to zoom</div>
+        <button @click="removeToast(toast.id)" class="text-gray-500 hover:text-gray-300">&times;</button>
       </div>
-      <div x-show="expandedSections.chart" x-transition>
-        <canvas id="pressureChart" class="w-full" style="height:250px"></canvas>
+    </template>
+  </div>
+
+  <!-- Search Overlay -->
+  <div x-show="showSearch" x-transition.opacity @click.self="showSearch = false"
+       class="fixed inset-0 z-[200] bg-black/60 overlay-backdrop flex items-start justify-center pt-[20vh]">
+    <div class="bg-soma-card border border-soma-border rounded-lg w-full max-w-lg mx-4 shadow-2xl">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-soma-border">
+        <i data-lucide="search" class="w-4 h-4 text-gray-500"></i>
+        <input x-ref="searchInput" x-model="searchQuery" @input="runSearch()"
+               @keydown.escape="showSearch = false"
+               type="text" placeholder="Search agents, tools, findings..."
+               class="bg-transparent flex-1 text-sm text-gray-200 outline-none placeholder-gray-600">
+        <kbd class="text-[9px] text-gray-600 bg-white/5 px-1.5 py-0.5 rounded">Esc</kbd>
+      </div>
+      <div class="max-h-64 overflow-y-auto p-2">
+        <template x-for="result in searchResults" :key="result.id">
+          <button @click="navigateSearch(result)" class="w-full text-left px-3 py-2 rounded hover:bg-white/5 text-xs text-gray-300">
+            <span x-text="result.label"></span>
+            <span class="text-gray-600 ml-2" x-text="result.type"></span>
+          </button>
+        </template>
+        <div x-show="searchQuery && searchResults.length === 0" class="text-center text-gray-600 text-xs py-4">No results</div>
       </div>
     </div>
+  </div>
 
-    <!-- Findings -->
-    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
-      <h3 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-        <span class="w-0.5 h-4 bg-soma-pink rounded"></span>
-        Findings
-      </h3>
-      <div class="space-y-2 max-h-72 overflow-y-auto">
-        <template x-if="findings.length === 0">
-          <div class="text-soma-success text-sm py-4 text-center italic">No findings — system nominal</div>
-        </template>
-        <template x-for="(f, i) in findings" :key="i">
-          <div class="p-3 rounded-lg bg-white/[0.02] border-l-4 text-sm"
-               :class="findingBorderClass(f)">
-            <div class="text-xs font-bold uppercase tracking-wider mb-1" :class="findingTextClass(f)" x-text="f.priority || f.severity || 'info'"></div>
-            <div class="text-gray-300" x-text="f.message || f.description || f.title || ''"></div>
-            <div x-show="f.action" class="text-gray-500 text-xs mt-1" x-text="f.action || ''"></div>
+  <!-- Help Overlay -->
+  <div x-show="showHelp" x-transition.opacity @click.self="showHelp = false"
+       class="fixed inset-0 z-[200] bg-black/60 overlay-backdrop flex items-center justify-center">
+    <div class="bg-soma-card border border-soma-border rounded-lg w-full max-w-sm mx-4 shadow-2xl p-6">
+      <h2 class="text-soma-pink font-bold text-sm mb-4">Keyboard Shortcuts</h2>
+      <div class="space-y-2">
+        <template x-for="sc in keyboardShortcuts" :key="sc.key">
+          <div class="flex justify-between text-xs">
+            <kbd class="bg-white/5 px-2 py-0.5 rounded text-gray-300" x-text="sc.key"></kbd>
+            <span class="text-gray-500" x-text="sc.desc"></span>
           </div>
         </template>
       </div>
+      <button @click="showHelp = false" class="mt-4 text-xs text-gray-500 hover:text-gray-300">Close (Esc)</button>
     </div>
-  </section>
+  </div>
 
-  <!-- Actions & Audit Row -->
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4">
-
-    <!-- Recent Actions -->
-    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('actions')">
-        <div class="flex items-center gap-2">
-          <i :data-lucide="expandedSections.actions ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
-          <h3 class="text-sm font-semibold text-white">Recent Actions</h3>
-        </div>
-        <span class="text-xs text-gray-500" x-text="actions.length + ' total'"></span>
-      </div>
-      <div x-show="expandedSections.actions" x-transition>
-        <div class="overflow-y-auto" :style="actionsExpanded ? 'max-height:500px' : 'max-height:280px'">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-[10px] text-gray-500 uppercase tracking-wider">
-                <th class="text-left py-2 px-2">Tool</th>
-                <th class="text-left py-2 px-1">Status</th>
-                <th class="text-left py-2 px-1">File</th>
-                <th class="text-right py-2 px-2">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template x-for="(a, i) in actions.slice(0, actionsExpanded ? 20 : 8)" :key="i">
-                <tr class="font-mono text-xs" :class="i % 2 === 1 ? 'bg-white/[0.02]' : ''">
-                  <td class="py-1.5 px-2">
-                    <span x-text="toolEmoji(a.tool || a.tool_name)"></span>
-                    <span class="ml-1" x-text="a.tool || a.tool_name || '--'"></span>
-                  </td>
-                  <td class="py-1.5 px-1">
-                    <span class="inline-block w-2 h-2 rounded-full mr-1" :class="a.error ? 'bg-red-400' : 'bg-emerald-400'"></span>
-                  </td>
-                  <td class="py-1.5 px-1 text-gray-400 max-w-[150px] truncate" x-text="a.file || ''"></td>
-                  <td class="py-1.5 px-2 text-right text-gray-500" x-text="a.ago || a.time_fmt || ''"></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-        <button x-show="actions.length > 8" @click="actionsExpanded = !actionsExpanded"
-                class="text-xs text-soma-pink hover:text-soma-pink-light mt-2 transition">
-          <span x-text="actionsExpanded ? 'Show less' : 'Show more'"></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Audit Log -->
-    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('audit')">
-        <div class="flex items-center gap-2">
-          <i :data-lucide="expandedSections.audit ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
-          <h3 class="text-sm font-semibold text-white">Audit Log</h3>
-        </div>
-      </div>
-      <div x-show="expandedSections.audit" x-transition>
-        <div class="max-h-96 overflow-y-auto space-y-0.5 font-mono text-xs">
-          <template x-if="audit.length === 0">
-            <div class="text-gray-500 text-center py-4 italic">No entries</div>
-          </template>
-          <template x-for="(entry, i) in audit" :key="i">
-            <div class="flex gap-2 px-2 py-1 rounded"
-                 :class="entry.error ? 'bg-red-500/10' : (i % 2 === 1 ? 'bg-white/[0.02]' : '')">
-              <span class="text-gray-600 shrink-0" x-text="'[' + (entry.time_fmt || '--:--:--') + ']'"></span>
-              <span class="text-soma-pink-light shrink-0" x-text="entry.agent_id || ''"></span>
-              <span class="text-soma-pink shrink-0" x-text="entry.tool_name || ''"></span>
-              <span class="text-gray-400" x-text="fmtPct(entry.pressure)"></span>
-              <span class="font-bold shrink-0"
-                    :class="modeBadgeTextClass(entry.mode)" x-text="modeLabel(entry.mode)"></span>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Bottom Row: Sessions + Config -->
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-6 mt-4 pb-8">
-
-    <!-- Session History -->
-    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('sessions')">
-        <div class="flex items-center gap-2">
-          <i :data-lucide="expandedSections.sessions ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
-          <h3 class="text-sm font-semibold text-white">Session History</h3>
-        </div>
-      </div>
-      <div x-show="expandedSections.sessions" x-transition>
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-[10px] text-gray-500 uppercase tracking-wider">
-              <th class="text-left py-2 px-2">Agent</th>
-              <th class="text-left py-2 px-1">Duration</th>
-              <th class="text-left py-2 px-1">Actions</th>
-              <th class="text-left py-2 px-1">Max Pressure</th>
-              <th class="text-right py-2 px-2">Errors</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-if="sessions.length === 0">
-              <tr><td colspan="5" class="text-center text-gray-500 py-4 italic">No sessions</td></tr>
-            </template>
-            <template x-for="(s, i) in sessions" :key="i">
-              <tr class="font-mono text-xs" :class="i % 2 === 1 ? 'bg-white/[0.02]' : ''">
-                <td class="py-1.5 px-2" x-text="s.agent_id || '--'"></td>
-                <td class="py-1.5 px-1" x-text="s.duration_fmt || '--'"></td>
-                <td class="py-1.5 px-1" x-text="s.action_count || 0"></td>
-                <td class="py-1.5 px-1" :style="'color:' + pressureColor((s.max_pressure_pct || 0) / 100)">
-                  <span x-text="(s.max_pressure_pct != null ? s.max_pressure_pct.toFixed(1) : '--') + '%'"></span>
-                </td>
-                <td class="py-1.5 px-2 text-right" :class="(s.error_count || 0) > 0 ? 'text-red-400' : 'text-gray-500'" x-text="s.error_count || 0"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Configuration -->
-    <div class="bg-soma-card rounded-xl p-5 border border-soma-border">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" @click="toggleSection('config')">
-        <div class="flex items-center gap-2">
-          <i :data-lucide="expandedSections.config ? 'chevron-down' : 'chevron-right'" class="w-4 h-4 text-gray-500"></i>
-          <h3 class="text-sm font-semibold text-white">Configuration</h3>
-          <span class="text-xs text-gray-500">from soma.toml</span>
-        </div>
-      </div>
-      <div x-show="expandedSections.config" x-transition class="space-y-4">
-
-        <!-- Thresholds -->
-        <template x-if="config.thresholds">
-          <div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Thresholds</div>
-            <div class="space-y-2">
-              <template x-for="key in ['guide', 'warn', 'block']" :key="key">
-                <div class="flex items-center gap-3" x-show="config.thresholds[key] != null">
-                  <span class="text-xs font-mono w-12 text-gray-400 uppercase" x-text="key"></span>
-                  <div class="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                    <div class="h-full rounded-full transition-all"
-                         :class="key === 'guide' ? 'bg-yellow-500' : key === 'warn' ? 'bg-orange-500' : 'bg-red-500'"
-                         :style="'width:' + ((config.thresholds[key] || 0) * 100) + '%'"></div>
-                  </div>
-                  <span class="text-xs font-mono text-gray-300 w-10 text-right" x-text="(config.thresholds[key] || 0).toFixed(2)"></span>
-                </div>
-              </template>
-            </div>
-            <div class="bg-soma-pink/10 text-soma-pink-light text-xs p-2 rounded mt-2">Pressure above guide threshold triggers soft suggestions</div>
-          </div>
-        </template>
-
-        <!-- Weights -->
-        <template x-if="config.weights">
-          <div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Signal Weights</div>
-            <div class="space-y-1.5">
-              <template x-for="(val, key) in config.weights" :key="key">
-                <div class="flex items-center gap-2">
-                  <span class="text-[10px] font-mono w-20 text-gray-500 truncate" x-text="key"></span>
-                  <div class="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                    <div class="h-full rounded-full bg-soma-pink/60" :style="'width:' + Math.min(100, (val / 2.0) * 100) + '%'"></div>
-                  </div>
-                  <span class="text-[10px] font-mono text-gray-400 w-8 text-right" x-text="val.toFixed(1)"></span>
-                </div>
-              </template>
-            </div>
-            <div class="bg-soma-pink/10 text-soma-pink-light text-xs p-2 rounded mt-2">Higher weight = more influence on aggregate pressure</div>
-          </div>
-        </template>
-
-        <!-- Hooks -->
-        <template x-if="config.hooks">
-          <div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Hooks</div>
-            <div class="flex flex-wrap gap-2">
-              <template x-for="(val, key) in config.hooks" :key="key">
-                <span class="text-xs font-mono px-2 py-0.5 rounded-full"
-                      :class="val ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-gray-800 text-gray-500 border border-gray-700'">
-                  <span x-text="key"></span>
-                </span>
-              </template>
-            </div>
-          </div>
-        </template>
-
-        <!-- Budget -->
-        <template x-if="config.budget">
-          <div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Budget</div>
-            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-              <template x-for="(val, key) in config.budget" :key="key">
-                <div class="bg-white/[0.03] rounded p-2">
-                  <div class="text-gray-500 text-[10px] uppercase" x-text="key"></div>
-                  <div class="text-gray-300" x-text="typeof val === 'number' ? val.toLocaleString() : val"></div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </template>
-
-        <!-- Mirror -->
-        <template x-if="config.mirror">
-          <div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Mirror</div>
-            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-              <template x-for="(val, key) in config.mirror" :key="key">
-                <div class="bg-white/[0.03] rounded p-2">
-                  <div class="text-gray-500 text-[10px] uppercase" x-text="key"></div>
-                  <div class="text-gray-300" x-text="String(val)"></div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </template>
-
-      </div>
-    </div>
-  </section>
-
-<script>
-document.addEventListener('alpine:init', () => {
-  Alpine.data('dashboard', () => ({
-    agents: [],
-    selectedAgent: null,
-    audit: [],
-    sessions: [],
-    config: {},
-    trajectory: [],
-    actions: [],
-    quality: {},
-    findings: [],
-    fingerprints: {},
-    connected: false,
-    clock: '--:--:--',
-    actionsExpanded: false,
-    expandedSections: { chart: true, actions: false, audit: true, sessions: false, config: false },
-    chart: null,
-    _clockInterval: null,
-    _pollInterval: null,
-
-    async init() {
-      this.updateClock();
-      this._clockInterval = setInterval(() => this.updateClock(), 1000);
-      await this.fetchOverview();
-      await this.fetchConfig();
-      this._pollInterval = setInterval(() => this.fetchOverview(), 2000);
-      this.$nextTick(() => lucide.createIcons());
-    },
-
-    updateClock() {
-      const now = new Date();
-      this.clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
-        .map(n => String(n).padStart(2, '0')).join(':');
-    },
-
-    async fetchOverview() {
-      try {
-        const r = await fetch('/api/overview');
-        if (!r.ok) throw new Error(r.status);
-        const data = await r.json();
-        this.connected = true;
-        this.agents = data.agents || [];
-        this.audit = (data.audit || []).slice(0, 200);
-        this.sessions = data.sessions || [];
-        this.findings = data.findings || [];
-
-        // Auto-select first agent if none selected
-        if (!this.selectedAgent && this.agents.length > 0) {
-          await this.selectAgent(this.agents[0]);
-        } else if (this.selectedAgent) {
-          // Refresh selected agent data
-          const current = this.agents.find(a => a.agent_id === this.selectedAgent.agent_id);
-          if (current) {
-            this.selectedAgent = current;
-            await this.fetchTrajectory(current.agent_id);
-            await this.fetchActions(current.agent_id);
-          }
-        }
-        this.$nextTick(() => lucide.createIcons());
-      } catch (e) {
-        this.connected = false;
-      }
-    },
-
-    async selectAgent(agent) {
-      this.selectedAgent = agent;
-      this.actionsExpanded = false;
-      if (!this.expandedSections.actions) this.expandedSections.actions = true;
-      await this.fetchTrajectory(agent.agent_id);
-      await this.fetchActions(agent.agent_id);
-      await this.fetchQuality(agent.agent_id);
-    },
-
-    async fetchTrajectory(id) {
-      try {
-        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/trajectory');
-        if (r.ok) {
-          const data = await r.json();
-          this.trajectory = Array.isArray(data) ? data : (data.trajectory || data.data || []);
-          this.updateChart();
-        }
-      } catch (e) {}
-    },
-
-    async fetchActions(id) {
-      try {
-        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/actions');
-        if (r.ok) {
-          const data = await r.json();
-          this.actions = Array.isArray(data) ? data : (data.actions || []);
-        }
-      } catch (e) {}
-    },
-
-    async fetchQuality(id) {
-      try {
-        const r = await fetch('/api/agent/' + encodeURIComponent(id) + '/quality');
-        if (r.ok) {
-          this.quality = await r.json();
-        }
-      } catch (e) {}
-    },
-
-    async fetchConfig() {
-      try {
-        const r = await fetch('/api/config');
-        if (r.ok) {
-          this.config = await r.json();
-        }
-      } catch (e) {}
-    },
-
-    toggleSection(name) {
-      this.expandedSections[name] = !this.expandedSections[name];
-      this.$nextTick(() => lucide.createIcons());
-      if (name === 'chart' && this.expandedSections.chart) {
-        this.$nextTick(() => this.updateChart());
-      }
-    },
-
-    // Chart.js management
-    updateChart() {
-      const canvas = document.getElementById('pressureChart');
-      if (!canvas) return;
-      if (this.chart) {
-        this.chart.destroy();
-        this.chart = null;
-      }
-      if (!this.trajectory || this.trajectory.length === 0) return;
-
-      const labels = this.trajectory.map((_, i) => '#' + (i + 1));
-      const values = this.trajectory.map(v => typeof v === 'number' ? v : (v.pressure || 0));
-      const lastIdx = values.length - 1;
-      const lastColor = this.pressureColor(values[lastIdx] || 0);
-
-      this.chart = new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [{
-            data: values,
-            borderColor: '#ff2d78',
-            backgroundColor: 'rgba(255,45,120,0.1)',
-            fill: true,
-            tension: 0.3,
-            pointRadius: values.map((_, i) => i === lastIdx ? 4 : 0),
-            pointBackgroundColor: values.map((_, i) => i === lastIdx ? lastColor : 'transparent'),
-            pointBorderColor: values.map((_, i) => i === lastIdx ? lastColor : 'transparent'),
-            borderWidth: 2,
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: { duration: 300 },
-          plugins: {
-            legend: { display: false },
-            annotation: undefined,
-          },
-          scales: {
-            x: {
-              grid: { color: 'rgba(255,255,255,0.03)' },
-              ticks: { color: '#444', font: { family: 'monospace', size: 10 }, maxTicksLimit: 10 },
-            },
-            y: {
-              min: 0,
-              max: 1,
-              grid: { color: 'rgba(255,255,255,0.03)' },
-              ticks: { color: '#444', font: { family: 'monospace', size: 10 }, stepSize: 0.2 },
-            }
-          }
-        },
-        plugins: [{
-          id: 'thresholdLines',
-          afterDraw(chart) {
-            const ctx = chart.ctx;
-            const yAxis = chart.scales.y;
-            const xAxis = chart.scales.x;
-            const thresholds = [
-              { value: 0.40, label: 'GUIDE', color: '#ffaa00' },
-              { value: 0.60, label: 'WARN', color: '#ff8c00' },
-              { value: 0.80, label: 'BLOCK', color: '#ff4444' },
-            ];
-            thresholds.forEach(t => {
-              const y = yAxis.getPixelForValue(t.value);
-              ctx.save();
-              ctx.beginPath();
-              ctx.setLineDash([6, 4]);
-              ctx.strokeStyle = t.color;
-              ctx.globalAlpha = 0.4;
-              ctx.lineWidth = 1;
-              ctx.moveTo(xAxis.left, y);
-              ctx.lineTo(xAxis.right, y);
-              ctx.stroke();
-              ctx.globalAlpha = 0.5;
-              ctx.setLineDash([]);
-              ctx.fillStyle = t.color;
-              ctx.font = '9px system-ui';
-              ctx.textAlign = 'right';
-              ctx.fillText(t.label, xAxis.right - 4, y - 4);
-              ctx.restore();
-            });
-          }
-        }]
-      });
-    },
-
-    // Helpers
-    stripPrefix(id) {
-      if (!id) return '';
-      return id.replace(/^cc-/, '');
-    },
-
-    modeLabel(mode) {
-      if (!mode) return 'OBSERVE';
-      const m = String(mode).toUpperCase();
-      if (m.includes('BLOCK')) return 'BLOCK';
-      if (m.includes('WARN')) return 'WARN';
-      if (m.includes('GUIDE')) return 'GUIDE';
-      return 'OBSERVE';
-    },
-
-    modeBadgeClass(mode) {
-      const m = this.modeLabel(mode);
-      return {
-        'OBSERVE': 'bg-emerald-500/20 text-emerald-400',
-        'GUIDE': 'bg-yellow-500/20 text-yellow-400',
-        'WARN': 'bg-orange-500/20 text-orange-400',
-        'BLOCK': 'bg-pink-500/20 text-pink-400',
-      }[m] || 'bg-emerald-500/20 text-emerald-400';
-    },
-
-    modeBadgeTextClass(mode) {
-      const m = this.modeLabel(mode);
-      return {
-        'OBSERVE': 'text-emerald-400',
-        'GUIDE': 'text-yellow-400',
-        'WARN': 'text-orange-400',
-        'BLOCK': 'text-pink-400',
-      }[m] || 'text-emerald-400';
-    },
-
-    pressureColor(p) {
-      if (p < 0.25) return '#00ff88';
-      if (p < 0.50) return '#ffaa00';
-      if (p < 0.75) return '#ff8c00';
-      return '#ff4444';
-    },
-
-    pctFmt(v) {
-      if (v == null || isNaN(v)) return '--';
-      return Number(v).toFixed(1);
-    },
-
-    fmtPct(p) {
-      if (p == null) return '';
-      return (p * 100).toFixed(1) + '%';
-    },
-
-    vitalsList(agent) {
-      const v = agent.vitals || {};
-      return [
-        { label: 'uncertainty', value: this.fmtVal(v.uncertainty) },
-        { label: 'drift', value: this.fmtVal(v.drift) },
-        { label: 'error rate', value: this.fmtVal(v.error_rate) },
-        { label: 'cost', value: this.fmtVal(v.cost) },
-        { label: 'tokens', value: v.token_usage != null ? v.token_usage.toLocaleString() : '--' },
-        { label: 'coherence', value: this.fmtVal(v.coherence || v.goal_coherence) },
-      ];
-    },
-
-    fmtVal(n) {
-      if (n == null || isNaN(n)) return '--';
-      return Number(n).toFixed(3);
-    },
-
-    gradeColor(grade) {
-      if (!grade) return 'text-gray-500';
-      const g = String(grade).toUpperCase()[0];
-      return { A: 'text-soma-success', B: 'text-emerald-300', C: 'text-yellow-400', D: 'text-orange-400', F: 'text-red-400' }[g] || 'text-gray-500';
-    },
-
-    toolEmoji(tool) {
-      if (!tool) return '';
-      const map = { Read: '\u{1F4D6}', Edit: '\u270F\uFE0F', Write: '\u270D\uFE0F', Bash: '\u{1F527}', Grep: '\u{1F50D}', Glob: '\u{1F4C1}', Agent: '\u{1F916}', WebSearch: '\u{1F310}', WebFetch: '\u{1F310}' };
-      return map[tool] || '';
-    },
-
-    findingBorderClass(f) {
-      const p = (f.priority || f.severity || 'info').toLowerCase();
-      if (p.includes('crit') || p.includes('high') || p.includes('error')) return 'border-red-500';
-      if (p.includes('warn') || p.includes('med') || p.includes('important')) return 'border-orange-500';
-      return 'border-blue-500';
-    },
-
-    findingTextClass(f) {
-      const p = (f.priority || f.severity || 'info').toLowerCase();
-      if (p.includes('crit') || p.includes('high') || p.includes('error')) return 'text-red-400';
-      if (p.includes('warn') || p.includes('med') || p.includes('important')) return 'text-orange-400';
-      return 'text-blue-400';
-    },
-  }));
-});
-</script>
 </body>
 </html>
