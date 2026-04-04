@@ -32,6 +32,13 @@ SOMA.tabs.analytics = () => ({
   // =========================================================
   async loadAnalyticsTab(agentId) {
     this.analyticsLoading = true;
+    // Wait for agents to load if needed
+    if (!this.agents || this.agents.length === 0) {
+      try {
+        const overview = await SOMA.api.fetchOverview();
+        this.agents = overview.agents || [];
+      } catch (_) {}
+    }
     const id = agentId || this.analyticsSelectedAgent || (this.agents && this.agents[0] && this.agents[0].agent_id) || '';
     if (!id) {
       this.analyticsLoading = false;
@@ -47,11 +54,17 @@ SOMA.tabs.analytics = () => ({
         SOMA.api.fetchMirror(id).catch(() => ({})),
         SOMA.api.fetchThresholdTuner().catch(() => ({})),
       ]);
-      this.analyticsTrends = trends || [];
-      this.analyticsTools = tools || [];
+      this.analyticsTrends = Array.isArray(trends) ? trends : [];
+      // Tools API returns {name: count} dict — normalize to array
+      if (tools && !Array.isArray(tools) && typeof tools === 'object') {
+        this.analyticsTools = Object.entries(tools).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+      } else {
+        this.analyticsTools = tools || [];
+      }
       this.analyticsMirror = mirror || {};
       this.analyticsThreshold = threshold || {};
-    } catch (_) {}
+      console.log('[SOMA analytics] trends:', this.analyticsTrends.length, 'tools:', this.analyticsTools.length);
+    } catch (e) { console.error('[SOMA analytics] error:', e); }
 
     this.analyticsLoading = false;
 
@@ -68,7 +81,7 @@ SOMA.tabs.analytics = () => ({
   _buildAnalyticsCharts() {
     // Trend chart
     this.analyticsTrendChart = SOMA.charts.destroyChart(this.analyticsTrendChart);
-    if (this.analyticsTrends.length >= 2) {
+    if (this.analyticsTrends.length >= 1) {
       this.analyticsTrendChart = SOMA.charts.createTrendChart('analytics-trend-chart', this.analyticsTrends);
     }
 

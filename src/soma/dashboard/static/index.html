@@ -1608,13 +1608,13 @@ tailwind.config = {
           <!-- Agent Trends -->
           <div class="soma-card p-4">
             <h3 class="text-xs font-semibold text-gray-400 mb-3">Agent Trends (across sessions)</h3>
-            <template x-if="analyticsTrends.length >= 2">
+            <template x-if="analyticsTrends.length >= 1">
               <div class="h-56">
                 <canvas id="analytics-trend-chart"></canvas>
               </div>
             </template>
-            <template x-if="analyticsTrends.length < 2">
-              <div class="empty-state py-4">Need 2+ sessions for trend data.</div>
+            <template x-if="analyticsTrends.length < 1">
+              <div class="empty-state py-4">No session data yet.</div>
             </template>
           </div>
 
@@ -1623,12 +1623,12 @@ tailwind.config = {
             <!-- Tool histogram -->
             <div class="soma-card p-4">
               <h3 class="text-xs font-semibold text-gray-400 mb-3">Tool Usage Histogram</h3>
-              <template x-if="analyticsTools.length > 0">
+              <template x-if="analyticsTools && analyticsTools.length > 0">
                 <div class="h-56">
                   <canvas id="analytics-tool-chart"></canvas>
                 </div>
               </template>
-              <template x-if="analyticsTools.length === 0">
+              <template x-if="!analyticsTools || analyticsTools.length === 0">
                 <div class="empty-state py-4">No tool data available.</div>
               </template>
             </div>
