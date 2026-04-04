@@ -133,6 +133,7 @@ class VitalsSnapshot:
 class AgentConfig:
     """Configuration for a monitored agent."""
     agent_id: str
+    display_name: str = ""
     autonomy: AutonomyMode = AutonomyMode.HUMAN_ON_THE_LOOP
     system_prompt: str = ""
     tools_allowed: list[str] = field(default_factory=list)

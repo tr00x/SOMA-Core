@@ -167,11 +167,12 @@ class SOMAEngine:
         autonomy: AutonomyMode | None = None,
         system_prompt: str = "",
         tools: list[str] | None = None,
+        display_name: str = "",
     ) -> None:
         if autonomy is None:
             autonomy = self._default_autonomy
         config = AgentConfig(
-            agent_id=agent_id, autonomy=autonomy,
+            agent_id=agent_id, display_name=display_name, autonomy=autonomy,
             system_prompt=system_prompt, tools_allowed=tools or [],
         )
         state = _AgentState(config)
@@ -244,6 +245,7 @@ class SOMAEngine:
                 continue
             pressure = self._graph.get_effective_pressure(agent_id)
             state["agents"][agent_id] = {
+                "display_name": s.config.display_name or "",
                 "level": s.mode.name,
                 "pressure": pressure,
                 "vitals": {

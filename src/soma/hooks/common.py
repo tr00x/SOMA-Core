@@ -219,18 +219,22 @@ def get_engine():
         engine._custom_thresholds = CLAUDE_CODE_CONFIG["thresholds"]
 
     agent_id = _get_session_agent_id()
+    # Auto display name from working directory
+    import os as _os
+    _cwd = _os.environ.get("CLAUDE_WORKING_DIRECTORY", _os.getcwd())
+    _display_name = _os.path.basename(_cwd) if _cwd else ""
+
     is_new_session = False
     try:
         engine.get_level(agent_id)
     except Exception:
-        engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
+        engine.register_agent(agent_id, tools=CLAUDE_TOOLS, display_name=_display_name)
         is_new_session = True
 
     # Detect recycled PID: agent exists in persisted state but belongs
     # to a previous OS process. Check via session marker file.
     if not is_new_session and _is_stale_session(agent_id):
-        # Re-register agent to reset engine state for this agent
-        engine.register_agent(agent_id, tools=CLAUDE_TOOLS)
+        engine.register_agent(agent_id, tools=CLAUDE_TOOLS, display_name=_display_name)
         is_new_session = True
 
     if is_new_session:

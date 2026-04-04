@@ -212,6 +212,9 @@ document.addEventListener('alpine:init', () => {
 
     stripPrefix(agentId) {
       if (!agentId) return '';
+      // Show display_name if available
+      const agent = (this.agents || []).find(a => a.agent_id === agentId);
+      if (agent && agent.display_name) return agent.display_name;
       return agentId.replace(/^agent[_-]/i, '');
     },
 

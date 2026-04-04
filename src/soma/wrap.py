@@ -242,12 +242,14 @@ class WrappedClient:
         client: Any,
         engine: SOMAEngine,
         agent_id: str = "default",
+        display_name: str = "",
         auto_export: bool = True,
         block_at: ResponseMode = ResponseMode.BLOCK,
     ) -> None:
         self._client = client
         self._engine = engine
         self._agent_id = agent_id
+        self._display_name = display_name
         self._auto_export = auto_export
         self._block_at = block_at
         self._recorder = SessionRecorder()
@@ -262,7 +264,7 @@ class WrappedClient:
         try:
             engine.get_level(agent_id)
         except (KeyError, AgentNotFound):
-            engine.register_agent(agent_id)
+            engine.register_agent(agent_id, display_name=self._display_name)
 
         # Wrap the API methods
         self._wrap_client()
@@ -544,6 +546,7 @@ def wrap(
     client: Any,
     budget: dict[str, float] | None = None,
     agent_id: str = "default",
+    display_name: str = "",
     auto_export: bool = True,
     block_at: ResponseMode = ResponseMode.BLOCK,
     engine: SOMAEngine | None = None,
