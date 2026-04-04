@@ -27,6 +27,7 @@ from soma.types import Action
 
 
 PATTERN_DB_PATH = Path.home() / ".soma" / "patterns.json"
+PENDING_DB_PATH = Path.home() / ".soma" / "mirror_pending.json"
 
 # Pressure below this threshold → no context injected (agent is healthy)
 SILENCE_THRESHOLD = 0.15
@@ -123,6 +124,7 @@ class Mirror:
         self._semantic_provider: str = "auto"
         self._semantic_threshold: float = SEMANTIC_THRESHOLD
         self._load_pattern_db()
+        self._load_pending()
         self._load_mirror_config()
 
     # ------------------------------------------------------------------
@@ -434,6 +436,7 @@ class Mirror:
             actions_since=0,
             timestamp=time.time(),
         ))
+        self._save_pending()
 
     def evaluate_pending(
         self,
@@ -474,6 +477,7 @@ class Mirror:
             )
 
         self._pending = still_pending
+        self._save_pending()
 
     def record_outcome(
         self,
@@ -686,5 +690,43 @@ class Mirror:
             PATTERN_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             raw = {key: record.to_dict() for key, record in self.pattern_db.items()}
             PATTERN_DB_PATH.write_text(json.dumps(raw, indent=2))
+        except OSError:
+            pass
+
+    def _load_pending(self) -> None:
+        """Load pending evaluations from disk (cross-process sharing)."""
+        try:
+            if PENDING_DB_PATH.exists():
+                raw = json.loads(PENDING_DB_PATH.read_text())
+                self._pending = [
+                    PendingEval(
+                        agent_id=p["agent_id"],
+                        pattern_key=p["pattern_key"],
+                        context_text=p.get("context_text", ""),
+                        pressure_at_injection=p["pressure_at_injection"],
+                        actions_since=p.get("actions_since", 0),
+                        timestamp=p.get("timestamp", 0),
+                    )
+                    for p in raw if isinstance(p, dict)
+                ]
+        except (json.JSONDecodeError, OSError):
+            self._pending = []
+
+    def _save_pending(self) -> None:
+        """Persist pending evaluations to disk."""
+        try:
+            PENDING_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            raw = [
+                {
+                    "agent_id": p.agent_id,
+                    "pattern_key": p.pattern_key,
+                    "context_text": p.context_text,
+                    "pressure_at_injection": p.pressure_at_injection,
+                    "actions_since": p.actions_since,
+                    "timestamp": p.timestamp,
+                }
+                for p in self._pending
+            ]
+            PENDING_DB_PATH.write_text(json.dumps(raw))
         except OSError:
             pass
