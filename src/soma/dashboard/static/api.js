@@ -69,7 +69,12 @@ SOMA.api = (() => {
       _sseSource.addEventListener('findings', (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (Array.isArray(data) && data.length > 0) ctx.findings = data;
+          if (Array.isArray(data) && data.length > 0) {
+            // Only update if content actually changed (prevents re-render flicker)
+            const oldKey = (ctx.findings || []).map(f => f.message).join('|');
+            const newKey = data.map(f => f.message).join('|');
+            if (oldKey !== newKey) ctx.findings = data;
+          }
         } catch (_) {}
       });
 
@@ -127,9 +132,11 @@ SOMA.api = (() => {
       try {
         const overview = await fetchOverview();
         _updateAgents(ctx, overview.agents || []);
-        // Only replace findings if API has data (don't clear with empty)
+        // Only replace findings if content actually changed
         if (overview.findings && overview.findings.length > 0) {
-          ctx.findings = overview.findings;
+          const oldKey = (ctx.findings || []).map(f => f.message).join('|');
+          const newKey = overview.findings.map(f => f.message).join('|');
+          if (oldKey !== newKey) ctx.findings = overview.findings;
         }
       } catch (_) { ctx.connected = false; }
       try {
