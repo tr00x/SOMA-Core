@@ -181,15 +181,12 @@ async def event_stream(
                 })
             prev_modes[aid] = current_mode
 
-        # -- finding event (new findings) --
+        # -- findings event (full list, replaces client state) --
         findings = _read_json(SOMA_DIR / "findings.json", default=[])
         if not findings and isinstance(state, dict):
             findings = state.get("findings", [])
-        if isinstance(findings, list) and len(findings) > prev_findings_count:
-            new_findings = findings[prev_findings_count:]
-            for f in new_findings:
-                yield _format_sse("finding", f)
-            prev_findings_count = len(findings)
+        if isinstance(findings, list) and findings:
+            yield _format_sse("findings", findings)
 
         # -- rca event (check per-agent RCA) --
         agents_raw = state.get("agents", {}) if isinstance(state, dict) else {}

@@ -66,15 +66,10 @@ SOMA.api = (() => {
         } catch (_) {}
       });
 
-      _sseSource.addEventListener('finding', (e) => {
+      _sseSource.addEventListener('findings', (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.message || data.title) {
-            // Dedup: don't add if same message already in list
-            const msg = data.message || data.title;
-            const exists = (ctx.findings || []).some(f => (f.message || f.title) === msg);
-            if (!exists) ctx.findings = [data, ...(ctx.findings || [])].slice(0, 20);
-          }
+          if (Array.isArray(data) && data.length > 0) ctx.findings = data;
         } catch (_) {}
       });
 
