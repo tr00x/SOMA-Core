@@ -81,6 +81,75 @@ def _extract_file_path(data: dict) -> str:
     return ""
 
 
+def _persist_mirror_stats(mirror, agent_id: str) -> None:
+    """Write mirror effectiveness stats to session dir for the dashboard.
+
+    Writes to ~/.soma/sessions/{agent_id}/mirror_stats.json atomically
+    (write tmp → rename) so partial writes never corrupt the file.
+    """
+    import json
+    import tempfile
+    from soma.hooks.common import SESSIONS_DIR
+
+    session_dir = SESSIONS_DIR / agent_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    mirror_path = session_dir / "mirror_stats.json"
+
+    # Aggregate stats from pattern_db
+    total_injections = 0
+    successful_injections = 0
+    patterns: list[dict] = []
+    for key, record in mirror.pattern_db.items():
+        total_injections += record.total
+        successful_injections += record.success_count
+        patterns.append({
+            "key": key,
+            "context_text": record.context_text[:200],
+            "success_count": record.success_count,
+            "fail_count": record.fail_count,
+            "success_rate": round(record.success_rate, 3),
+            "last_used": record.last_used,
+        })
+
+    effectiveness = (
+        round(successful_injections / total_injections, 3)
+        if total_injections > 0
+        else 0.0
+    )
+
+    # Count pending evaluations for this agent
+    pending_count = sum(
+        1 for p in mirror._pending if p.agent_id == agent_id
+    )
+
+    # Check if semantic mode is active
+    semantic_enabled = getattr(mirror, "_semantic_enabled", False)
+
+    mirror_data = {
+        "effectiveness": effectiveness,
+        "total_injections": total_injections,
+        "successful_injections": successful_injections,
+        "pending_evaluations": pending_count,
+        "semantic_enabled": semantic_enabled,
+        "patterns": patterns,
+    }
+
+    # Atomic write: tmp file → rename
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(session_dir), suffix=".tmp", prefix="mirror_stats_"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(mirror_data, f)
+        os.replace(tmp_path, str(mirror_path))
+    except Exception:
+        # Clean up tmp on failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 def main():
     global _prev_level, _prev_pressure
 
@@ -197,6 +266,12 @@ def main():
                     print(session_ctx)  # stdout → appended to tool response
             except Exception:
                 pass  # Mirror is optional — never crash
+
+            # Persist mirror stats to disk for dashboard consumption
+            try:
+                _persist_mirror_stats(_mirror, agent_id)
+            except Exception:
+                pass  # Never crash for dashboard persistence
 
         # Subagent cascade: propagate subagent error pressure to parent
         try:
