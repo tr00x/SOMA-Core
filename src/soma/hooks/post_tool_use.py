@@ -251,6 +251,28 @@ def main():
         result = engine.record_action(agent_id, action)
         save_state(engine)
 
+        # Record to analytics SQLite for cross-session trends
+        try:
+            from soma.analytics import AnalyticsStore
+            analytics = AnalyticsStore()
+            vitals = result.vitals
+            analytics.record(
+                agent_id=agent_id,
+                session_id=agent_id,  # use agent_id as session for now
+                tool_name=tool_name,
+                pressure=result.pressure,
+                uncertainty=getattr(vitals, 'uncertainty', 0),
+                drift=getattr(vitals, 'drift', 0),
+                error_rate=getattr(vitals, 'error_rate', 0),
+                context_usage=getattr(vitals, 'context_usage', 0),
+                token_count=action.token_count,
+                cost=action.cost,
+                mode=result.mode.name,
+                error=error,
+            )
+        except Exception:
+            pass  # Never crash for analytics
+
         # Append pressure to per-session trajectory for cross-session intelligence
         append_pressure_trajectory(result.pressure, agent_id)
 
