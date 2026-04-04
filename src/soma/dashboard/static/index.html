@@ -210,30 +210,7 @@ tailwind.config = {
               </template>
             </div>
 
-            <!-- ===== RCA STRIP ===== -->
-            <template x-for="agent in overviewRCAAgents()" :key="'rca-' + agent.agent_id">
-              <div class="flex items-start gap-3 px-4 py-3 rounded-lg text-xs"
-                   style="background:rgba(255,68,68,0.08);border:1px solid rgba(255,68,68,0.25)">
-                <i data-lucide="alert-triangle" class="w-4 h-4 text-soma-error flex-shrink-0 mt-0.5"></i>
-                <div>
-                  <span class="font-bold text-soma-error" x-text="stripPrefix(agent.agent_id)"></span>
-                  <span class="text-gray-400 ml-1" x-text="agent.rca_diagnosis"></span>
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== PREDICTIONS ALERT STRIP ===== -->
-            <template x-for="esc in overviewEscalationAgents()" :key="'esc-' + esc.agent_id">
-              <div class="flex items-start gap-3 px-4 py-3 rounded-lg text-xs"
-                   style="background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.25)">
-                <i data-lucide="trending-up" class="w-4 h-4 text-soma-orange flex-shrink-0 mt-0.5"></i>
-                <div>
-                  <span class="font-bold text-soma-orange" x-text="stripPrefix(esc.agent_id)"></span>
-                  <span class="text-gray-400 ml-1">predicted to escalate in ~<span class="num text-white" x-text="esc.actions_ahead"></span> actions</span>
-                  <span class="text-gray-500 ml-1" x-text="'(' + esc.reason + ')'"></span>
-                </div>
-              </div>
-            </template>
+            <!-- RCA and Predictions already shown in Behavioral Insights below -->
 
             <!-- ===== FINDINGS ===== -->
             <div>
