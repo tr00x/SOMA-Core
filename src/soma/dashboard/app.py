@@ -231,6 +231,7 @@ async def list_agents() -> JSONResponse:
         for aid, adata in state.get("agents", {}).items():
             live_agents[aid] = {
                 "agent_id": aid,
+                "display_name": adata.get("display_name", ""),
                 "level": adata.get("level", "OBSERVE"),
                 "pressure": adata.get("pressure", 0.0),
                 "vitals": adata.get("vitals", {}),
