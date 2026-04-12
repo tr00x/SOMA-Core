@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2] — 2026-04-12
+
+Repository cleanup, documentation overhaul, CI fixes.
+
+### Changed
+- All documentation updated to reflect current project state (README, QUICKSTART, ARCHITECTURE, TECHNICAL, PAPER, guide, CONTRIBUTING)
+- Repository cleaned: removed internal specs, experiments, TS SDK placeholder, scripts, skills, policies
+- Updated `.gitignore` to prevent internal files from being tracked
+
+### Fixed
+- PyPI publish workflow: added `skip-existing` flag, verified trusted publishing works
+- Restored SOMA banner in README header
+- Removed stale `skills/` force-include from `pyproject.toml` build config
+
 ## [0.6.1] — 2026-04-12
 
 Dashboard v2, agent display names, findings pipeline stability.
