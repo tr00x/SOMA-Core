@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/soma-banner.gif" alt="SOMA" width="100%">
+</p>
+
 # SOMA -- The Nervous System for AI Agents
 
 Proprioceptive behavioral monitoring -- agents that feel themselves.
