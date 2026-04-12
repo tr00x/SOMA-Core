@@ -1,8 +1,8 @@
-# SOMA — The Nervous System for AI Agents
+# SOMA -- The Nervous System for AI Agents
 
-Proprioceptive behavioral monitoring — agents that feel themselves.
+Proprioceptive behavioral monitoring -- agents that feel themselves.
 
-SOMA is a real-time behavioral monitoring system that gives AI agents awareness of their own state. It intercepts every tool call, computes behavioral pressure from 11 vital signals, detects failure patterns, enforces safety reflexes, and injects self-awareness directly into the agent's environment. Think of it as a nervous system: sensing, reacting, learning, remembering — so agents can self-correct before problems escalate.
+SOMA is a real-time behavioral monitoring system that gives AI agents awareness of their own state. It intercepts every tool call, computes behavioral pressure from 11 vital signals, detects failure patterns, enforces safety reflexes, and injects self-awareness directly into the agent's environment. Think of it as a nervous system: sensing, reacting, learning, remembering -- so agents can self-correct before problems escalate.
 
 ```
 pip install soma-ai
@@ -10,28 +10,28 @@ pip install soma-ai
 
 ## Dashboard
 
-SOMA includes a real-time web dashboard for monitoring agent behavior, analyzing sessions, and configuring settings.
+SOMA includes a real-time web dashboard (FastAPI + SSE, port 7777) for monitoring agent behavior, analyzing sessions, and configuring settings.
 
 <p align="center">
-  <img src="docs/screenshots/overview.png" alt="Overview — live pressure gauges, behavioral insights, and findings" width="100%">
+  <img src="docs/screenshots/overview.png" alt="Overview -- live pressure gauges, behavioral insights, and findings" width="100%">
 </p>
 
 <details>
 <summary>More screenshots</summary>
 
-**Deep Dive** — per-agent pressure timeline, vitals breakdown, and baseline report
+**Deep Dive** -- per-agent pressure timeline, vitals breakdown, and baseline report
 <img src="docs/screenshots/deep-dive.png" alt="Deep Dive" width="100%">
 
-**Analytics** — cross-session trends, tool usage distribution, mirror effectiveness
+**Analytics** -- cross-session trends, tool usage distribution, mirror effectiveness
 <img src="docs/screenshots/analytics.png" alt="Analytics" width="100%">
 
-**Logs** — filterable action log with tool names, pressure, errors, and timing
+**Logs** -- filterable action log with tool names, pressure, errors, and timing
 <img src="docs/screenshots/logs.png" alt="Logs" width="100%">
 
-**Sessions** — session history with cross-session trend comparison
+**Sessions** -- session history with cross-session trend comparison
 <img src="docs/screenshots/sessions.png" alt="Sessions" width="100%">
 
-**Settings** — mode selection, thresholds, weights, budget, and policy configuration
+**Settings** -- mode selection, thresholds, weights, budget, and policy configuration
 <img src="docs/screenshots/settings.png" alt="Settings" width="100%">
 
 </details>
@@ -43,7 +43,7 @@ SOMA includes a real-time web dashboard for monitoring agent behavior, analyzing
 - **Researchers** studying agent reliability, failure patterns, and self-correction
 - **Anyone using Claude Code** who wants their agent to stop retrying the same failing command
 
-SOMA works today as a Claude Code hook system. The core is platform-agnostic — SDK adapters exist for LangChain, CrewAI, AutoGen, and any Anthropic API client.
+SOMA works today as a Claude Code hook system. The core is platform-agnostic -- SDK adapters exist for LangChain, CrewAI, AutoGen, and any Anthropic API client. Hook adapters also exist for Cursor and Windsurf.
 
 ## The problem
 
@@ -52,7 +52,7 @@ AI agents are blind to their own behavior. They retry the same failing command f
 This isn't anecdotal:
 - **41-86% failure rate** across agent benchmarks (MAST, Berkeley NeurIPS 2025)
 - **Reliability lags capability by 2-3x** (Kapoor et al., Princeton 2026)
-- Agents degrade predictably — error cascades, retry loops, scope drift — but have no signal to self-correct
+- Agents degrade predictably -- error cascades, retry loops, scope drift -- but have no signal to self-correct
 
 Every existing tool monitors agents *externally for humans*. Dashboards and alerts for the operator. The agent itself never sees the data.
 
@@ -66,10 +66,10 @@ Every existing tool monitors agents *externally for humans*. Dashboards and aler
 
 | Signal | What it measures |
 |--------|-----------------|
-| Uncertainty | Epistemic vs aleatoric — does the agent know what it doesn't know? |
+| Uncertainty | Epistemic vs aleatoric -- does the agent know what it doesn't know? |
 | Drift | Behavioral deviation from established baseline (phase-aware) |
 | Error rate | Rolling error frequency with pattern weighting |
-| Entropy | Action distribution disorder — are tool choices becoming random? |
+| Entropy | Action distribution disorder -- are tool choices becoming random? |
 | Goal coherence | Is the agent still working toward its objective? |
 | Token usage | Consumption rate and acceleration |
 | Cost | Spend rate per action and cumulative |
@@ -78,34 +78,34 @@ Every existing tool monitors agents *externally for humans*. Dashboards and aler
 | Calibration | How well do confidence signals predict actual outcomes? |
 | Verbal-behavioral divergence | Does the agent say one thing and do another? |
 
-All signals feed into **Pressure** — a unified 0→1 metric aggregated via sigmoid z-scores with configurable blending (mean + max). EMA baselines with cold-start blending prevent false positives in early sessions.
+All signals feed into **Pressure** -- a unified 0-to-1 metric aggregated via sigmoid z-scores with configurable blending (mean + max). EMA baselines with cold-start blending prevent false positives in early sessions.
 
 ### Pattern Detection
 
 Real-time detection of known failure modes:
 
-- **Blind edits** — writing to files never read (the #1 agent anti-pattern)
-- **Retry storms** — same failing command repeated 3+ times
-- **Bash failure cascades** — error rate > 40% with dedup detection
-- **Thrashing** — editing the same file 3+ times without progress
-- **Research stall** — reading without acting, context burning without output
-- **Quality grading** — A/B/C/D/F based on syntax errors, lint issues, bash failures
+- **Blind edits** -- writing to files never read (the #1 agent anti-pattern)
+- **Retry storms** -- same failing command repeated 3+ times
+- **Bash failure cascades** -- error rate > 40% with dedup detection
+- **Thrashing** -- editing the same file 3+ times without progress
+- **Research stall** -- reading without acting, context burning without output
+- **Quality grading** -- A/B/C/D/F based on syntax errors, lint issues, bash failures
 
 ### Reflex System
 
 Hard safety blocks that fire before the tool executes:
 
-- **Destructive operation blocks** — `rm -rf`, `git push --force`, `DROP TABLE`
-- **Commit gate** — blocks `git commit` when quality grade is D or F
-- **Circuit breaker** — halts cascading failures after threshold
-- **Retry dedup** — prevents identical failing commands from re-executing
-- **Blind write prevention** — warns on file edits without prior read
+- **Destructive operation blocks** -- `rm -rf`, `git push --force`, `DROP TABLE`
+- **Commit gate** -- blocks `git commit` when quality grade is D or F
+- **Circuit breaker** -- halts cascading failures after threshold
+- **Retry dedup** -- prevents identical failing commands from re-executing
+- **Blind write prevention** -- warns on file edits without prior read
 
 Reflexes operate independently from pressure. They fire at any pressure level when the specific pattern is detected.
 
-### Mirror (v0.6.0)
+### Mirror
 
-Proprioceptive feedback via environment augmentation — the agent sees its own state as facts in tool responses.
+Proprioceptive feedback via environment augmentation -- the agent sees its own state as facts in tool responses.
 
 | Mode | Cost | When | What the agent sees |
 |------|------|------|---------------------|
@@ -113,39 +113,39 @@ Proprioceptive feedback via environment augmentation — the agent sees its own 
 | STATS | $0 | Elevated pressure, no pattern | `errors: 3/8 \| error_rate: 0.41` |
 | SEMANTIC | ~$0.001 | High pressure + drift | LLM-generated behavioral observation |
 
-Mirror learns from outcomes. After each injection, it watches the next 3 actions. If pressure drops ≥10%, the pattern helped and gets cached. Ineffective patterns are pruned after 5 failures.
+Mirror learns from outcomes. After each injection, it watches the next 3 actions. If pressure drops >=10%, the pattern helped and gets cached. Ineffective patterns are pruned after 5 failures.
 
 ### Multi-Agent Intelligence
 
-- **PressureGraph** — directed graph modeling inter-agent dependencies with trust-weighted edges and damping-based pressure propagation
-- **Subagent monitoring** — tracks spawned child agents, their tool usage, error rates, and token consumption
-- **Cascade risk detection** — when a subagent's error rate crosses threshold, risk propagates to parent pressure
-- **Coordination SNR** — signal-to-noise ratio per agent in multi-agent workflows
+- **PressureGraph** -- directed graph modeling inter-agent dependencies with trust-weighted edges and damping-based pressure propagation
+- **Subagent monitoring** -- tracks spawned child agents, their tool usage, error rates, and token consumption
+- **Cascade risk detection** -- when a subagent's error rate crosses threshold, risk propagates to parent pressure
+- **Coordination SNR** -- signal-to-noise ratio per agent in multi-agent workflows
 
 ### Cross-Session Memory
 
 SOMA remembers across sessions:
 
-- **Behavioral fingerprinting** — tool distribution, error baselines, read/write ratios tracked via Jensen-Shannon divergence. Detects when an agent's behavior shifts from its historical norm
-- **Session history** — append-only JSONL log of every session (pressure trajectories, mode transitions, tool distributions, phase sequences)
-- **Cross-session predictor** — matches current trajectory against historical patterns (cosine similarity) to predict escalations before they happen
-- **Learned pattern database** — effective Mirror patterns cached and reused; ineffective ones pruned
+- **Behavioral fingerprinting** -- tool distribution, error baselines, read/write ratios tracked via Jensen-Shannon divergence. Detects when an agent's behavior shifts from its historical norm
+- **Session history** -- append-only JSONL log of every session (pressure trajectories, mode transitions, tool distributions, phase sequences)
+- **Cross-session predictor** -- matches current trajectory against historical patterns (cosine similarity) to predict escalations before they happen
+- **Learned pattern database** -- effective Mirror patterns cached and reused; ineffective ones pruned
 
-### Budget & Resource Tracking
+### Budget and Resource Tracking
 
 - **Token and cost tracking** with configurable limits per dimension
-- **Burn rate estimation** — tokens/action and cost/action with trend detection
-- **Half-life estimation** — predicts when the agent will become ineffective based on context consumption
-- **Budget exhaustion blocking** — stops API calls when budget is spent
-- **Handoff suggestions** — recommends human takeover when half-life is critical
+- **Burn rate estimation** -- tokens/action and cost/action with trend detection
+- **Half-life estimation** -- predicts when the agent will become ineffective based on context consumption
+- **Budget exhaustion blocking** -- stops API calls when budget is spent
+- **Handoff suggestions** -- recommends human takeover when half-life is critical
 
-### Predictions & Forecasting
+### Predictions and Forecasting
 
 - **Linear trend extrapolation** from recent pressure window
-- **Pattern-based boosts** — error streaks (+0.15), blind writes (+0.10), thrashing (+0.08), retry storms (+0.12) added to predicted pressure
-- **Cross-session trajectory matching** — blends 60% current trend + 40% historical pattern match
-- **Confidence scoring** via R² on trend fit
-- **Escalation warnings** — predicts threshold crossings N actions ahead
+- **Pattern-based boosts** -- error streaks (+0.15), blind writes (+0.10), thrashing (+0.08), retry storms (+0.12) added to predicted pressure
+- **Cross-session trajectory matching** -- blends 60% current trend + 40% historical pattern match
+- **Confidence scoring** via R-squared on trend fit
+- **Escalation warnings** -- predicts threshold crossings N actions ahead
 
 ## Quick start
 
@@ -153,7 +153,13 @@ SOMA remembers across sessions:
 pip install soma-ai
 ```
 
-Configure Claude Code hooks in `~/.claude/settings.json`:
+Configure Claude Code hooks automatically:
+
+```bash
+soma setup-claude
+```
+
+Or add hooks manually to `~/.claude/settings.json`:
 
 ```json
 {
@@ -164,8 +170,6 @@ Configure Claude Code hooks in `~/.claude/settings.json`:
   }
 }
 ```
-
-Or run the wizard: `soma setup-claude`
 
 SOMA is silent when the agent is healthy. When behavioral pressure rises above 15%, session context appears in tool responses.
 
@@ -178,10 +182,10 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the full setup guide.
 ```python
 import soma
 
-# Quick start — creates engine with defaults
+# Quick start -- creates engine with defaults
 engine = soma.quickstart()
 
-# Wrap any Anthropic client — all calls monitored transparently
+# Wrap any Anthropic client -- all calls monitored transparently
 client = soma.wrap(anthropic.Anthropic())
 
 # Universal proxy for any framework (LangChain, CrewAI, custom)
@@ -196,56 +200,58 @@ soma.replay_session("~/.soma/sessions/recording.json")
 ## Architecture
 
 ```
-Tool Call ──────────────────────────────────────────────> Tool Execution
+Tool Call ─────────────────────────────────────────────> Tool Execution
      │                                                         │
-     ▼                                                         ▼
-┌─ SOMA Engine ─────────────────────────────────────────────────────┐
+     v                                                         v
++- SOMA Engine ────────────────────────────────────────────────────+
 │                                                                   │
 │  PRE-TOOL (before execution)          POST-TOOL (after execution) │
-│  ┌──────────────┐                     ┌──────────────────┐        │
+│  +──────────────+                     +──────────────────+        │
 │  │   Skeleton    │ hard blocks,       │  Sensor Layer    │        │
-│  │   (Reflexes)  │ retry dedup,       │  11 vitals →     │        │
-│  │              │ blind write warn    │  EMA baselines → │        │
-│  └──────────────┘                     │  pressure (0→1)  │        │
-│                                       └────────┬─────────┘        │
+│  │   (Reflexes)  │ retry dedup,       │  11 vitals ->    │        │
+│  │              │ blind write warn    │  EMA baselines -> │        │
+│  +──────────────+                     │  pressure (0->1)  │        │
+│                                       +────────┬─────────+        │
 │                                                │                  │
-│                                       ┌────────▼─────────┐        │
+│                                       +────────v─────────+        │
 │                                       │ Pattern Detection │        │
 │                                       │ retry, thrash,    │        │
 │                                       │ blind edit, stall │        │
-│                                       └────────┬─────────┘        │
+│                                       +────────┬─────────+        │
 │                                                │                  │
-│                                       ┌────────▼─────────┐        │
+│                                       +────────v─────────+        │
 │                                       │     Mirror       │        │
-│                                       │ PATTERN → STATS  │        │
-│                                       │ → SEMANTIC       │        │
-│                                       │ (→ tool response)│        │
-│                                       └────────┬─────────┘        │
+│                                       │ PATTERN -> STATS  │        │
+│                                       │ -> SEMANTIC       │        │
+│                                       │ (-> tool response)│        │
+│                                       +────────┬─────────+        │
 │                                                │                  │
-│  ┌──────────────┐                     ┌────────▼─────────┐        │
-│  │ PressureGraph│◄────────────────────│   Multi-Agent    │        │
+│  +──────────────+                     +────────v─────────+        │
+│  │ PressureGraph│<────────────────────│   Multi-Agent    │        │
 │  │ (propagation)│ trust-weighted      │   Coordination   │        │
-│  └──────────────┘ edges               └──────────────────┘        │
+│  +──────────────+ edges               +──────────────────+        │
 │                                                                   │
-│  ┌────────────────────────────────────────────────────────┐       │
-│  │ Memory: fingerprints │ sessions │ patterns │ predictor │       │
-│  └────────────────────────────────────────────────────────┘       │
-└───────────────────────────────────────────────────────────────────┘
+│  +────────────────────────────────────────────────────────+       │
+│  │ Memory: fingerprints | sessions | patterns | predictor │       │
+│  +────────────────────────────────────────────────────────+       │
++───────────────────────────────────────────────────────────────────+
 
-Escalation: OBSERVE (silent) → GUIDE (suggestions) → WARN (insistent) → BLOCK (destructive ops only)
-Delivery:   stdout → tool response (agent sees)  |  stderr → system diagnostics (operator sees)
+Escalation: OBSERVE (silent) -> GUIDE (suggestions) -> WARN (insistent) -> BLOCK (destructive ops only)
+Delivery:   stdout -> tool response (agent sees)  |  stderr -> system diagnostics (operator sees)
 ```
 
 ## Integrations
 
 | Platform | Method | Status |
 |----------|--------|--------|
-| Claude Code | Hook system (pre/post tool use, stop) | Production |
-| Anthropic API | `soma.wrap(client)` — transparent proxy | Production |
-| Any framework | `soma.SOMAProxy` — universal tool wrapper | Production |
+| Claude Code | Hook system (pre/post tool use, stop, notification) | Production |
+| Anthropic API | `soma.wrap(client)` -- transparent proxy | Production |
+| Any framework | `soma.SOMAProxy` -- universal tool wrapper | Production |
 | LangChain | SDK adapter with callback handler | Adapter ready |
 | CrewAI | SDK adapter with tool decorator | Adapter ready |
 | AutoGen | SDK adapter with agent wrapper | Adapter ready |
+| Cursor | Hook adapter (`CursorAdapter`) | Adapter ready |
+| Windsurf | Hook adapter (`WindsurfAdapter`) | Adapter ready |
 | OpenTelemetry | Metrics export (gauges, counters) | Optional extra |
 | Webhooks | Fire-and-forget HTTP on WARN/BLOCK events | Built-in |
 
@@ -266,11 +272,11 @@ See [docs/RESEARCH.md](docs/RESEARCH.md) for the full research mapping.
 
 ## v0.6.0 highlights
 
-**Mirror** — the latest addition. Proprioceptive feedback via environment augmentation. Three escalation modes (PATTERN → STATS → SEMANTIC), self-learning from outcomes, zero-cost for pattern/stats modes. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Mirror** -- proprioceptive feedback via environment augmentation. Three escalation modes (PATTERN -> STATS -> SEMANTIC), self-learning from outcomes, zero-cost for pattern/stats modes. **Web dashboard** -- real-time FastAPI + SSE dashboard on port 7777 with 6 tabs (Overview, Deep Dive, Analytics, Logs, Sessions, Settings). See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## Stats
 
-86 modules | 1,213 tests | 25k lines | Python 3.11+ | MIT license
+90 modules | 74 test files | 19k lines | Python 3.11+ | MIT license
 
 ## Links
 

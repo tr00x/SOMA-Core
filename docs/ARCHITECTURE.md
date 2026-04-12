@@ -2,7 +2,7 @@
 
 SOMA is a closed-loop behavioral monitoring system. Actions produce vitals, vitals produce pressure, pressure produces feedback, feedback changes actions.
 
-This document describes the complete system architecture as implemented in v0.6.0.
+This document describes the complete system architecture as implemented in v0.6.0 (90 modules, 19k lines, Python 3.11+).
 
 See also: [Technical Reference](TECHNICAL.md) for exact formulas and constants, [Research](RESEARCH.md) for academic foundations, [Paper](PAPER.md) for the full academic treatment, [Guide](guide.md) for practical usage, [API Reference](api.md) for programmatic interface.
 
@@ -544,7 +544,7 @@ Integration layer for Claude Code and other platforms.
 |--------|---------------|
 | pre_tool_use.py | Reflex evaluation, subagent injection, guidance gate |
 | post_tool_use.py | Action recording, validation, Mirror injection, pressure trajectory |
-| notification.py | Mode change messaging (GUIDE/WARN/BLOCK) |
+| notification.py | Agent awareness prompt injection and findings formatting (UserPromptSubmit/Notification hooks) |
 | stop.py | Session cleanup, report generation |
 | statusline.py | Real-time status bar formatting |
 | common.py | Shared utilities: get_engine, read_action_log, audit logging |

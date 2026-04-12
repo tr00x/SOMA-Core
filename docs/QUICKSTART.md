@@ -74,9 +74,10 @@ soma doctor
 
 SOMA runs on every tool call:
 
-- **PreToolUse** — reflex checks (block destructive ops, retry dedup, blind edit prevention)
-- **PostToolUse** — record action, validate code, compute pressure, Mirror injection
-- **Stop** — save state, update fingerprint, generate session summary
+- **PreToolUse** -- reflex checks (block destructive ops, retry dedup, blind edit prevention)
+- **PostToolUse** -- record action, validate code, compute pressure, Mirror injection
+- **Stop** -- save state, update fingerprint, generate session summary
+- **Notification / UserPromptSubmit** -- inject agent awareness prompt and findings into context
 
 **When the agent is healthy (pressure < 15%):** Silence. SOMA monitors but does not interfere.
 
@@ -90,7 +91,7 @@ last_successful: action #8 (Read)
 ---
 ```
 
-The agent sees this as part of the tool output — not as a warning. It processes the facts and adjusts its behavior.
+The agent sees this as part of the tool output -- not as a warning. It processes the facts and adjusts its behavior.
 
 **Status line** (always visible in Claude Code):
 
@@ -102,7 +103,7 @@ SOMA warn    ██████░░░░ 62% | e:0.38 | #130 | quality D
 
 ## Configuration
 
-Create `soma.toml` in your project root (optional — defaults work well):
+Create `soma.toml` in your project root (optional -- defaults work well):
 
 ```toml
 [thresholds]
@@ -135,10 +136,10 @@ task_tracking = true
 
 ## Semantic mode (optional)
 
-For LLM-powered behavioral observation at high pressure (≥40%):
+For LLM-powered behavioral observation at high pressure (>=40%):
 
 ```bash
-# Gemini — free tier, recommended
+# Gemini -- free tier, recommended
 export GEMINI_API_KEY=your_key
 
 # Or Anthropic
@@ -149,6 +150,17 @@ export OPENAI_API_KEY=your_key
 ```
 
 Priority: Gemini > Anthropic > OpenAI. Auto-detected from env vars.
+
+## Web Dashboard
+
+SOMA includes a real-time web dashboard built on FastAPI + SSE:
+
+```bash
+# Start the dashboard (runs on port 7777)
+python -m soma.dashboard.server
+```
+
+The dashboard has 6 tabs: Overview, Deep Dive, Analytics, Logs, Sessions, Settings. It reads state from `~/.soma/` and provides live updates via Server-Sent Events.
 
 ## Programmatic API
 
@@ -188,7 +200,7 @@ EOF
 bash /tmp/test_soma.sh
 ```
 
-By action 3–4, you should see `--- session context ---` on stdout.
+By action 3-4, you should see `--- session context ---` on stdout.
 
 ## CLI commands
 
@@ -206,12 +218,17 @@ soma config show/set    # View or change configuration
 soma mode <name>        # Switch mode (strict/relaxed/autonomous)
 soma report             # Generate session report
 soma analytics          # Show historical analytics
+soma benchmark          # Run behavioral benchmarks
+soma stats              # Session statistics
+soma policy             # Manage community policy packs
+soma version            # Print version
+soma uninstall-claude   # Remove hooks from Claude Code
 ```
 
 ## Next steps
 
-- [Guide](guide.md) — full user guide
-- [Architecture](ARCHITECTURE.md) — how the pipeline works
-- [API Reference](api.md) — programmatic interface
-- [Research](RESEARCH.md) — academic foundations
-- [Technical Reference](TECHNICAL.md) — every formula and constant
+- [Guide](guide.md) -- full user guide
+- [Architecture](ARCHITECTURE.md) -- how the pipeline works
+- [API Reference](api.md) -- programmatic interface
+- [Research](RESEARCH.md) -- academic foundations
+- [Technical Reference](TECHNICAL.md) -- every formula and constant
