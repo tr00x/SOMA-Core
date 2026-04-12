@@ -8,6 +8,34 @@ SOMA is a real-time behavioral monitoring system that gives AI agents awareness 
 pip install soma-ai
 ```
 
+## Dashboard
+
+SOMA includes a real-time web dashboard for monitoring agent behavior, analyzing sessions, and configuring settings.
+
+<p align="center">
+  <img src="docs/screenshots/overview.png" alt="Overview — live pressure gauges, behavioral insights, and findings" width="100%">
+</p>
+
+<details>
+<summary>More screenshots</summary>
+
+**Deep Dive** — per-agent pressure timeline, vitals breakdown, and baseline report
+<img src="docs/screenshots/deep-dive.png" alt="Deep Dive" width="100%">
+
+**Analytics** — cross-session trends, tool usage distribution, mirror effectiveness
+<img src="docs/screenshots/analytics.png" alt="Analytics" width="100%">
+
+**Logs** — filterable action log with tool names, pressure, errors, and timing
+<img src="docs/screenshots/logs.png" alt="Logs" width="100%">
+
+**Sessions** — session history with cross-session trend comparison
+<img src="docs/screenshots/sessions.png" alt="Sessions" width="100%">
+
+**Settings** — mode selection, thresholds, weights, budget, and policy configuration
+<img src="docs/screenshots/settings.png" alt="Settings" width="100%">
+
+</details>
+
 ## Who is this for
 
 - **AI engineers** building agent systems who want observability beyond logs
