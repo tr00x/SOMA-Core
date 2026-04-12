@@ -1,4 +1,4 @@
-# SOMA Guide — Version 0.6.0
+# SOMA Guide -- Version 0.6.0
 
 ## Quick Start
 
@@ -13,9 +13,10 @@ Installs hooks (PreToolUse, PostToolUse, Stop) + status line. Creates `~/.soma/`
 
 Every tool call flows through SOMA:
 
-- **PreToolUse** — evaluate reflexes (block destructive ops, retry dedup, blind edit prevention), evaluate guidance
-- **PostToolUse** — record action, validate code (py_compile + ruff + node --check), compute vitals and pressure, Mirror injection (proprioceptive context into tool response)
-- **Stop** — save state, update fingerprint, generate session summary
+- **PreToolUse** -- evaluate reflexes (block destructive ops, retry dedup, blind edit prevention), evaluate guidance
+- **PostToolUse** -- record action, validate code (py_compile + ruff + node --check), compute vitals and pressure, Mirror injection (proprioceptive context into tool response)
+- **Stop** -- save state, update fingerprint, generate session summary
+- **Notification / UserPromptSubmit** -- inject agent awareness prompt on first action, format and deliver findings
 
 SOMA is active after first action. Grace period (first 10 actions) linearly ramps pressure from 0 to prevent false spikes before baselines have enough data.
 
@@ -359,6 +360,27 @@ soma stats              # Session statistics
 | `~/.soma/sessions/{id}/bash_history.json` | Last 10 commands (retry dedup) | Session |
 | `~/.soma/subagents/{parent}/{sub}.jsonl` | Subagent action logs | Session |
 | `~/.soma/reports/` | Generated session reports | Persistent |
+
+## Web Dashboard
+
+SOMA includes a real-time web dashboard built on FastAPI + Server-Sent Events:
+
+```bash
+python -m soma.dashboard.server
+```
+
+Runs on port 7777. Six tabs:
+
+| Tab | Purpose |
+|-----|---------|
+| Overview | Live pressure gauges, behavioral insights, findings |
+| Deep Dive | Per-agent pressure timeline, vitals breakdown, baseline report |
+| Analytics | Cross-session trends, tool usage distribution, mirror effectiveness |
+| Logs | Filterable action log with tool names, pressure, errors, timing |
+| Sessions | Session history with cross-session trend comparison |
+| Settings | Mode selection, thresholds, weights, budget, policy configuration |
+
+The dashboard reads from `~/.soma/` state files and provides live updates.
 
 ## Disabling
 

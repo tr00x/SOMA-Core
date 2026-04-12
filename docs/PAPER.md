@@ -8,7 +8,7 @@
 
 ## Abstract
 
-Autonomous AI agents exhibit systematic behavioral failures — retry loops, error cascades, scope drift — yet lack any mechanism to perceive their own behavioral state during execution. Current monitoring tools provide visibility to human operators via dashboards, but the agent itself operates without proprioception. We present SOMA, a real-time behavioral monitoring system that intercepts agent tool calls, computes behavioral pressure from multiple vital signals, detects failure patterns, enforces safety reflexes, and injects compact factual observations directly into tool responses. By embedding telemetry in the environment rather than in instructions, SOMA exploits a key LLM property: models reliably process environmental data but inconsistently follow directives. The system introduces a deterministic pressure model that normalizes heterogeneous behavioral signals via z-score sigmoid transformation, aggregates them through a weighted mean-max blend, and maps the result to four graduated response modes. SOMA includes a self-learning Mirror module that caches effective interventions, multi-agent pressure propagation over trust-weighted directed graphs, cross-session behavioral fingerprinting, and predictive modeling that anticipates failures before they occur. The system is open-source (MIT), validated through 1,213 tests across 86 modules, and published on PyPI as `soma-ai`.
+Autonomous AI agents exhibit systematic behavioral failures — retry loops, error cascades, scope drift — yet lack any mechanism to perceive their own behavioral state during execution. Current monitoring tools provide visibility to human operators via dashboards, but the agent itself operates without proprioception. We present SOMA, a real-time behavioral monitoring system that intercepts agent tool calls, computes behavioral pressure from multiple vital signals, detects failure patterns, enforces safety reflexes, and injects compact factual observations directly into tool responses. By embedding telemetry in the environment rather than in instructions, SOMA exploits a key LLM property: models reliably process environmental data but inconsistently follow directives. The system introduces a deterministic pressure model that normalizes heterogeneous behavioral signals via z-score sigmoid transformation, aggregates them through a weighted mean-max blend, and maps the result to four graduated response modes. SOMA includes a self-learning Mirror module that caches effective interventions, multi-agent pressure propagation over trust-weighted directed graphs, cross-session behavioral fingerprinting, and predictive modeling that anticipates failures before they occur. The system is open-source (MIT), validated through 74 test files across 90 modules (19k lines), and published on PyPI as `soma-ai`.
 
 ---
 
@@ -46,7 +46,7 @@ LLMs reliably process environmental data. Tool outputs, file contents, and error
 7. **Cross-session memory** — behavioral fingerprinting via Jensen-Shannon divergence, trajectory matching, learned pattern database
 8. **Predictive modeling** — linear trend extrapolation with pattern-based boosters and cross-session trajectory matching
 9. **Self-learning engine** — adapts thresholds and signal weights from intervention outcomes with bounded convergence
-10. **Open-source implementation** — 86 modules, 1,213 tests, MIT license, published as `soma-ai` on PyPI
+10. **Open-source implementation** — 90 modules, 74 test files, 19k lines, MIT license, published as `soma-ai` on PyPI
 
 ---
 
@@ -306,8 +306,8 @@ Grades: A (≥0.9), B (≥0.8), C (≥0.7), D (≥0.5), F (<0.5). Commit gate bl
 
 ### 12.1 Implementation validation
 
-- 86 modules, 25,000 lines of Python
-- 1,213 tests with comprehensive coverage
+- 90 modules, 19,000 lines of Python
+- 74 test files with comprehensive coverage
 - All core computations verified: pressure formulas, baseline convergence, graph propagation, self-learning convergence
 - Determinism verified: same action sequence produces identical output across runs
 

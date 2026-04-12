@@ -13,12 +13,29 @@ build/
 .coverage
 *.jsonl
 .soma/
-experiments/test_project/
-experiments/hard_test/.venv/
 node_modules/
 package-lock.json
+package.json
 .serena/
 .claude-plugin/
+.claude/
+test-results/
+
+# Local config
+soma.toml
 soma_session.json
-examples/paperclip_session.json
+.coveragerc
+
+# Internal
+experiments/
+scripts/
+packages/
+docs/specs/
 docs/superpowers/
+skills/
+policies/
+demo.gif
+demo.tape
+demo_session.py
+ROADMAP.md
+CLAUDE.md

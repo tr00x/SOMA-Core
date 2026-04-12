@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.1] — 2026-04-12
+
+Dashboard v2, agent display names, findings pipeline stability.
+
+### Added
+- **Dashboard v2** — full rewrite with modular architecture, 6 tabs (Overview, Deep Dive, Settings, Logs, Sessions, Analytics), SSE real-time updates
+- **Analytics SQLite** — persistent analytics recording via `analytics.db`
+- **Agent display_name** — human-readable names instead of PID-based IDs (e.g. project name instead of `cc-75888`)
+- **Findings pipeline** — behavioral insights with deduplication, 5-min TTL, full-state SSE broadcasts
+- **Dashboard screenshots** in README
+
+### Fixed
+- Findings display flickering — single SSE event, content-based change detection
+- RCA/prediction strip flickering removed, data consolidated into Behavioral Insights
+- Dashboard data binding issues across all tabs
+- Mirror stats flattening for analytics tab
+- Mirror pending evaluations persistence for cross-process sharing
+
+### Changed
+- Cleaned up repository — removed internal specs, experiments, unused scripts, TS SDK placeholder
+
 ## [0.6.0] — 2026-04-02
 
 Mirror: Proprioceptive Feedback — the agent sees itself.
