@@ -227,7 +227,7 @@ export function AgentPage({ id }) {
           <div class="scroll-panel" style="max-height:400px" role="list">
             ${timeline.slice(0, timelineLimit).map((a, i) => html`
               <div class="timeline-item" key=${i} role="listitem">
-                <span class="time" style="min-width:28px">#${i + 1}</span>
+                <span class="time" style="min-width:60px">${a.timestamp ? new Date(a.timestamp * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '#' + (i+1)}</span>
                 <span class="tool-name" style="min-width:100px">${a.tool_name || '--'}</span>
                 <span class="pressure-val" style="color:${pressureColor(a.pressure)};min-width:35px">
                   ${a.pressure != null ? `${Math.round(a.pressure * 100)}%` : '--'}
