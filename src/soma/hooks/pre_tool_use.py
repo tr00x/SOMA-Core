@@ -152,7 +152,7 @@ def main():
         except Exception:
             pass  # Never crash for injection reflex failures
 
-    # Guide + Reflex modes: existing guidance logic (per D-03 mode inheritance)
+    # ── Smart Guidance v2: signal-specific messages + cooldown/escalation ──
     thresholds = get_guidance_thresholds()
     gsd_active = False
     try:
@@ -161,8 +161,48 @@ def main():
     except Exception:
         pass
 
-    from soma.guidance import evaluate
+    from soma.hooks.common import (
+        read_guidance_state, write_guidance_state,
+        read_signal_pressures,
+    )
+    from soma.guidance import evaluate, find_dominant_signal, build_signal_message
+    from soma.guidance_state import INVESTIGATION_TOOLS
 
+    guidance_state = read_guidance_state(agent_id)
+    action_count = snap.get("action_count", 0)
+
+    # Load guidance config from soma.toml
+    try:
+        from soma.cli.config_loader import load_config
+        guidance_cfg = load_config().get("guidance", {})
+    except Exception:
+        guidance_cfg = {}
+    cooldown_actions = guidance_cfg.get("cooldown_actions", 5)
+    escalation_enabled = guidance_cfg.get("escalation_enabled", True)
+    throttle_enabled = guidance_cfg.get("throttle_enabled", True)
+    max_escalation = guidance_cfg.get("max_escalation_level", 3)
+
+    # Throttle enforcement (level 3): block offending tool
+    if (throttle_enabled
+            and guidance_state.throttle_remaining > 0
+            and guidance_state.throttled_tool == tool_name
+            and tool_name not in INVESTIGATION_TOOLS):
+        msg = build_signal_message(
+            guidance_state.dominant_signal, "throttle",
+            {"throttled_tool": tool_name},
+        )
+        guidance_state = guidance_state.decrement_throttle()
+        if guidance_state.throttle_remaining == 0:
+            guidance_state = guidance_state.reset_after_throttle()
+        write_guidance_state(guidance_state, agent_id)
+        print(msg, file=sys.stderr)
+        sys.exit(2)
+
+    # Cooldown: suppress guidance for N actions after last guidance
+    if guidance_state.in_cooldown(action_count, cooldown_actions):
+        return
+
+    # Core guidance evaluation (unchanged mode/allow decisions)
     response = evaluate(
         pressure=pressure,
         tool_name=tool_name,
@@ -172,8 +212,51 @@ def main():
         thresholds=thresholds,
     )
 
-    if response.message:
-        print(response.message, file=sys.stderr)
+    if response.mode.name == "OBSERVE":
+        # Signal improved → reset escalation
+        if escalation_enabled and guidance_state.escalation_level > 0:
+            guidance_state = guidance_state.reset_escalation()
+            write_guidance_state(guidance_state, agent_id)
+        return
+
+    # Build signal-specific message
+    signal_pressures = read_signal_pressures(agent_id)
+    dominant = find_dominant_signal(signal_pressures)
+
+    if dominant:
+        msg_context: dict = {}
+        if dominant == "error_rate":
+            recent = action_log[-10:] if action_log else []
+            consecutive = 0
+            for entry in reversed(recent):
+                if entry.get("tool") == "Bash" and entry.get("error"):
+                    consecutive += 1
+                elif entry.get("tool") == "Bash":
+                    break
+            msg_context["consecutive_failures"] = consecutive
+            msg_context["total_actions"] = len(action_log)
+        elif dominant in ("token_usage", "context_exhaustion"):
+            msg_context["context_pct"] = int(signal_pressures.get("token_usage", 0) * 100)
+
+        level = "warn" if response.mode.name == "WARN" else "guide"
+        msg = build_signal_message(
+            dominant, level, msg_context,
+            escalation_level=guidance_state.escalation_level,
+            ignore_count=guidance_state.ignore_count,
+        )
+    else:
+        msg = response.message
+
+    # Escalation: if same signal persists, escalate
+    if escalation_enabled and guidance_state.dominant_signal == dominant and guidance_state.escalation_level > 0:
+        guidance_state = guidance_state.escalate(max_level=max_escalation)
+
+    # Record guidance sent
+    guidance_state = guidance_state.after_guidance(action_count, dominant)
+    write_guidance_state(guidance_state, agent_id)
+
+    if msg:
+        print(msg, file=sys.stderr)
 
     if not response.allow:
         sys.exit(2)
