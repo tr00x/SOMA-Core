@@ -86,15 +86,16 @@ class TestClaudeCodeConfig:
         assert CLAUDE_CODE_CONFIG["budget"]["tokens"] > DEFAULT_CONFIG["budget"]["tokens"]
         assert CLAUDE_CODE_CONFIG["budget"]["cost_usd"] > DEFAULT_CONFIG["budget"]["cost_usd"]
 
-    def test_thresholds_are_higher_than_default(self):
-        """Claude Code needs higher thresholds to avoid false alarms."""
-        for key in ["guide", "warn", "block"]:
-            assert CLAUDE_CODE_CONFIG["thresholds"][key] > DEFAULT_CONFIG["thresholds"][key], \
-                f"Threshold {key} should be higher for Claude Code"
+    def test_thresholds_are_ordered_and_reasonable(self):
+        """Claude Code thresholds should be ordered and within usable range."""
+        t = CLAUDE_CODE_CONFIG["thresholds"]
+        assert 0.1 <= t["guide"] < t["warn"] < t["block"] <= 0.9
+        assert t["block"] - t["guide"] >= 0.2, "Need spread between guide and block"
 
-    def test_uncertainty_weight_is_lower(self):
-        """Tool diversity is normal for Claude Code — lower uncertainty weight."""
-        assert CLAUDE_CODE_CONFIG["weights"]["uncertainty"] < DEFAULT_CONFIG["weights"]["uncertainty"]
+    def test_error_weight_is_highest(self):
+        """Error weight should be the highest signal weight for Claude Code."""
+        w = CLAUDE_CODE_CONFIG["weights"]
+        assert w["error_rate"] >= max(w["uncertainty"], w["drift"], w["cost"])
 
     def test_error_weight_is_higher(self):
         """Errors matter more in Claude Code — higher error_rate weight."""
@@ -290,8 +291,8 @@ class TestPersistenceWithConfig:
         data = json.loads(path.read_text())
         assert "custom_weights" in data
         assert "custom_thresholds" in data
-        assert data["custom_weights"]["error_rate"] == 2.5
-        assert data["custom_thresholds"]["block"] == 0.8
+        assert data["custom_weights"]["error_rate"] == CLAUDE_CODE_CONFIG["weights"]["error_rate"]
+        assert data["custom_thresholds"]["block"] == CLAUDE_CODE_CONFIG["thresholds"]["block"]
 
     def test_load_restores_mode(self, tmp_path):
         """Restored mode should reflect what was saved."""

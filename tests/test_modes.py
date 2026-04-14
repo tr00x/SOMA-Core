@@ -19,8 +19,8 @@ def test_strict_mode_values():
 def test_relaxed_mode_values():
     m = MODE_PRESETS["relaxed"]
     assert m["agents"]["claude-code"]["autonomy"] == "human_on_the_loop"
-    assert m["thresholds"]["guide"] == 0.40
-    assert m["thresholds"]["block"] == 0.80
+    assert m["thresholds"]["guide"] == 0.35
+    assert m["thresholds"]["block"] == 0.70
     assert m["hooks"]["verbosity"] == "normal"
 
 

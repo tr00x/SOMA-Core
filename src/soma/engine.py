@@ -83,7 +83,7 @@ class _AgentState:
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
-        self.ring_buffer: RingBuffer[Action] = RingBuffer(capacity=10)
+        self.ring_buffer: RingBuffer[Action] = RingBuffer(capacity=30)
         self.baseline = Baseline()
         self.mode: ResponseMode = ResponseMode.OBSERVE
         self.known_tools: list[str] = list(config.tools_allowed) if config.tools_allowed else []
@@ -729,6 +729,8 @@ class SOMAEngine:
             error=action.error,
             pressure=result.pressure,
             mode=result.mode.name,
+            signal_pressures={k: round(v, 4) for k, v in signal_pressures.items()},
+            context_action=context_action,
         )
 
         self._events.emit("action_recorded", {

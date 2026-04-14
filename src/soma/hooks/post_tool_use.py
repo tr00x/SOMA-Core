@@ -181,20 +181,33 @@ def main():
         else:
             output = str(raw_response)[:500]
 
-        # Error detection — only from Claude Code's own error signaling
-        # Claude Code wraps errors in specific format, don't heuristic-match content
-        error = data.get("error", False) or data.get("is_error", False)
+        # Error detection — multiple strategies for robustness
+        # Strategy 1: Claude Code's explicit error fields
+        raw_error = data.get("error", False)
+        raw_is_error = data.get("is_error", False)
+        # Handle string "true"/"false" (some Claude Code versions send strings)
+        if isinstance(raw_error, str):
+            raw_error = raw_error.lower() in ("true", "1", "yes")
+        if isinstance(raw_is_error, str):
+            raw_is_error = raw_is_error.lower() in ("true", "1", "yes")
+        error = bool(raw_error) or bool(raw_is_error)
 
-        # Claude Code tool_response starts with "Exit code N\n" for failed Bash
+        # Strategy 2: Bash exit code detection — search anywhere in response
         if not error and tool_name == "Bash" and isinstance(raw_response, str):
-            if raw_response.startswith("Exit code ") or raw_response.startswith("\nExit code "):
-                # Extract exit code — only non-zero is an error
-                try:
-                    code_str = raw_response.split("Exit code ")[1].split("\n")[0].strip()
-                    if code_str != "0":
-                        error = True
-                except (IndexError, ValueError):
-                    pass
+            import re
+            # Match "Exit code N" anywhere in the first 500 chars
+            m = re.search(r"Exit code (\d+)", raw_response[:500])
+            if m and m.group(1) != "0":
+                error = True
+            # Also catch common error prefixes
+            elif raw_response.lstrip().startswith("Error:") or raw_response.lstrip().startswith("error:"):
+                error = True
+
+        # Strategy 3: Edit/Write tool errors (file not found, permission denied)
+        if not error and tool_name in ("Edit", "Write") and isinstance(raw_response, str):
+            lower_resp = raw_response[:300].lower()
+            if any(p in lower_resp for p in ("error", "failed", "not found", "permission denied")):
+                error = True
 
         duration = float(data.get("duration_ms", 0)) / 1000.0
         file_path = _extract_file_path(data)
