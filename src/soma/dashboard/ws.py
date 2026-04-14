@@ -12,6 +12,22 @@ ws_router = APIRouter()
 SOMA_DIR = Path.home() / ".soma"
 
 
+def _compute_diff(old: dict, new: dict) -> dict:
+    """Compute a shallow diff between two state dicts.
+
+    Returns only keys that changed or were added/removed.
+    For nested dicts (like agents), compares per-key.
+    """
+    diff: dict = {}
+    all_keys = set(old.keys()) | set(new.keys())
+    for key in all_keys:
+        old_val = old.get(key)
+        new_val = new.get(key)
+        if old_val != new_val:
+            diff[key] = new_val
+    return diff
+
+
 class ConnectionManager:
     """Manages WebSocket connections and state diffing."""
 
@@ -22,6 +38,10 @@ class ConnectionManager:
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
         self.connections.append(ws)
+        # Send full state on connect
+        state = self._read_state()
+        if state:
+            await ws.send_json({"type": "state_full", "data": state})
 
     def disconnect(self, ws: WebSocket) -> None:
         if ws in self.connections:
@@ -35,19 +55,29 @@ class ConnectionManager:
                 if ws in self.connections:
                     self.connections.remove(ws)
 
-    def get_state_diff(self) -> dict | None:
-        """Read state.json and return it if changed since last check."""
+    def _read_state(self) -> dict | None:
         state_path = SOMA_DIR / "state.json"
         if not state_path.exists():
             return None
         try:
-            current = json.loads(state_path.read_text())
+            return json.loads(state_path.read_text())
         except (json.JSONDecodeError, OSError):
             return None
-        if current != self._last_state:
+
+    def get_state_diff(self) -> dict | None:
+        """Read state.json, compute diff against last state, return only changes."""
+        current = self._read_state()
+        if current is None:
+            return None
+        if not self._last_state:
+            # First read — send full state
             self._last_state = current
             return current
-        return None
+        if current == self._last_state:
+            return None
+        diff = _compute_diff(self._last_state, current)
+        self._last_state = current
+        return diff if diff else None
 
 
 manager = ConnectionManager()
