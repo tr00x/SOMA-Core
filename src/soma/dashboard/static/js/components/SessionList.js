@@ -54,7 +54,7 @@ export function SessionList({ sessions = [], limit = 5, showAll = false }) {
              role="listitem"
              tabindex="0"
              style="cursor:pointer">
-          <span class="time">${relativeTime(s.start_time || s.end_time)}</span>
+          <span class="time" title="${new Date((s.start_time || 0) * 1000).toLocaleString()}">${relativeTime(s.start_time || s.end_time)}</span>
           <span class="tool-name truncate" style="flex:1">${s.display_name || s.agent_id || s.session_id}</span>
           <span class="mono" style="color:var(--text-secondary);min-width:48px;text-align:right">
             ${s.action_count ?? 0} acts
