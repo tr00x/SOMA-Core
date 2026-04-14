@@ -115,8 +115,7 @@ async def test_get_agent(client: AsyncClient):
 
 async def test_get_agent_not_found(client: AsyncClient):
     resp = await client.get("/api/agents/nonexistent")
-    assert resp.status_code == 200
-    assert "error" in resp.json()
+    assert resp.status_code == 404
 
 
 # ------------------------------------------------------------------
@@ -144,8 +143,7 @@ async def test_get_session_detail(client: AsyncClient):
 
 async def test_get_session_not_found(client: AsyncClient):
     resp = await client.get("/api/sessions/nonexistent")
-    assert resp.status_code == 200
-    assert "error" in resp.json()
+    assert resp.status_code == 404
 
 
 # ------------------------------------------------------------------
@@ -267,8 +265,7 @@ async def test_export_session_csv(client: AsyncClient):
 
 async def test_export_not_found(client: AsyncClient):
     resp = await client.get("/api/sessions/nonexistent/export?format=json")
-    assert resp.status_code == 200
-    assert "error" in resp.json()
+    assert resp.status_code == 404
 
 
 # ------------------------------------------------------------------

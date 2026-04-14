@@ -19,20 +19,24 @@ function getWsUrl() {
   return `${proto}//${location.host}/ws`;
 }
 
+/** Convert agents dict {"cc-1001": {...}} to array [{agent_id: "cc-1001", ...}] */
+function agentsToArray(agentsObj) {
+  if (!agentsObj || Array.isArray(agentsObj)) return agentsObj || [];
+  return Object.entries(agentsObj).map(([id, data]) => ({ agent_id: id, ...data }));
+}
+
 function handleMessage(event) {
   try {
     const msg = JSON.parse(event.data);
     if (msg.type === 'state_full') {
       store.update({
-        agents: msg.data.agents || [],
-        overview: msg.data.overview || null,
+        agents: agentsToArray(msg.data.agents),
+        budget: msg.data.budget || null,
         loading: false,
       });
     } else if (msg.type === 'state_update') {
-      // Merge partial update
       const partial = {};
-      if (msg.data.agents) partial.agents = msg.data.agents;
-      if (msg.data.overview) partial.overview = msg.data.overview;
+      if (msg.data.agents) partial.agents = agentsToArray(msg.data.agents);
       if (msg.data.budget) partial.budget = msg.data.budget;
       store.update(partial);
     }

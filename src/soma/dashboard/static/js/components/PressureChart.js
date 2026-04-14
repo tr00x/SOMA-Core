@@ -20,7 +20,7 @@ async function ensureChartJs() {
 
 function formatTime(ts) {
   if (!ts) return '';
-  const d = new Date(ts);
+  const d = new Date(ts * 1000);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 

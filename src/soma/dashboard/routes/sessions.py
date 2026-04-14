@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from soma.dashboard import data
 
@@ -20,5 +20,5 @@ async def list_sessions():
 async def get_session(session_id: str):
     detail = data.get_session_detail(session_id)
     if detail is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     return dataclasses.asdict(detail)
