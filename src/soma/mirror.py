@@ -30,7 +30,7 @@ PATTERN_DB_PATH = Path.home() / ".soma" / "patterns.json"
 PENDING_DB_PATH = Path.home() / ".soma" / "mirror_pending.json"
 
 # Pressure below this threshold → no context injected (agent is healthy)
-SILENCE_THRESHOLD = 0.15
+SILENCE_THRESHOLD = 0.25
 
 # Pressure at or above this → eligible for semantic mode
 SEMANTIC_THRESHOLD = 0.40

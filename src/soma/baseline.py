@@ -22,7 +22,7 @@ class Baseline:
     don't over-react to a handful of observations.
     """
 
-    def __init__(self, alpha: float = 0.15, min_samples: int = 10) -> None:
+    def __init__(self, alpha: float = 0.08, min_samples: int = 5) -> None:
         self.alpha = alpha
         self.min_samples = min_samples
 

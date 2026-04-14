@@ -54,7 +54,7 @@ class TestFullPipeline:
             r = engine.record_action(agent_id, _action("Read", "file content...", file_path=f))
             results.append(r)
 
-        assert results[-1].pressure < 0.20
+        assert results[-1].pressure < 0.30  # early actions, still OBSERVE
         assert results[-1].mode == ResponseMode.OBSERVE
 
         # ── 3. Phase 2: Implementation (2 Edits) — slight pressure ──
@@ -76,7 +76,7 @@ class TestFullPipeline:
         # ── 5. Mirror generates session context at elevated pressure ──
         mirror = Mirror(engine)
         ctx = mirror.generate(agent_id, _action("Bash", "FAILED", error=True), "FAILED")
-        if post_error_pressure >= 0.15:
+        if post_error_pressure >= 0.25:
             assert ctx is not None, f"Mirror should inject at pressure={post_error_pressure:.2f}"
             assert "--- session context ---" in ctx
             assert "SOMA" not in ctx

@@ -75,11 +75,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
 #
 # Key differences from default:
 # - Higher budget (1M tokens / $50) — Claude Code sessions are long
-# - Higher thresholds — Claude Code is naturally noisy (lots of Bash/Read/Write),
-#   default thresholds cause false alarms
-# - Lower uncertainty weight — tool diversity is normal for Claude Code
-# - Higher error weight — errors in Claude Code matter more (broken builds, bad edits)
-# - Cold start grace period built into engine (first 10 actions penalty-free)
+# - Tuned thresholds — balanced for real coding sessions (guide=0.30, warn=0.45, block=0.65)
+# - Higher uncertainty weight — catch real confusion early
+# - Highest error weight — errors in Claude Code matter most (broken builds, bad edits)
+# - Cold start grace period built into engine (first 5 actions penalty-free)
 CLAUDE_CODE_CONFIG: dict[str, Any] = {
     "soma": {
         "store": "~/.soma/state.json",
@@ -127,14 +126,14 @@ CLAUDE_CODE_CONFIG: dict[str, Any] = {
         },
     },
     "thresholds": {
-        "guide": 0.40,
-        "warn": 0.60,
-        "block": 0.80,
+        "guide": 0.30,
+        "warn": 0.45,
+        "block": 0.65,
     },
     "weights": {
-        "uncertainty": 1.2,
-        "drift": 1.5,
-        "error_rate": 2.5,
+        "uncertainty": 1.8,
+        "drift": 1.2,
+        "error_rate": 3.0,
         "cost": 1.0,
         "token_usage": 0.6,
         "goal_coherence": 1.5,
@@ -184,9 +183,9 @@ MODE_PRESETS: dict[str, dict[str, Any]] = {
             },
         },
         "thresholds": {
-            "guide": 0.40,
-            "warn": 0.60,
-            "block": 0.80,
+            "guide": 0.35,
+            "warn": 0.50,
+            "block": 0.70,
         },
         "hooks": {
             "verbosity": "normal",
