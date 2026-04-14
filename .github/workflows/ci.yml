@@ -38,5 +38,4 @@ jobs:
           pytest tests/ \
             --cov=soma \
             --cov-report=term-missing \
-            --cov-fail-under=80 \
-            "--cov-config=.coveragerc"
+            --cov-fail-under=80
