@@ -13,7 +13,7 @@ async def get_agent_audit(agent_id: str):
     return data.get_audit_log(agent_id)
 
 
-@router.get("/agents/{agent_id}/guidance-state")
+@router.get("/agents/{agent_id}/guidance")
 async def get_agent_guidance_state(agent_id: str):
     # Guidance state is part of the circuit file, read via get_live_agents
     agents = data.get_live_agents()

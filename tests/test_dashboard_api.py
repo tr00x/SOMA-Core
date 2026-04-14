@@ -230,7 +230,7 @@ async def test_audit(client: AsyncClient):
 
 
 async def test_guidance_state(client: AsyncClient):
-    resp = await client.get("/api/agents/cc-1001/guidance-state")
+    resp = await client.get("/api/agents/cc-1001/guidance")
     assert resp.status_code == 200
     data = resp.json()
     assert data["escalation_level"] == 1
@@ -337,3 +337,26 @@ async def test_findings(client: AsyncClient):
     resp = await client.get("/api/agents/cc-1001/findings")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+# ------------------------------------------------------------------
+# Predictions (was missing)
+# ------------------------------------------------------------------
+
+
+async def test_predictions(client: AsyncClient):
+    resp = await client.get("/api/agents/cc-1001/predictions")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), dict)
+
+
+# ------------------------------------------------------------------
+# Heatmap
+# ------------------------------------------------------------------
+
+
+async def test_heatmap(client: AsyncClient):
+    resp = await client.get("/api/heatmap?agent_id=cc-1001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)

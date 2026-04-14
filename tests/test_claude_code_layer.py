@@ -1914,11 +1914,13 @@ class TestArchiveSessions:
 
         # Original should be gone
         assert not agent_dir.exists()
-        # Archive should exist with files
-        archive_dir = soma_dir / "archive" / "cc-1234"
-        assert archive_dir.exists()
-        assert (archive_dir / "trajectory.json").exists()
-        assert json.loads((archive_dir / "trajectory.json").read_text()) == {"data": True}
+        # Archive should exist with timestamped dir
+        archive_base = soma_dir / "archive"
+        assert archive_base.exists()
+        archived = [d for d in archive_base.iterdir() if d.name.startswith("cc-1234_")]
+        assert len(archived) == 1
+        assert (archived[0] / "trajectory.json").exists()
+        assert json.loads((archived[0] / "trajectory.json").read_text()) == {"data": True}
 
     def test_clear_session_files_default_still_deletes(self, tmp_path, monkeypatch):
         """Default _clear_session_files (no archive) still deletes files."""
@@ -1970,8 +1972,10 @@ class TestArchiveSessions:
         # cc-1002 (count=2) and cc-1001 (count=1) are kept (top 2 of non-current)
         archive_dir = soma_dir / "archive"
         assert archive_dir.exists()
-        assert (archive_dir / "cc-1000").exists()
-        assert (archive_dir / "cc-1000" / "trajectory.json").exists()
+        # Archived dirs are timestamped: cc-1000_{ts}
+        archived = [d for d in archive_dir.iterdir() if d.name.startswith("cc-1000_")]
+        assert len(archived) == 1
+        assert (archived[0] / "trajectory.json").exists()
 
         # Original session dir for removed agent should be gone
         assert not (sessions_dir / "cc-1000").exists()

@@ -424,3 +424,48 @@ def test_export_session_csv(analytics_db):
 
 def test_export_session_not_found(analytics_db):
     assert export_session("nonexistent") == b""
+
+
+# ------------------------------------------------------------------
+# get_quality tests (was missing)
+# ------------------------------------------------------------------
+
+
+def test_get_quality_no_state(soma_dir):
+    from soma.dashboard.data import get_quality
+    assert get_quality("cc-1001") is None
+
+
+# ------------------------------------------------------------------
+# get_fingerprint tests (was missing)
+# ------------------------------------------------------------------
+
+
+def test_get_fingerprint_no_state(soma_dir):
+    from soma.dashboard.data import get_fingerprint
+    result = get_fingerprint("cc-1001")
+    # Without state files, returns patterns dict or None
+    assert result is None or isinstance(result, dict)
+
+
+# ------------------------------------------------------------------
+# get_prediction tests (was missing)
+# ------------------------------------------------------------------
+
+
+def test_get_prediction_no_state(soma_dir):
+    from soma.dashboard.data import get_prediction
+    # Without predictor state, returns None or empty
+    result = get_prediction("cc-1001")
+    assert result is None or isinstance(result, dict)
+
+
+# ------------------------------------------------------------------
+# update_config tests (was missing)
+# ------------------------------------------------------------------
+
+
+def test_update_config(soma_dir, tmp_path):
+    from soma.dashboard.data import update_config
+    result = update_config({"soma": {"mode": "guide"}})
+    assert isinstance(result, dict)

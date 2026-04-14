@@ -449,11 +449,10 @@ def _clear_session_files(agent_id: str, archive: bool = False) -> None:
 
         if archive:
             import shutil
-            archive_dir = SOMA_DIR / "archive" / agent_id
+            # Timestamped archive to avoid overwriting previous archives
+            ts = int(time.time())
+            archive_dir = SOMA_DIR / "archive" / f"{agent_id}_{ts}"
             archive_dir.parent.mkdir(parents=True, exist_ok=True)
-            # Remove existing archive for this agent if present
-            if archive_dir.exists():
-                shutil.rmtree(archive_dir)
             shutil.move(str(session_dir), str(archive_dir))
             return
 
