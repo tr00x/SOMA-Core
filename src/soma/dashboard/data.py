@@ -7,6 +7,8 @@ from pathlib import Path
 
 from soma.dashboard.types import (
     AgentSnapshot,
+    BudgetSnapshot,
+    OverviewStats,
     SessionDetail,
     SessionSummary,
 )
@@ -205,3 +207,70 @@ def get_session_detail(session_id: str) -> SessionDetail | None:
         return None
     finally:
         conn.close()
+
+
+# ------------------------------------------------------------------
+# Overview / budget
+# ------------------------------------------------------------------
+
+
+def get_budget_status() -> BudgetSnapshot | None:
+    """Read budget info from state.json."""
+    state_path = SOMA_DIR / "state.json"
+    if not state_path.exists():
+        return None
+
+    try:
+        state = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    budget = state.get("budget")
+    if not budget:
+        return None
+
+    limits = budget.get("limits", {})
+    spent = budget.get("spent", {})
+
+    return BudgetSnapshot(
+        health=budget.get("health", 1.0),
+        tokens_limit=limits.get("tokens", 0),
+        tokens_spent=spent.get("tokens", 0),
+        cost_limit=limits.get("cost_usd", 0.0),
+        cost_spent=spent.get("cost_usd", 0.0),
+    )
+
+
+def get_overview_stats() -> OverviewStats:
+    """Combine live agents + sessions into overview statistics."""
+    agents = get_live_agents()
+    sessions = get_all_sessions()
+    budget = get_budget_status()
+
+    total_actions = sum(s.action_count for s in sessions)
+    all_pressures = [a.pressure for a in agents if a.pressure > 0]
+    avg_pressure = (
+        round(sum(all_pressures) / len(all_pressures), 4)
+        if all_pressures else 0.0
+    )
+
+    # Aggregate top signals from agent vitals
+    signal_totals: dict[str, list[float]] = {}
+    for a in agents:
+        for sig, val in a.vitals.items():
+            if val is not None and val > 0:
+                signal_totals.setdefault(sig, []).append(val)
+
+    top_signals = {
+        sig: round(sum(vals) / len(vals), 4)
+        for sig, vals in signal_totals.items()
+    }
+
+    return OverviewStats(
+        total_agents=len(agents),
+        total_sessions=len(sessions),
+        total_actions=total_actions,
+        avg_pressure=avg_pressure,
+        top_signals=top_signals,
+        budget=budget,
+    )
