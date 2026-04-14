@@ -1,82 +1,69 @@
 /**
- * BudgetGauge — Visual gauge for budget health (tokens + cost).
+ * BudgetGauge — Token budget usage with clear labels.
  */
 
 import { html } from 'htm/preact';
-
-function gaugeColor(health) {
-  if (health == null) return 'var(--text-tertiary)';
-  if (health >= 0.75) return 'var(--success)';
-  if (health >= 0.5) return 'var(--warning)';
-  if (health >= 0.25) return 'var(--mode-warn)';
-  return 'var(--error)';
-}
 
 function formatNumber(n) {
   if (n == null) return '--';
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
+  return String(Math.round(n));
 }
 
-function formatCost(c) {
-  if (c == null) return '--';
-  return `$${c.toFixed(2)}`;
+function usageColor(pct) {
+  if (pct >= 90) return 'var(--error)';
+  if (pct >= 70) return 'var(--warning)';
+  return 'var(--success)';
 }
 
 export function BudgetGauge({ budget }) {
-  if (!budget) {
+  if (!budget || !budget.tokens_limit) {
     return html`
-      <div class="empty-state" style="padding:16px">
-        <div class="empty-state-title">No budget configured</div>
+      <div class="empty-state" style="padding:12px">
+        <div class="empty-state-text">No token budget configured</div>
       </div>
     `;
   }
 
-  const health = budget.health ?? 1;
-  const healthPct = Math.round(health * 100);
+  const spent = budget.tokens_spent || 0;
+  const limit = budget.tokens_limit;
+  const remaining = limit - spent;
+  const usedPct = Math.round((spent / limit) * 100);
+  const remainPct = 100 - usedPct;
 
   return html`
-    <div class="gauge-container">
-      <!-- Overall Health -->
-      <div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:0.75rem;color:var(--text-secondary)">Health</span>
-          <span class="mono" style="font-size:0.875rem;font-weight:600;color:${gaugeColor(health)}">${healthPct}%</span>
-        </div>
-        <div class="gauge-bar">
-          <div class="gauge-bar-fill"
-               style="width:${healthPct}%;background:${gaugeColor(health)}"></div>
-        </div>
+    <div style="padding:4px 0">
+      <!-- Usage bar -->
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:0.75rem;color:var(--text-secondary)">Token Usage</span>
+        <span class="mono" style="font-size:0.75rem;color:${usageColor(usedPct)}">${usedPct}% used</span>
+      </div>
+      <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-bottom:12px">
+        <div style="width:${usedPct}%;height:100%;background:${usageColor(usedPct)};border-radius:4px;transition:width 0.3s"></div>
       </div>
 
-      <!-- Tokens -->
-      ${budget.tokens_limit != null && html`
-        <div style="margin-bottom:10px">
-          <div class="gauge-label">
-            <span>Tokens</span>
-            <span class="mono">${formatNumber(budget.tokens_spent)} / ${formatNumber(budget.tokens_limit)}</span>
-          </div>
-          <div class="gauge-bar" style="margin-top:4px">
-            <div class="gauge-bar-fill"
-                 style="width:${Math.min(((budget.tokens_spent || 0) / budget.tokens_limit) * 100, 100)}%;background:var(--info)"></div>
-          </div>
-        </div>
-      `}
-
-      <!-- Cost -->
-      ${budget.cost_limit != null && html`
+      <!-- Numbers -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <div class="gauge-label">
-            <span>Cost</span>
-            <span class="mono">${formatCost(budget.cost_spent)} / ${formatCost(budget.cost_limit)}</span>
-          </div>
-          <div class="gauge-bar" style="margin-top:4px">
-            <div class="gauge-bar-fill"
-                 style="width:${Math.min(((budget.cost_spent || 0) / budget.cost_limit) * 100, 100)}%;background:var(--accent)"></div>
-          </div>
+          <div style="font-size:0.6875rem;color:var(--text-tertiary)">Spent</div>
+          <div class="mono" style="font-size:1rem;font-weight:600">${formatNumber(spent)}</div>
         </div>
-      `}
+        <div>
+          <div style="font-size:0.6875rem;color:var(--text-tertiary)">Remaining</div>
+          <div class="mono" style="font-size:1rem;font-weight:600;color:${usageColor(usedPct)}">${formatNumber(remaining)}</div>
+        </div>
+        <div>
+          <div style="font-size:0.6875rem;color:var(--text-tertiary)">Limit</div>
+          <div class="mono" style="font-size:1rem;font-weight:600">${formatNumber(limit)}</div>
+        </div>
+        ${budget.cost_limit > 0 && html`
+          <div>
+            <div style="font-size:0.6875rem;color:var(--text-tertiary)">Cost</div>
+            <div class="mono" style="font-size:1rem;font-weight:600">$${(budget.cost_spent || 0).toFixed(2)} / $${budget.cost_limit.toFixed(2)}</div>
+          </div>
+        `}
+      </div>
     </div>
   `;
 }

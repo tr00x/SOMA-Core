@@ -63,6 +63,7 @@ def get_live_agents() -> list[AgentSnapshot]:
         return []
 
     agents_data = state.get("agents", {})
+    names = _get_name_registry()
     result = []
 
     for agent_id, data in agents_data.items():
@@ -87,7 +88,7 @@ def get_live_agents() -> list[AgentSnapshot]:
 
         result.append(AgentSnapshot(
             agent_id=agent_id,
-            display_name=data.get("display_name", agent_id),
+            display_name=names.get(agent_id) or data.get("display_name") or agent_id,
             level=data.get("level", "OBSERVE"),
             pressure=data.get("pressure", 0.0),
             action_count=data.get("action_count", 0),

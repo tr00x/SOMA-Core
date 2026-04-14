@@ -37,7 +37,7 @@ const VITAL_LABELS = { uncertainty: 'UNC', drift: 'DFT', error_rate: 'ERR', toke
 
 export function AgentCard({ agent }) {
   const pressure = agent.pressure ?? 0;
-  const pct = Math.round(pressure * 100);
+  const pct = pressure > 0 && pressure < 0.005 ? '<1' : Math.round(pressure * 100);
   const level = agent.level || agent.escalation_level || 'OBSERVE';
 
   const vitals = useMemo(() => {
@@ -102,10 +102,7 @@ export function AgentCard({ agent }) {
           ${vitals.map(v => html`
             <div class="vital-chip" key=${v.key}>
               <span>${v.label}</span>
-              <div class="vital-bar">
-                <div class="vital-bar-fill"
-                     style="width:${Math.min(v.value * 100, 100)}%;background:${pressureColor(v.value)}"></div>
-              </div>
+              <span class="mono" style="font-size:0.625rem;color:var(--text-secondary)">${v.value < 0.01 ? '<1%' : (v.value * 100).toFixed(0) + '%'}</span>
             </div>
           `)}
         </div>

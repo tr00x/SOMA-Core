@@ -223,6 +223,12 @@
   font-weight: 500;
 }
 
+.stat-sub {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
 .stat-delta {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
