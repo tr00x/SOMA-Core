@@ -9,7 +9,7 @@ Response modes (thresholds configurable via soma.toml [thresholds]):
     BLOCK    (above block):   Blocks ONLY destructive operations.
 
 Defaults: guide=0.25, warn=0.50, block=0.75
-Claude Code: guide=0.40, warn=0.60, block=0.80
+Claude Code: guide=0.30, warn=0.45, block=0.65
 """
 
 from __future__ import annotations
