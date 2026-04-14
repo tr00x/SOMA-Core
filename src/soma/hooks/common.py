@@ -162,6 +162,59 @@ def _get_session_agent_id() -> str:
     return "claude-code"
 
 
+def _get_display_name(agent_id: str) -> str:
+    """Generate human-readable display name for an agent session.
+
+    Uses CLAUDE_WORKING_DIRECTORY to derive project name, then assigns
+    sequential numbers: "my-project #1", "my-project #2", etc.
+
+    Results are persisted in SOMA_DIR/agent_names.json so names survive
+    across hook invocations.
+    """
+    import os
+
+    registry_path = SOMA_DIR / "agent_names.json"
+
+    # Load existing registry
+    registry: dict[str, str] = {}
+    if registry_path.exists():
+        try:
+            registry = json.loads(registry_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Already named?
+    if agent_id in registry:
+        return registry[agent_id]
+
+    # Derive project name from working directory
+    cwd = os.environ.get("CLAUDE_WORKING_DIRECTORY", os.getcwd())
+    project_name = Path(cwd).name or "session"
+
+    # Find next sequence number for this project
+    existing_nums = []
+    for name in registry.values():
+        if name.startswith(f"{project_name} #"):
+            try:
+                existing_nums.append(int(name.split("#")[1]))
+            except (ValueError, IndexError):
+                pass
+    seq = max(existing_nums, default=0) + 1
+
+    display_name = f"{project_name} #{seq}"
+    registry[agent_id] = display_name
+
+    # Save atomically
+    try:
+        tmp = registry_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(registry))
+        tmp.rename(registry_path)
+    except OSError:
+        pass
+
+    return display_name
+
+
 _TOML_MIGRATED = False
 
 
@@ -219,10 +272,7 @@ def get_engine():
         engine._custom_thresholds = CLAUDE_CODE_CONFIG["thresholds"]
 
     agent_id = _get_session_agent_id()
-    # Auto display name from working directory
-    import os as _os
-    _cwd = _os.environ.get("CLAUDE_WORKING_DIRECTORY", _os.getcwd())
-    _display_name = _os.path.basename(_cwd) if _cwd else ""
+    _display_name = _get_display_name(agent_id)
 
     is_new_session = False
     try:
@@ -240,7 +290,11 @@ def get_engine():
     if is_new_session:
         _inherit_baseline(engine, agent_id)
         _cleanup_old_agents(engine, agent_id)
-        _clear_session_files(agent_id)
+        # Archive sessions with data; clear empty ones
+        if _should_clear_stale_session(agent_id):
+            _clear_session_files(agent_id)
+        else:
+            _clear_session_files(agent_id, archive=True)
         _write_session_marker(agent_id)
 
     return engine, agent_id
@@ -314,6 +368,32 @@ def _write_session_marker(agent_id: str) -> None:
         pass  # Never crash
 
 
+def _should_clear_stale_session(agent_id: str) -> bool:
+    """Return True only if a stale session has no recorded action data.
+
+    Sessions with action logs or trajectory data are preserved (archived
+    instead of cleared) to avoid losing valuable behavioral history.
+    """
+    session_dir = SESSIONS_DIR / agent_id
+    if not session_dir.exists():
+        return True
+
+    action_log = session_dir / "action_log.jsonl"
+    if action_log.exists() and action_log.stat().st_size > 0:
+        return False
+
+    # action_log.json is the older format used by append_action_log
+    action_log_json = session_dir / "action_log.json"
+    if action_log_json.exists() and action_log_json.stat().st_size > 2:
+        return False
+
+    trajectory = session_dir / "trajectory.json"
+    if trajectory.exists() and trajectory.stat().st_size > 2:
+        return False
+
+    return True
+
+
 def _inherit_baseline(engine, new_agent_id: str) -> None:
     """Copy baseline from the most active previous session.
 
@@ -352,17 +432,31 @@ def _inherit_baseline(engine, new_agent_id: str) -> None:
         pass  # Never crash
 
 
-def _clear_session_files(agent_id: str) -> None:
-    """Remove stale per-session files so new session starts fresh.
+def _clear_session_files(agent_id: str, archive: bool = False) -> None:
+    """Remove or archive stale per-session files so new session starts fresh.
 
     Called when a new agent is registered (new PPID = new session).
     Clears trajectory, action_log, bash_history, quality, predictor,
     task_tracker, block_count, and checkpoint_count.
+
+    When archive=True, moves the entire session directory to
+    SOMA_DIR/archive/agent_id instead of deleting files.
     """
     try:
         session_dir = SESSIONS_DIR / agent_id
         if not session_dir.exists():
             return
+
+        if archive:
+            import shutil
+            archive_dir = SOMA_DIR / "archive" / agent_id
+            archive_dir.parent.mkdir(parents=True, exist_ok=True)
+            # Remove existing archive for this agent if present
+            if archive_dir.exists():
+                shutil.rmtree(archive_dir)
+            shutil.move(str(session_dir), str(archive_dir))
+            return
+
         for f in session_dir.iterdir():
             # Keep subagents.json (cross-session data) and lock files
             if f.name.endswith(".lock"):
@@ -391,8 +485,8 @@ def _cleanup_old_agents(engine, current_id: str, keep: int = 2) -> None:
         for aid in to_remove:
             del engine._agents[aid]
             engine._graph._nodes.pop(aid, None)
-            # Clean up session files on disk
-            _clear_session_files(aid)
+            # Archive session files on disk (preserve data for analysis)
+            _clear_session_files(aid, archive=True)
     except Exception:
         pass  # Never crash
 

@@ -1885,3 +1885,201 @@ class TestSessionCleanup:
             aid = f"cc-{i}"
             session_dir = fake_sessions / aid
             assert not (session_dir / "trajectory.json").exists()
+
+
+# ──────────────────────────────────────────────────────────────────
+# Task 1: Archive sessions instead of deleting
+# ──────────────────────────────────────────────────────────────────
+
+class TestArchiveSessions:
+    """Tests for archiving old agent sessions instead of deleting."""
+
+    def test_clear_session_files_archive_mode(self, tmp_path, monkeypatch):
+        """_clear_session_files(archive=True) should move dir to archive/."""
+        from soma.hooks.common import _clear_session_files
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        soma_dir = tmp_path
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+        monkeypatch.setattr("soma.hooks.common.SOMA_DIR", soma_dir)
+
+        # Create a fake session dir with files
+        agent_dir = sessions_dir / "cc-1234"
+        agent_dir.mkdir()
+        (agent_dir / "trajectory.json").write_text('{"data": true}')
+        (agent_dir / "action_log.jsonl").write_text('{"tool": "Bash"}\n')
+
+        _clear_session_files("cc-1234", archive=True)
+
+        # Original should be gone
+        assert not agent_dir.exists()
+        # Archive should exist with files
+        archive_dir = soma_dir / "archive" / "cc-1234"
+        assert archive_dir.exists()
+        assert (archive_dir / "trajectory.json").exists()
+        assert json.loads((archive_dir / "trajectory.json").read_text()) == {"data": True}
+
+    def test_clear_session_files_default_still_deletes(self, tmp_path, monkeypatch):
+        """Default _clear_session_files (no archive) still deletes files."""
+        from soma.hooks.common import _clear_session_files
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+
+        agent_dir = sessions_dir / "cc-5555"
+        agent_dir.mkdir()
+        (agent_dir / "trajectory.json").write_text("{}")
+
+        _clear_session_files("cc-5555")
+
+        # File should be deleted but dir may remain
+        assert not (agent_dir / "trajectory.json").exists()
+
+    def test_cleanup_archives_instead_of_deleting(self, tmp_path, monkeypatch):
+        """Cleaned-up agents should be archived, not deleted."""
+        from soma.hooks.common import _cleanup_old_agents, SESSIONS_DIR
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        soma_dir = tmp_path
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+        monkeypatch.setattr("soma.hooks.common.SOMA_DIR", soma_dir)
+
+        # Create fake session dirs for 4 agents
+        for i in range(4):
+            aid = f"cc-{1000 + i}"
+            agent_dir = sessions_dir / aid
+            agent_dir.mkdir()
+            (agent_dir / "trajectory.json").write_text("{}")
+            (agent_dir / "action_log.jsonl").write_text("{}")
+
+        # Create 5 non-current agents so 3 get removed (keep=2)
+        engine = type("E", (), {"_agents": {}, "_graph": type("G", (), {"_nodes": {}})()})()
+        for i in range(4):
+            aid = f"cc-{1000 + i}"
+            agent = type("A", (), {"action_count": i, "last_active": float(i)})()
+            engine._agents[aid] = agent
+            engine._graph._nodes[aid] = True
+
+        _cleanup_old_agents(engine, "cc-1003", keep=2)
+
+        # cc-1000 has lowest action_count (0) — should be archived
+        # cc-1003 is current — excluded from cleanup
+        # cc-1002 (count=2) and cc-1001 (count=1) are kept (top 2 of non-current)
+        archive_dir = soma_dir / "archive"
+        assert archive_dir.exists()
+        assert (archive_dir / "cc-1000").exists()
+        assert (archive_dir / "cc-1000" / "trajectory.json").exists()
+
+        # Original session dir for removed agent should be gone
+        assert not (sessions_dir / "cc-1000").exists()
+
+        # Kept agents still have their session dirs
+        assert (sessions_dir / "cc-1001").exists()
+        assert (sessions_dir / "cc-1002").exists()
+        assert (sessions_dir / "cc-1003").exists()
+
+
+# ──────────────────────────────────────────────────────────────────
+# Task 2: Human-readable agent display names
+# ──────────────────────────────────────────────────────────────────
+
+class TestDisplayNames:
+    """Tests for _get_display_name generating human-readable names."""
+
+    def test_get_display_name_from_cwd(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _get_display_name
+
+        monkeypatch.setenv("CLAUDE_WORKING_DIRECTORY", str(tmp_path / "my-project"))
+        monkeypatch.setattr("soma.hooks.common.SOMA_DIR", tmp_path / ".soma")
+        (tmp_path / ".soma").mkdir()
+
+        name = _get_display_name("cc-12345")
+        assert name == "my-project #1"
+
+    def test_get_display_name_increments(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _get_display_name
+
+        soma_dir = tmp_path / ".soma"
+        soma_dir.mkdir()
+        monkeypatch.setenv("CLAUDE_WORKING_DIRECTORY", str(tmp_path / "my-project"))
+        monkeypatch.setattr("soma.hooks.common.SOMA_DIR", soma_dir)
+
+        registry = soma_dir / "agent_names.json"
+        registry.write_text('{"cc-99999": "my-project #1"}')
+
+        name = _get_display_name("cc-12345")
+        assert name == "my-project #2"
+
+    def test_get_display_name_cached(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _get_display_name
+
+        soma_dir = tmp_path / ".soma"
+        soma_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SOMA_DIR", soma_dir)
+        monkeypatch.setenv("CLAUDE_WORKING_DIRECTORY", str(tmp_path / "proj"))
+
+        name1 = _get_display_name("cc-111")
+        name2 = _get_display_name("cc-111")
+        assert name1 == name2 == "proj #1"
+
+
+# ──────────────────────────────────────────────────────────────────
+# Task 3: Stale session preservation
+# ──────────────────────────────────────────────────────────────────
+
+class TestStaleSessionPreservation:
+    """Tests for _should_clear_stale_session protecting sessions with data."""
+
+    def test_stale_detection_preserves_sessions_with_data(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _should_clear_stale_session
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+
+        agent_id = "cc-99999"
+        agent_dir = sessions_dir / agent_id
+        agent_dir.mkdir()
+        (agent_dir / "action_log.jsonl").write_text('{"tool": "Bash"}\n{"tool": "Read"}\n')
+
+        assert _should_clear_stale_session(agent_id) is False
+
+    def test_stale_detection_clears_empty_sessions(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _should_clear_stale_session
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+
+        agent_id = "cc-88888"
+        agent_dir = sessions_dir / agent_id
+        agent_dir.mkdir()
+        (agent_dir / "action_log.jsonl").write_text("")
+
+        assert _should_clear_stale_session(agent_id) is True
+
+    def test_stale_detection_nonexistent_dir(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _should_clear_stale_session
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+
+        assert _should_clear_stale_session("cc-nonexistent") is True
+
+    def test_stale_detection_preserves_trajectory(self, tmp_path, monkeypatch):
+        from soma.hooks.common import _should_clear_stale_session
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        monkeypatch.setattr("soma.hooks.common.SESSIONS_DIR", sessions_dir)
+
+        agent_id = "cc-77777"
+        agent_dir = sessions_dir / agent_id
+        agent_dir.mkdir()
+        (agent_dir / "trajectory.json").write_text('[0.1, 0.2, 0.3]')
+
+        assert _should_clear_stale_session(agent_id) is False
