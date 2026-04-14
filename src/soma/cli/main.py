@@ -783,6 +783,21 @@ def _cmd_policy(args: argparse.Namespace) -> None:
         print(f"  Removed policy pack: {entry}")
 
 
+def _cmd_dashboard(args: argparse.Namespace) -> None:
+    """Launch the SOMA web dashboard."""
+    try:
+        import uvicorn
+    except ImportError:
+        print("Dashboard requires extra dependencies. Install with:")
+        print("  pip install soma-ai[dashboard]")
+        sys.exit(1)
+
+    host = args.host
+    port = args.port
+    print(f"SOMA Dashboard → http://{host}:{port}")
+    uvicorn.run("soma.dashboard.app:app", host=host, port=port)
+
+
 def _cmd_benchmark(args: argparse.Namespace) -> None:
     """Run SOMA behavioral benchmarks with A/B comparison."""
     from dataclasses import asdict
@@ -944,6 +959,10 @@ def _build_parser() -> argparse.ArgumentParser:
                              help="Set up SOMA for Windsurf")
 
     # ---- Monitoring ----
+    dash_parser = subparsers.add_parser("dashboard", help="Launch the SOMA web dashboard")
+    dash_parser.add_argument("--port", type=int, default=7777, help="Port (default: 7777)")
+    dash_parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+
     subparsers.add_parser("agents", help="List all agents from state file")
     subparsers.add_parser("status", help="Show current agent monitoring status")
 
@@ -1080,6 +1099,7 @@ def main() -> None:
         "version": _cmd_version,
         "doctor": _cmd_doctor,
         "benchmark": _cmd_benchmark,
+        "dashboard": _cmd_dashboard,
     }
 
     handler = dispatch.get(args.command)
