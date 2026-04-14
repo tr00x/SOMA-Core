@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from soma.dashboard import data
 
@@ -22,4 +22,4 @@ async def get_agent(agent_id: str):
     for a in agents:
         if a.agent_id == agent_id:
             return dataclasses.asdict(a)
-    return {"error": "agent not found"}
+    raise HTTPException(status_code=404, detail="agent not found")

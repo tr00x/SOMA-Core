@@ -468,11 +468,16 @@ def update_config(patch: dict) -> dict:
         import tomllib
         import tomli_w
 
+        # Try CWD first, then SOMA_DIR
         config_path = Path("soma.toml")
+        if not config_path.exists():
+            config_path = SOMA_DIR / "soma.toml"
+
         if config_path.exists():
             current = tomllib.loads(config_path.read_text())
         else:
             current = {}
+            config_path = Path("soma.toml")  # create in CWD
 
         def _merge(base: dict, updates: dict) -> dict:
             for k, v in updates.items():

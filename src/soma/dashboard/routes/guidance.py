@@ -1,7 +1,7 @@
 """SOMA Dashboard — guidance routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from soma.dashboard import data
 
@@ -26,4 +26,4 @@ async def get_agent_guidance_state(agent_id: str):
                 "consecutive_block": a.consecutive_block,
                 "is_open": a.is_open,
             }
-    return {"error": "agent not found"}
+    raise HTTPException(status_code=404, detail="agent not found")

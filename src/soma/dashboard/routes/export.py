@@ -1,7 +1,7 @@
 """SOMA Dashboard — export routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from soma.dashboard import data
@@ -14,7 +14,7 @@ async def export_session(session_id: str, format: str = "json"):
     fmt = format if format in ("json", "csv") else "json"
     result = data.export_session(session_id, fmt=fmt)
     if not result:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
 
     if fmt == "csv":
         return Response(
