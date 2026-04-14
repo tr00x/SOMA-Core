@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.3] — 2026-04-14
+
+Pressure system recalibration based on 2-week production data (8,970 actions, 103 sessions).
+
+### Fixed
+- Error detection: Bash exit codes, Edit/Write failures now properly caught (was 0 errors in 8,970 real actions)
+- Pressure range expanded from 0.37–0.43 to full 0.10–0.70+ working range
+- Ring buffer increased 10→30 for meaningful error_rate calculation window
+
+### Changed
+- Baseline EMA: alpha 0.15→0.08 (stickier, doesn't normalize problems away), warmup 10→5 actions
+- Pressure z-score: min_std 0.05→0.02 (2.5x sharper signal detection)
+- Thresholds: guide 0.40→0.30, warn 0.60→0.45, block 0.80→0.65
+- Signal weights rebalanced: error_rate highest (3.0), uncertainty raised (1.8), drift lowered (1.2)
+- Mirror silence threshold 0.15→0.25 to match new pressure calibration
+- Audit log now includes per-signal pressure breakdown
+
 ## [0.6.2] — 2026-04-12
 
 Repository cleanup, documentation overhaul, CI fixes.
