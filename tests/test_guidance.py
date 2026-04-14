@@ -2,6 +2,7 @@ import pytest
 from soma.guidance import (
     GuidanceResponse, pressure_to_mode, evaluate,
     is_destructive_bash, is_sensitive_file,
+    find_dominant_signal, build_signal_message,
 )
 from soma.types import ResponseMode
 
@@ -163,3 +164,86 @@ class TestGsdActive:
         r = evaluate(0.30, "Agent", {}, action_log, gsd_active=False)
         assert r.mode == ResponseMode.GUIDE
         assert any("agents spawned" in s for s in r.suggestions)
+
+
+class TestFindDominantSignal:
+    def test_empty_dict(self):
+        assert find_dominant_signal({}) == ""
+
+    def test_all_below_threshold(self):
+        assert find_dominant_signal({"error_rate": 0.10, "drift": 0.05}) == ""
+
+    def test_returns_highest(self):
+        assert find_dominant_signal({"error_rate": 0.40, "drift": 0.20}) == "error_rate"
+
+    def test_single_signal_above(self):
+        assert find_dominant_signal({"uncertainty": 0.30}) == "uncertainty"
+
+    def test_custom_threshold(self):
+        assert find_dominant_signal({"drift": 0.10}, min_threshold=0.05) == "drift"
+        assert find_dominant_signal({"drift": 0.10}, min_threshold=0.15) == ""
+
+    def test_exactly_at_threshold(self):
+        assert find_dominant_signal({"error_rate": 0.15}, min_threshold=0.15) == "error_rate"
+
+
+class TestBuildSignalMessage:
+    def test_error_rate_guide(self):
+        msg = build_signal_message("error_rate", "guide",
+                                   {"consecutive_failures": 3, "total_actions": 10})
+        assert "3/10" in msg
+        assert "Read the error" in msg
+
+    def test_error_rate_warn(self):
+        msg = build_signal_message("error_rate", "warn",
+                                   {"consecutive_failures": 5})
+        assert "5 total" in msg
+        assert "don't retry blindly" in msg
+
+    def test_uncertainty_guide(self):
+        msg = build_signal_message("uncertainty", "guide", {})
+        assert "state your goal" in msg
+
+    def test_uncertainty_warn(self):
+        msg = build_signal_message("uncertainty", "warn", {})
+        assert "re-read the task" in msg
+
+    def test_drift_guide(self):
+        msg = build_signal_message("drift", "guide", {})
+        assert "Re-read the requirements" in msg
+
+    def test_drift_warn(self):
+        msg = build_signal_message("drift", "warn", {})
+        assert "Return to the stated objective" in msg
+
+    def test_token_usage_guide(self):
+        msg = build_signal_message("token_usage", "guide", {"context_pct": 75})
+        assert "75%" in msg
+
+    def test_context_exhaustion_warn(self):
+        msg = build_signal_message("context_exhaustion", "warn", {"context_pct": 95})
+        assert "95%" in msg
+
+    def test_throttle_level(self):
+        msg = build_signal_message("error_rate", "throttle",
+                                   {"throttled_tool": "Bash"})
+        assert "Bash throttled" in msg
+        assert "Read/Grep" in msg
+
+    def test_unknown_signal_fallback(self):
+        msg = build_signal_message("unknown_signal", "guide", {})
+        assert "Pressure elevated" in msg
+
+    def test_escalation_level_1(self):
+        msg = build_signal_message("drift", "guide", {}, escalation_level=1)
+        assert "Previous suggestion was ignored" in msg
+
+    def test_escalation_level_2(self):
+        msg = build_signal_message("drift", "warn", {}, escalation_level=2, ignore_count=4)
+        assert "FINAL" in msg
+        assert "4 warnings ignored" in msg
+
+    def test_escalation_not_added_to_throttle(self):
+        msg = build_signal_message("error_rate", "throttle",
+                                   {"throttled_tool": "Bash"}, escalation_level=2)
+        assert "FINAL" not in msg

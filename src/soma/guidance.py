@@ -63,6 +63,66 @@ def is_sensitive_file(file_path: str) -> bool:
 DEFAULT_THRESHOLDS = {"guide": 0.25, "warn": 0.50, "block": 0.75}
 
 
+def find_dominant_signal(signal_pressures: dict[str, float], min_threshold: float = 0.15) -> str:
+    """Find the signal with highest pressure, if above threshold."""
+    if not signal_pressures:
+        return ""
+    best_signal = max(signal_pressures, key=signal_pressures.get)
+    if signal_pressures[best_signal] < min_threshold:
+        return ""
+    return best_signal
+
+
+_SIGNAL_MESSAGES: dict[str, dict[str, str]] = {
+    "error_rate": {
+        "guide": "[SOMA] {consecutive_failures}/{total_actions} bash commands failed. Read the error output before retrying.",
+        "warn": "[SOMA] Still failing ({consecutive_failures} total). Parse the error — don't retry blindly.",
+    },
+    "uncertainty": {
+        "guide": "[SOMA] High uncertainty — state your goal before the next action.",
+        "warn": "[SOMA] Uncertainty rising. Stop, re-read the task, then proceed.",
+    },
+    "drift": {
+        "guide": "[SOMA] Drifting from the original task. Re-read the requirements.",
+        "warn": "[SOMA] Significant drift detected. Return to the stated objective.",
+    },
+    "token_usage": {
+        "guide": "[SOMA] {context_pct}% context used. Start wrapping up current work.",
+        "warn": "[SOMA] {context_pct}% context — finish current task, skip nice-to-haves.",
+    },
+    "context_exhaustion": {
+        "guide": "[SOMA] Context nearly full. Finish or delegate remaining work.",
+        "warn": "[SOMA] {context_pct}% context critical. Complete only essential actions.",
+    },
+}
+
+
+def build_signal_message(
+    signal: str,
+    level: str,
+    context: dict,
+    escalation_level: int = 0,
+    ignore_count: int = 0,
+) -> str:
+    """Build a signal-specific, actionable guidance message."""
+    if level == "throttle":
+        tool = context.get("throttled_tool", "tool")
+        return f"[SOMA] {tool} throttled — investigate with Read/Grep first."
+
+    msg = _SIGNAL_MESSAGES.get(signal, {}).get(level, "")
+    if not msg:
+        msg = "[SOMA] Pressure elevated — verify your approach before continuing."
+    else:
+        msg = msg.format(**{k: v for k, v in context.items() if isinstance(v, (int, float, str))})
+
+    if escalation_level == 1:
+        msg += " Previous suggestion was ignored."
+    elif escalation_level >= 2:
+        msg += f" FINAL: {ignore_count} warnings ignored. Next: tool throttling."
+
+    return msg
+
+
 def pressure_to_mode(
     pressure: float,
     thresholds: dict[str, float] | None = None,
