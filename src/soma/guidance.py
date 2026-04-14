@@ -94,6 +94,10 @@ _SIGNAL_MESSAGES: dict[str, dict[str, str]] = {
         "guide": "[SOMA] Context nearly full. Finish or delegate remaining work.",
         "warn": "[SOMA] {context_pct}% context critical. Complete only essential actions.",
     },
+    "cost": {
+        "guide": "[SOMA] Spending faster than budgeted. Review if all tool calls are necessary.",
+        "warn": "[SOMA] Cost budget depleting fast. Finish essential work only.",
+    },
 }
 
 
