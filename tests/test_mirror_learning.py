@@ -41,8 +41,9 @@ def _record(engine: SOMAEngine, agent_id: str, action: Action):
 
 @pytest.fixture(autouse=True)
 def isolate_pattern_db(tmp_path, monkeypatch):
-    """Prevent tests from reading/writing the real pattern DB."""
+    """Prevent tests from reading/writing the real pattern/pending DB."""
     monkeypatch.setattr("soma.mirror.PATTERN_DB_PATH", tmp_path / "patterns.json")
+    monkeypatch.setattr("soma.mirror.PENDING_DB_PATH", tmp_path / "pending.json")
 
 
 # ------------------------------------------------------------------
