@@ -10,18 +10,33 @@ from pathlib import Path
 import pytest
 
 from soma.dashboard.data import (
+    export_session,
+    get_activity_heatmap,
+    get_agent_graph,
+    get_agent_timeline,
     get_all_sessions,
+    get_audit_log,
+    get_baselines,
     get_budget_status,
+    get_config,
+    get_findings,
+    get_learning_state,
     get_live_agents,
     get_overview_stats,
+    get_pressure_history,
     get_session_detail,
+    get_tool_stats,
 )
 from soma.dashboard.types import (
+    ActionEvent,
     AgentSnapshot,
     BudgetSnapshot,
+    HeatmapCell,
     OverviewStats,
+    PressurePoint,
     SessionDetail,
     SessionSummary,
+    ToolStat,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "dashboard"
@@ -208,3 +223,204 @@ def test_get_overview_stats(analytics_db):
     assert stats.total_actions == 10  # 5 + 3 + 2
     assert stats.budget is not None
     assert stats.budget.health == 0.85
+
+
+# ------------------------------------------------------------------
+# get_pressure_history tests
+# ------------------------------------------------------------------
+
+
+def test_get_pressure_history(analytics_db):
+    points = get_pressure_history("cc-1001")
+    assert len(points) == 8  # 5 + 3 actions across 2 sessions
+    assert all(isinstance(p, PressurePoint) for p in points)
+    assert points[0].timestamp < points[-1].timestamp
+
+
+def test_get_pressure_history_empty(analytics_db):
+    assert get_pressure_history("nonexistent") == []
+
+
+def test_get_pressure_history_no_db(soma_dir):
+    assert get_pressure_history("cc-1001") == []
+
+
+# ------------------------------------------------------------------
+# get_agent_timeline tests
+# ------------------------------------------------------------------
+
+
+def test_get_agent_timeline(analytics_db):
+    events = get_agent_timeline("cc-1001")
+    assert len(events) == 8
+    assert all(isinstance(e, ActionEvent) for e in events)
+    assert events[0].tool_name == "Bash"
+
+
+def test_get_agent_timeline_empty(analytics_db):
+    assert get_agent_timeline("nonexistent") == []
+
+
+# ------------------------------------------------------------------
+# get_tool_stats tests
+# ------------------------------------------------------------------
+
+
+def test_get_tool_stats(analytics_db):
+    stats = get_tool_stats("cc-1001")
+    assert len(stats) == 2
+    by_name = {s.tool_name: s for s in stats}
+    assert by_name["Bash"].count == 5
+    assert by_name["Bash"].error_count == 0
+    assert by_name["Read"].count == 3
+    assert by_name["Read"].error_count == 1
+    assert by_name["Read"].error_rate == pytest.approx(1 / 3, rel=0.01)
+
+
+def test_get_tool_stats_empty(analytics_db):
+    assert get_tool_stats("nonexistent") == []
+
+
+# ------------------------------------------------------------------
+# get_activity_heatmap tests
+# ------------------------------------------------------------------
+
+
+def test_get_activity_heatmap(analytics_db):
+    cells = get_activity_heatmap("cc-1001")
+    assert len(cells) > 0
+    assert all(isinstance(c, HeatmapCell) for c in cells)
+    total = sum(c.count for c in cells)
+    assert total == 8
+
+
+def test_get_activity_heatmap_empty(analytics_db):
+    assert get_activity_heatmap("nonexistent") == []
+
+
+# ------------------------------------------------------------------
+# get_audit_log tests
+# ------------------------------------------------------------------
+
+
+@pytest.fixture
+def audit_log(soma_dir):
+    """Create test audit log."""
+    log = soma_dir / "audit_cc-1001.jsonl"
+    entries = [
+        {"action_num": 10, "type": "guidance", "signal": "error_rate"},
+        {"action_num": 15, "type": "throttle", "signal": "error_rate"},
+        {"action_num": 20, "type": "guidance", "signal": "drift"},
+    ]
+    log.write_text("\n".join(json.dumps(e) for e in entries))
+    return log
+
+
+def test_get_audit_log(audit_log):
+    entries = get_audit_log("cc-1001")
+    assert len(entries) == 3
+    assert entries[0]["type"] == "guidance"
+    assert entries[2]["signal"] == "drift"
+
+
+def test_get_audit_log_empty(soma_dir):
+    assert get_audit_log("nonexistent") == []
+
+
+# ------------------------------------------------------------------
+# get_findings tests
+# ------------------------------------------------------------------
+
+
+def test_get_findings(soma_dir):
+    findings = get_findings("cc-1001")
+    assert isinstance(findings, list)
+
+
+# ------------------------------------------------------------------
+# get_config tests
+# ------------------------------------------------------------------
+
+
+def test_get_config(soma_dir):
+    config = get_config()
+    assert isinstance(config, dict)
+
+
+# ------------------------------------------------------------------
+# get_baselines tests
+# ------------------------------------------------------------------
+
+
+def test_get_baselines_from_engine_state(soma_dir):
+    engine_state = {
+        "agents": {"cc-1001": {"baseline": {"uncertainty": 0.05, "drift": 0.03}}}
+    }
+    (soma_dir / "engine_state.json").write_text(json.dumps(engine_state))
+    baselines = get_baselines("cc-1001")
+    assert baselines["uncertainty"] == 0.05
+    assert baselines["drift"] == 0.03
+
+
+def test_get_baselines_no_state(soma_dir):
+    assert get_baselines("cc-1001") == {}
+
+
+# ------------------------------------------------------------------
+# get_agent_graph tests
+# ------------------------------------------------------------------
+
+
+def test_get_agent_graph_no_state(soma_dir):
+    assert get_agent_graph() is None
+
+
+def test_get_agent_graph_with_data(soma_dir):
+    state = {
+        "agents": {"cc-1001": {"level": "GUIDE"}},
+        "graph": {"edges": [{"source": "cc-1001", "target": "cc-1002", "trust": 0.9}]},
+    }
+    (soma_dir / "engine_state.json").write_text(json.dumps(state))
+    graph = get_agent_graph()
+    assert graph is not None
+    assert len(graph.nodes) == 1
+    assert len(graph.edges) == 1
+
+
+# ------------------------------------------------------------------
+# get_learning_state tests
+# ------------------------------------------------------------------
+
+
+def test_get_learning_state_no_state(soma_dir):
+    assert get_learning_state("cc-1001") is None
+
+
+def test_get_learning_state_with_data(soma_dir):
+    state = {"learning": {"adjustments": [{"signal": "drift", "delta": 0.1}]}}
+    (soma_dir / "engine_state.json").write_text(json.dumps(state))
+    result = get_learning_state("cc-1001")
+    assert result is not None
+    assert "adjustments" in result
+
+
+# ------------------------------------------------------------------
+# export_session tests
+# ------------------------------------------------------------------
+
+
+def test_export_session_json(analytics_db):
+    data = export_session("sess-001", "json")
+    assert len(data) > 0
+    parsed = json.loads(data)
+    assert parsed["action_count"] == 5
+
+
+def test_export_session_csv(analytics_db):
+    data = export_session("sess-001", "csv")
+    assert b"tool_name" in data
+    assert b"Bash" in data
+
+
+def test_export_session_not_found(analytics_db):
+    assert export_session("nonexistent") == b""

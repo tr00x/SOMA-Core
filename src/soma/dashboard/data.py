@@ -6,11 +6,17 @@ import sqlite3
 from pathlib import Path
 
 from soma.dashboard.types import (
+    ActionEvent,
     AgentSnapshot,
     BudgetSnapshot,
+    GraphSnapshot,
+    HeatmapCell,
     OverviewStats,
+    PressurePoint,
+    QualitySnapshot,
     SessionDetail,
     SessionSummary,
+    ToolStat,
 )
 
 SOMA_DIR = Path.home() / ".soma"
@@ -274,3 +280,324 @@ def get_overview_stats() -> OverviewStats:
         top_signals=top_signals,
         budget=budget,
     )
+
+
+# ------------------------------------------------------------------
+# Pressure history / timeline
+# ------------------------------------------------------------------
+
+
+def get_pressure_history(agent_id: str) -> list[PressurePoint]:
+    """Return pressure values over time for an agent."""
+    conn = _get_db_connection()
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT timestamp, pressure, mode FROM actions "
+            "WHERE agent_id = ? ORDER BY timestamp",
+            (agent_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [
+        PressurePoint(
+            timestamp=r["timestamp"],
+            pressure=r["pressure"],
+            mode=r["mode"] or "OBSERVE",
+        )
+        for r in rows
+    ]
+
+
+def get_agent_timeline(agent_id: str) -> list[ActionEvent]:
+    """Return all actions for an agent as timeline events."""
+    conn = _get_db_connection()
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT timestamp, tool_name, pressure, error, mode, "
+            "token_count, cost FROM actions "
+            "WHERE agent_id = ? ORDER BY timestamp",
+            (agent_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [
+        ActionEvent(
+            timestamp=r["timestamp"],
+            tool_name=r["tool_name"],
+            pressure=r["pressure"],
+            error=bool(r["error"]),
+            mode=r["mode"] or "OBSERVE",
+            token_count=r["token_count"] or 0,
+            cost=r["cost"] or 0.0,
+        )
+        for r in rows
+    ]
+
+
+# ------------------------------------------------------------------
+# Tool stats / heatmap
+# ------------------------------------------------------------------
+
+
+def get_tool_stats(agent_id: str) -> list[ToolStat]:
+    """Return per-tool usage counts and error rates."""
+    conn = _get_db_connection()
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT tool_name, COUNT(*) as cnt, SUM(error) as errs "
+            "FROM actions WHERE agent_id = ? "
+            "GROUP BY tool_name ORDER BY cnt DESC",
+            (agent_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [
+        ToolStat(
+            tool_name=r["tool_name"],
+            count=r["cnt"],
+            error_count=r["errs"] or 0,
+            error_rate=round((r["errs"] or 0) / r["cnt"], 4) if r["cnt"] else 0.0,
+        )
+        for r in rows
+    ]
+
+
+def get_activity_heatmap(agent_id: str) -> list[HeatmapCell]:
+    """Return hour x day-of-week action counts."""
+    from datetime import datetime
+
+    conn = _get_db_connection()
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT timestamp FROM actions WHERE agent_id = ?",
+            (agent_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    grid: dict[tuple[int, int], int] = {}
+    for r in rows:
+        dt = datetime.fromtimestamp(r["timestamp"])
+        key = (dt.hour, dt.weekday())
+        grid[key] = grid.get(key, 0) + 1
+
+    return [HeatmapCell(hour=h, day=d, count=c) for (h, d), c in sorted(grid.items())]
+
+
+# ------------------------------------------------------------------
+# Audit log / findings
+# ------------------------------------------------------------------
+
+
+def get_audit_log(agent_id: str) -> list[dict]:
+    """Read guidance audit log entries for an agent."""
+    path = SOMA_DIR / f"audit_{agent_id}.jsonl"
+    if not path.exists():
+        return []
+    entries = []
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line:
+                entries.append(json.loads(line))
+    except (json.JSONDecodeError, OSError):
+        pass
+    return entries
+
+
+def get_findings(agent_id: str) -> list[dict]:
+    """Collect findings from subsystems. Returns [] on any error."""
+    try:
+        from soma.findings import collect
+        findings = collect()
+        return [
+            {"priority": f.priority, "category": f.category,
+             "title": f.title, "detail": f.detail}
+            for f in findings
+        ]
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------------------
+# Config
+# ------------------------------------------------------------------
+
+
+def get_config() -> dict:
+    """Read current soma.toml config."""
+    try:
+        from soma.cli.config_loader import load_config
+        return load_config()
+    except Exception:
+        return {}
+
+
+def update_config(patch: dict) -> dict:
+    """Update soma.toml with partial config via deep merge."""
+    try:
+        import tomllib
+        import tomli_w
+
+        config_path = Path("soma.toml")
+        if config_path.exists():
+            current = tomllib.loads(config_path.read_text())
+        else:
+            current = {}
+
+        def _merge(base: dict, updates: dict) -> dict:
+            for k, v in updates.items():
+                if isinstance(v, dict) and isinstance(base.get(k), dict):
+                    _merge(base[k], v)
+                else:
+                    base[k] = v
+            return base
+
+        merged = _merge(current, patch)
+        config_path.write_bytes(tomli_w.dumps(merged))
+        return merged
+    except Exception:
+        return get_config()
+
+
+# ------------------------------------------------------------------
+# Subsystem state readers
+# ------------------------------------------------------------------
+
+
+def get_quality(agent_id: str) -> QualitySnapshot | None:
+    """Read quality tracker state."""
+    try:
+        from soma.state import get_quality_tracker
+        qt = get_quality_tracker()
+        if qt is None:
+            return None
+        return QualitySnapshot(
+            total_writes=qt.total_writes,
+            total_bashes=qt.total_bashes,
+            syntax_errors=qt.syntax_errors,
+            lint_issues=qt.lint_issues,
+            bash_errors=qt.bash_errors,
+            write_error_rate=round(qt.syntax_errors / max(qt.total_writes, 1), 4),
+            bash_error_rate=round(qt.bash_errors / max(qt.total_bashes, 1), 4),
+        )
+    except Exception:
+        return None
+
+
+def get_fingerprint(agent_id: str) -> dict | None:
+    """Read behavioral fingerprint data."""
+    try:
+        from soma.state import get_fingerprint_engine
+        fe = get_fingerprint_engine()
+        if fe is None:
+            return None
+        return {"patterns": fe.patterns if hasattr(fe, "patterns") else {}}
+    except Exception:
+        return None
+
+
+def get_baselines(agent_id: str) -> dict[str, float]:
+    """Read EMA baselines from engine state."""
+    path = SOMA_DIR / "engine_state.json"
+    if not path.exists():
+        return {}
+    try:
+        state = json.loads(path.read_text())
+        agent_state = state.get("agents", {}).get(agent_id, {})
+        baseline = agent_state.get("baseline", {})
+        return {k: round(v, 4) for k, v in baseline.items() if isinstance(v, (int, float))}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def get_prediction(agent_id: str) -> dict | None:
+    """Read pressure prediction from predictor state."""
+    try:
+        from soma.state import get_predictor
+        pred = get_predictor()
+        if pred is None:
+            return None
+        prediction = pred.predict(agent_id) if hasattr(pred, "predict") else None
+        if prediction is None:
+            return None
+        return {
+            "predicted_pressure": prediction.predicted_pressure,
+            "confidence": prediction.confidence,
+            "horizon_actions": prediction.horizon_actions,
+        }
+    except Exception:
+        return None
+
+
+def get_agent_graph() -> GraphSnapshot | None:
+    """Read the agent pressure graph from engine state."""
+    path = SOMA_DIR / "engine_state.json"
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text())
+        graph_data = state.get("graph", {})
+        if not graph_data:
+            return None
+        nodes = [
+            {"id": aid, "pressure": adata.get("level", "OBSERVE")}
+            for aid, adata in state.get("agents", {}).items()
+        ]
+        edges = [
+            {"source": e.get("source"), "target": e.get("target"),
+             "trust": e.get("trust", 1.0)}
+            for e in graph_data.get("edges", [])
+        ]
+        return GraphSnapshot(nodes=nodes, edges=edges)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def get_learning_state(agent_id: str) -> dict | None:
+    """Read learning engine state."""
+    path = SOMA_DIR / "engine_state.json"
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text())
+        learning = state.get("learning", {})
+        return learning if learning else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def export_session(session_id: str, fmt: str = "json") -> bytes:
+    """Export session data as JSON or CSV bytes."""
+    detail = get_session_detail(session_id)
+    if detail is None:
+        return b""
+
+    if fmt == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        if detail.actions:
+            writer = csv.DictWriter(output, fieldnames=detail.actions[0].keys())
+            writer.writeheader()
+            writer.writerows(detail.actions)
+        return output.getvalue().encode("utf-8")
+    else:
+        import dataclasses
+        return json.dumps(dataclasses.asdict(detail), indent=2).encode("utf-8")
