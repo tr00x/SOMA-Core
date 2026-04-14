@@ -422,17 +422,30 @@ def get_audit_log(agent_id: str) -> list[dict]:
 
 
 def get_findings(agent_id: str) -> list[dict]:
-    """Collect findings from subsystems. Returns [] on any error."""
-    try:
-        from soma.findings import collect
-        findings = collect()
-        return [
-            {"priority": f.priority, "category": f.category,
-             "title": f.title, "detail": f.detail}
-            for f in findings
-        ]
-    except Exception:
-        return []
+    """Collect findings from quality tracker and audit log for an agent."""
+    results: list[dict] = []
+
+    # Quality-based findings
+    qt = get_quality(agent_id)
+    if qt is not None:
+        if qt.write_error_rate > 0.2:
+            results.append({"priority": 1, "category": "quality",
+                            "title": "High write error rate",
+                            "detail": f"{qt.write_error_rate:.0%} of writes have errors"})
+        if qt.bash_error_rate > 0.3:
+            results.append({"priority": 1, "category": "quality",
+                            "title": "High bash error rate",
+                            "detail": f"{qt.bash_error_rate:.0%} of bash commands fail"})
+
+    # Audit-based findings (recent throttles/blocks)
+    audit = get_audit_log(agent_id)
+    throttles = [e for e in audit if e.get("type") == "throttle"]
+    if len(throttles) >= 3:
+        results.append({"priority": 0, "category": "guidance",
+                        "title": "Repeated throttling",
+                        "detail": f"{len(throttles)} throttle events recorded"})
+
+    return results
 
 
 # ------------------------------------------------------------------
@@ -482,10 +495,10 @@ def update_config(patch: dict) -> dict:
 
 
 def get_quality(agent_id: str) -> QualitySnapshot | None:
-    """Read quality tracker state."""
+    """Read quality tracker state for a specific agent session."""
     try:
         from soma.state import get_quality_tracker
-        qt = get_quality_tracker()
+        qt = get_quality_tracker(agent_id)
         if qt is None:
             return None
         return QualitySnapshot(
@@ -528,10 +541,10 @@ def get_baselines(agent_id: str) -> dict[str, float]:
 
 
 def get_prediction(agent_id: str) -> dict | None:
-    """Read pressure prediction from predictor state."""
+    """Read pressure prediction for a specific agent session."""
     try:
         from soma.state import get_predictor
-        pred = get_predictor()
+        pred = get_predictor(agent_id)
         if pred is None:
             return None
         prediction = pred.predict(agent_id) if hasattr(pred, "predict") else None
@@ -571,14 +584,19 @@ def get_agent_graph() -> GraphSnapshot | None:
 
 
 def get_learning_state(agent_id: str) -> dict | None:
-    """Read learning engine state."""
+    """Read learning engine state, scoped to agent if available."""
     path = SOMA_DIR / "engine_state.json"
     if not path.exists():
         return None
     try:
         state = json.loads(path.read_text())
         learning = state.get("learning", {})
-        return learning if learning else None
+        if not learning:
+            return None
+        # Return agent-scoped data if keyed by agent_id, else full state
+        if agent_id in learning:
+            return learning[agent_id]
+        return learning
     except (json.JSONDecodeError, OSError):
         return None
 

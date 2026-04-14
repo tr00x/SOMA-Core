@@ -16,7 +16,13 @@ async def get_overview():
     return dataclasses.asdict(stats)
 
 
-@router.get("/heatmap/{agent_id}")
-async def get_heatmap(agent_id: str):
+@router.get("/heatmap")
+async def get_heatmap(agent_id: str = ""):
+    if not agent_id:
+        # Default to first live agent
+        agents = data.get_live_agents()
+        if not agents:
+            return []
+        agent_id = agents[0].agent_id
     cells = data.get_activity_heatmap(agent_id)
     return [dataclasses.asdict(c) for c in cells]

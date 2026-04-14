@@ -20,3 +20,11 @@ async def get_pressure_history(agent_id: str):
 async def get_timeline(agent_id: str):
     events = data.get_agent_timeline(agent_id)
     return [dataclasses.asdict(e) for e in events]
+
+
+@router.get("/agents/{agent_id}/predictions")
+async def get_predictions(agent_id: str):
+    result = data.get_prediction(agent_id)
+    if result is None:
+        return {}
+    return result
