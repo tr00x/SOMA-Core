@@ -264,6 +264,21 @@ def main():
         result = engine.record_action(agent_id, action)
         save_state(engine)
 
+        # Persist signal pressures for pre_tool_use guidance
+        try:
+            if result.pressure_vector:
+                pv = result.pressure_vector
+                _signal_pressures = {
+                    "uncertainty": pv.uncertainty,
+                    "drift": pv.drift,
+                    "error_rate": pv.error_rate,
+                    "cost": pv.cost,
+                }
+                from soma.hooks.common import write_signal_pressures
+                write_signal_pressures(_signal_pressures, agent_id)
+        except Exception:
+            pass  # Never crash for signal persistence
+
         # Record to analytics SQLite for cross-session trends
         try:
             from soma.analytics import AnalyticsStore

@@ -644,6 +644,72 @@ def save_circuit_breaker_state(state, agent_id: str = "") -> None:
         pass
 
 
+def read_guidance_state(agent_id: str = "") -> "GuidanceState":
+    """Read guidance escalation state from circuit file. Never raises."""
+    from soma.guidance_state import GuidanceState
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        if path.exists():
+            data = json.loads(path.read_text())
+            gs_data = data.get("guidance_state", {})
+            return GuidanceState.from_dict(gs_data)
+    except Exception:
+        pass
+    return GuidanceState()
+
+
+def write_guidance_state(state: "GuidanceState", agent_id: str = "") -> None:
+    """Persist guidance state into circuit file. Merges with existing data. Never raises."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, IOError):
+                data = {}
+        data["guidance_state"] = state.to_dict()
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def write_signal_pressures(signal_pressures: dict[str, float], agent_id: str = "") -> None:
+    """Persist last signal pressures into circuit file. Never raises."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, IOError):
+                data = {}
+        data["signal_pressures"] = {k: round(v, 4) for k, v in signal_pressures.items()}
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def read_signal_pressures(agent_id: str = "") -> dict[str, float]:
+    """Read last signal pressures from circuit file. Never raises."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        if path.exists():
+            data = json.loads(path.read_text())
+            sp = data.get("signal_pressures", {})
+            if isinstance(sp, dict):
+                return sp
+    except Exception:
+        pass
+    return {}
+
+
 def _auto_checkpoint(checkpoint_number: int) -> bool:
     """Run git stash push as an auto-checkpoint. Returns True on success.
 
