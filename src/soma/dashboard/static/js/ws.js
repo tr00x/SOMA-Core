@@ -28,15 +28,10 @@ function agentsToArray(agentsObj) {
 function handleMessage(event) {
   try {
     const msg = JSON.parse(event.data);
-    if (msg.type === 'state_full') {
-      store.update({
-        agents: agentsToArray(msg.data.agents),
-        budget: msg.data.budget || null,
-        loading: false,
-      });
-    } else if (msg.type === 'state_update') {
+    if (msg.type === 'state_full' || msg.type === 'state_update') {
+      // WS sends raw state.json — only use budget from it.
+      // Agent list comes from REST API which has display names resolved.
       const partial = {};
-      if (msg.data.agents) partial.agents = agentsToArray(msg.data.agents);
       if (msg.data.budget) partial.budget = msg.data.budget;
       store.update(partial);
     }
