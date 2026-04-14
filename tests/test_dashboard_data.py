@@ -9,8 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from soma.dashboard.data import get_all_sessions, get_live_agents, get_session_detail
-from soma.dashboard.types import AgentSnapshot, SessionDetail, SessionSummary
+from soma.dashboard.data import (
+    get_all_sessions,
+    get_budget_status,
+    get_live_agents,
+    get_overview_stats,
+    get_session_detail,
+)
+from soma.dashboard.types import (
+    AgentSnapshot,
+    BudgetSnapshot,
+    OverviewStats,
+    SessionDetail,
+    SessionSummary,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "dashboard"
 
@@ -161,3 +173,38 @@ def test_get_session_detail(analytics_db):
 
 def test_get_session_detail_not_found(analytics_db):
     assert get_session_detail("nonexistent") is None
+
+
+# ------------------------------------------------------------------
+# get_budget_status tests
+# ------------------------------------------------------------------
+
+
+def test_get_budget_status(soma_dir):
+    budget = get_budget_status()
+    assert isinstance(budget, BudgetSnapshot)
+    assert budget.health == 0.85
+    assert budget.tokens_limit == 1000000
+    assert budget.tokens_spent == 150000
+    assert budget.cost_limit == 50.0
+    assert budget.cost_spent == 7.5
+
+
+def test_get_budget_no_state(soma_dir):
+    (soma_dir / "state.json").unlink()
+    assert get_budget_status() is None
+
+
+# ------------------------------------------------------------------
+# get_overview_stats tests
+# ------------------------------------------------------------------
+
+
+def test_get_overview_stats(analytics_db):
+    stats = get_overview_stats()
+    assert isinstance(stats, OverviewStats)
+    assert stats.total_agents == 2
+    assert stats.total_sessions == 3
+    assert stats.total_actions == 10  # 5 + 3 + 2
+    assert stats.budget is not None
+    assert stats.budget.health == 0.85
