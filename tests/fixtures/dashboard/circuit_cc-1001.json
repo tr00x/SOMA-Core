@@ -1,0 +1,14 @@
+{
+  "agent_id": "cc-1001",
+  "consecutive_block": 0,
+  "consecutive_observe": 3,
+  "is_open": false,
+  "guidance_state": {
+    "dominant_signal": "error_rate",
+    "last_guidance_action_num": 38,
+    "ignore_count": 2,
+    "escalation_level": 1,
+    "throttled_tool": "",
+    "throttle_remaining": 0
+  }
+}
