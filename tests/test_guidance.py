@@ -247,3 +247,13 @@ class TestBuildSignalMessage:
         msg = build_signal_message("error_rate", "throttle",
                                    {"throttled_tool": "Bash"}, escalation_level=2)
         assert "FINAL" not in msg
+
+    def test_missing_context_keys_fallback(self):
+        """build_signal_message should not crash when context is missing keys."""
+        msg = build_signal_message("error_rate", "guide", {})
+        assert msg.startswith("[SOMA]")
+
+    def test_partial_context_keys_fallback(self):
+        """Missing one key should fallback to generic."""
+        msg = build_signal_message("error_rate", "guide", {"consecutive_failures": 3})
+        assert msg.startswith("[SOMA]")

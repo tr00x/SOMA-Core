@@ -113,7 +113,10 @@ def build_signal_message(
     if not msg:
         msg = "[SOMA] Pressure elevated — verify your approach before continuing."
     else:
-        msg = msg.format(**{k: v for k, v in context.items() if isinstance(v, (int, float, str))})
+        try:
+            msg = msg.format(**{k: v for k, v in context.items() if isinstance(v, (int, float, str))})
+        except KeyError:
+            msg = "[SOMA] Pressure elevated — verify your approach before continuing."
 
     if escalation_level == 1:
         msg += " Previous suggestion was ignored."

@@ -248,7 +248,7 @@ def main():
         msg = response.message
 
     # Escalation: if same signal persists, escalate
-    if escalation_enabled and guidance_state.dominant_signal == dominant and guidance_state.escalation_level > 0:
+    if escalation_enabled and guidance_state.dominant_signal and guidance_state.dominant_signal == dominant:
         guidance_state = guidance_state.escalate(max_level=max_escalation)
 
     # Record guidance sent
