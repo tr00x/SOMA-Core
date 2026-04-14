@@ -1,0 +1,35 @@
+{
+  "agents": {
+    "cc-1001": {
+      "display_name": "SOMA-Core #1",
+      "level": "GUIDE",
+      "pressure": 0.35,
+      "vitals": {
+        "uncertainty": 0.2,
+        "drift": 0.1,
+        "error_rate": 0.4,
+        "cost": 0.05,
+        "token_usage": 0.3
+      },
+      "action_count": 42
+    },
+    "cc-1002": {
+      "display_name": "SOMA-Core #2",
+      "level": "OBSERVE",
+      "pressure": 0.12,
+      "vitals": {
+        "uncertainty": 0.05,
+        "drift": 0.02,
+        "error_rate": 0.0,
+        "cost": 0.01,
+        "token_usage": 0.1
+      },
+      "action_count": 8
+    }
+  },
+  "budget": {
+    "health": 0.85,
+    "limits": {"tokens": 1000000, "cost_usd": 50.0},
+    "spent": {"tokens": 150000, "cost_usd": 7.5}
+  }
+}
