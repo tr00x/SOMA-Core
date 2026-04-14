@@ -7,6 +7,7 @@ from pathlib import Path
 
 from soma.dashboard.types import (
     AgentSnapshot,
+    SessionDetail,
     SessionSummary,
 )
 
@@ -144,5 +145,63 @@ def get_all_sessions() -> list[SessionSummary]:
         return sessions
     except sqlite3.Error:
         return []
+    finally:
+        conn.close()
+
+
+def get_session_detail(session_id: str) -> SessionDetail | None:
+    """Return full detail for a single session, or None if not found."""
+    conn = _get_db_connection()
+    if conn is None:
+        return None
+
+    try:
+        names = _get_name_registry()
+        rows = conn.execute(
+            "SELECT * FROM actions WHERE session_id = ? ORDER BY timestamp",
+            (session_id,),
+        ).fetchall()
+
+        if not rows:
+            return None
+
+        actions = []
+        tool_counts: dict[str, int] = {}
+        total_tokens = 0
+        total_cost = 0.0
+        error_count = 0
+        pressures = []
+
+        for r in rows:
+            actions.append(dict(r))
+            tool = r["tool_name"]
+            tool_counts[tool] = tool_counts.get(tool, 0) + 1
+            total_tokens += r["token_count"] or 0
+            total_cost += r["cost"] or 0.0
+            error_count += r["error"] or 0
+            pressures.append(r["pressure"] or 0.0)
+
+        agent_id = rows[0]["agent_id"]
+        avg_p = sum(pressures) / len(pressures) if pressures else 0.0
+        max_p = max(pressures) if pressures else 0.0
+
+        return SessionDetail(
+            session_id=session_id,
+            agent_id=agent_id,
+            display_name=names.get(agent_id, agent_id),
+            action_count=len(actions),
+            avg_pressure=round(avg_p, 4),
+            max_pressure=round(max_p, 4),
+            total_tokens=total_tokens,
+            total_cost=round(total_cost, 6),
+            error_count=error_count,
+            start_time=rows[0]["timestamp"],
+            end_time=rows[-1]["timestamp"],
+            mode=rows[-1]["mode"] or "OBSERVE",
+            actions=actions,
+            tool_stats=tool_counts,
+        )
+    except sqlite3.Error:
+        return None
     finally:
         conn.close()

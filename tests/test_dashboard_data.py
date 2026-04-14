@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from soma.dashboard.data import get_live_agents, get_all_sessions
-from soma.dashboard.types import AgentSnapshot, SessionSummary
+from soma.dashboard.data import get_all_sessions, get_live_agents, get_session_detail
+from soma.dashboard.types import AgentSnapshot, SessionDetail, SessionSummary
 
 FIXTURES = Path(__file__).parent / "fixtures" / "dashboard"
 
@@ -142,3 +142,22 @@ def test_get_all_sessions_fields_correct(analytics_db):
 def test_get_all_sessions_no_db(soma_dir):
     """Without analytics.db, returns empty list."""
     assert get_all_sessions() == []
+
+
+# ------------------------------------------------------------------
+# get_session_detail tests
+# ------------------------------------------------------------------
+
+
+def test_get_session_detail(analytics_db):
+    detail = get_session_detail("sess-001")
+    assert isinstance(detail, SessionDetail)
+    assert detail.session_id == "sess-001"
+    assert detail.action_count == 5
+    assert len(detail.actions) == 5
+    assert detail.tool_stats == {"Bash": 5}
+    assert detail.total_tokens == 2500
+
+
+def test_get_session_detail_not_found(analytics_db):
+    assert get_session_detail("nonexistent") is None
