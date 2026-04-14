@@ -195,6 +195,23 @@ def main():
         if guidance_state.throttle_remaining == 0:
             guidance_state = guidance_state.reset_after_throttle()
         write_guidance_state(guidance_state, agent_id)
+        # Audit log throttle block
+        try:
+            from soma.audit import AuditLogger
+            logger = AuditLogger()
+            logger.append(
+                agent_id=agent_id,
+                tool_name=tool_name,
+                error=True,
+                pressure=pressure,
+                mode="throttle",
+                type="guidance_v2",
+                detail=msg,
+                dominant_signal=guidance_state.dominant_signal,
+                escalation_level=3,
+            )
+        except Exception:
+            pass
         print(msg, file=sys.stderr)
         sys.exit(2)
 
@@ -219,8 +236,19 @@ def main():
             write_guidance_state(guidance_state, agent_id)
         return
 
-    # Build signal-specific message
+    # Check signal improvement: if dominant signal pressure dropped >20%, reset escalation
     signal_pressures = read_signal_pressures(agent_id)
+    if (escalation_enabled
+            and guidance_state.escalation_level > 0
+            and guidance_state.dominant_signal
+            and guidance_state.dominant_signal in signal_pressures):
+        current_sp = signal_pressures[guidance_state.dominant_signal]
+        # Signal dropping below 0.15 threshold means it improved significantly
+        if current_sp < 0.15 or (guidance_state.escalation_level > 0 and find_dominant_signal(signal_pressures) != guidance_state.dominant_signal):
+            guidance_state = guidance_state.reset_escalation()
+            write_guidance_state(guidance_state, agent_id)
+
+    # Build signal-specific message
     dominant = find_dominant_signal(signal_pressures)
 
     if dominant:
@@ -257,6 +285,23 @@ def main():
 
     if msg:
         print(msg, file=sys.stderr)
+        # Audit log guidance message for effectiveness measurement
+        try:
+            from soma.audit import AuditLogger
+            logger = AuditLogger()
+            logger.append(
+                agent_id=agent_id,
+                tool_name=tool_name,
+                error=False,
+                pressure=pressure,
+                mode=response.mode.name.lower(),
+                type="guidance_v2",
+                detail=msg,
+                dominant_signal=dominant or "",
+                escalation_level=guidance_state.escalation_level,
+            )
+        except Exception:
+            pass
 
     if not response.allow:
         sys.exit(2)

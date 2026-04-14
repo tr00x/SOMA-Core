@@ -18,6 +18,8 @@ from textual.timer import Timer
 
 from soma.types import ResponseMode
 
+SOMA_DIR = Path.home() / ".soma"
+
 # ── Colors ──────────────────────────────────────────────────────
 
 MODE_COLORS = {
@@ -64,6 +66,7 @@ class AgentCard(Static):
     def update_vitals(
         self, level, pressure, uncertainty, drift, error_rate,
         action_count=0, cost=0.0, token_usage=0.0,
+        escalation=0, dominant_signal="", throttled="",
     ):
         color = MODE_COLORS.get(level, "white")
         label = MODE_LABELS.get(level, "?")
@@ -76,8 +79,15 @@ class AgentCard(Static):
             self.remove_class(cls)
         self.add_class(MODE_NAMES.get(level, "observe"))
 
+        # Escalation indicator
+        esc_str = ""
+        if throttled:
+            esc_str = f"  [bold red]THROTTLE: {throttled}[/]"
+        elif escalation > 0:
+            esc_str = f"  [yellow]ESC:{escalation} {dominant_signal}[/]"
+
         self._text = (
-            f"[bold]{self.agent_id}[/bold] [dim]#{action_count}[/dim]  [{color} bold]{label}[/]\n"
+            f"[bold]{self.agent_id}[/bold] [dim]#{action_count}[/dim]  [{color} bold]{label}[/]{esc_str}\n"
             f"{bar}  {pressure:.0%}\n"
             f"[dim]u={uncertainty:.2f}  d={drift:.2f}  e={error_rate:.2f}  $={cost:.2f}  t={token_usage:.2f}[/]"
         )
@@ -154,6 +164,22 @@ class DashboardTab(TabPane):
             pressure = state.get("pressure", 0.0)
             action_count = state.get("action_count", 0)
             vitals = state.get("vitals", {})
+
+            # Read guidance state from circuit file
+            escalation = 0
+            dominant_signal = ""
+            throttled = ""
+            try:
+                circuit_path = SOMA_DIR / f"circuit_{agent_id}.json"
+                if circuit_path.exists():
+                    circuit_data = json.loads(circuit_path.read_text())
+                    gs = circuit_data.get("guidance_state", {})
+                    escalation = gs.get("escalation_level", 0)
+                    dominant_signal = gs.get("dominant_signal", "")
+                    throttled = gs.get("throttled_tool", "")
+            except Exception:
+                pass
+
             self._cards[agent_id].update_vitals(
                 level=level,
                 pressure=pressure,
@@ -163,6 +189,9 @@ class DashboardTab(TabPane):
                 cost=vitals.get("cost", 0.0),
                 token_usage=vitals.get("token_usage", 0.0),
                 action_count=action_count,
+                escalation=escalation,
+                dominant_signal=dominant_signal,
+                throttled=throttled,
             )
 
             # Sync to Agents tab if available

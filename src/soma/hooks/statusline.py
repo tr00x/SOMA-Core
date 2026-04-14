@@ -150,6 +150,20 @@ def main():
         except Exception:
             pass
 
+        # Escalation indicator from circuit file
+        try:
+            from pathlib import Path
+            import json as _json
+            circuit_path = Path.home() / ".soma" / f"circuit_{agent_id}.json"
+            if circuit_path.exists():
+                _cdata = _json.loads(circuit_path.read_text())
+                _gs = _cdata.get("guidance_state", {})
+                _esc = _gs.get("escalation_level", 0)
+                if _esc > 0:
+                    parts.append(f"esc:{_esc}")
+        except Exception:
+            pass
+
         # Badges
         phase = _phase_badge(agent_id)
         quality = _quality_badge(agent_id)
