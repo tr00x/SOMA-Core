@@ -38,7 +38,8 @@ function formatTokens(n) {
 }
 
 function formatCost(c) {
-  if (c == null || c === 0) return '--';
+  if (c == null) return '--';
+  if (c === 0) return '$0.00';
   if (c < 0.01) return `$${c.toFixed(4)}`;
   return `$${c.toFixed(2)}`;
 }
@@ -209,6 +210,11 @@ export function SessionDetail({ session }) {
                 <span class="pressure-val" style="color:${pressureColor(a.pressure)}">
                   ${a.pressure != null ? `${Math.round(a.pressure * 100)}%` : '--'}
                 </span>
+                ${a.mode && a.mode !== 'OBSERVE' && html`
+                  <span class="mode-badge mode-${a.mode.toLowerCase()}" style="font-size:0.5625rem;padding:1px 5px">
+                    ${a.mode}
+                  </span>
+                `}
                 ${a.token_count && html`
                   <span class="mono" style="color:var(--text-tertiary);font-size:0.6875rem">
                     ${formatTokens(a.token_count)} tok

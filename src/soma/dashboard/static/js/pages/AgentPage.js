@@ -232,10 +232,11 @@ export function AgentPage({ id }) {
                 <span class="pressure-val" style="color:${pressureColor(a.pressure)};min-width:35px">
                   ${a.pressure != null ? `${Math.round(a.pressure * 100)}%` : '--'}
                 </span>
-                <span class="mode-badge ${modeClass(a.mode)}" style="font-size:0.5625rem;padding:1px 5px">
-                  <span class="badge-dot" style="width:4px;height:4px"></span>
-                  ${String(a.mode || 'OBSERVE').toUpperCase()}
-                </span>
+                ${a.mode && a.mode !== 'OBSERVE' && html`
+                  <span class="mode-badge ${modeClass(a.mode)}" style="font-size:0.5625rem;padding:1px 5px">
+                    ${String(a.mode).toUpperCase()}
+                  </span>
+                `}
                 ${a.token_count ? html`<span class="mono" style="color:var(--text-tertiary);font-size:0.6875rem">${a.token_count} tok</span>` : null}
                 ${a.error ? html`<span class="error-badge">ERR</span>` : null}
               </div>
