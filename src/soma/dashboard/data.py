@@ -2,11 +2,44 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
-from soma.dashboard.types import AgentSnapshot
+from soma.dashboard.types import (
+    AgentSnapshot,
+    SessionSummary,
+)
 
 SOMA_DIR = Path.home() / ".soma"
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+def _get_db_connection() -> sqlite3.Connection | None:
+    """Open analytics.db, returning None if it doesn't exist."""
+    db_path = SOMA_DIR / "analytics.db"
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.Error:
+        return None
+
+
+def _get_name_registry() -> dict[str, str]:
+    """Read agent_names.json for display name lookup."""
+    names_path = SOMA_DIR / "agent_names.json"
+    if not names_path.exists():
+        return {}
+    try:
+        return json.loads(names_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def get_live_agents() -> list[AgentSnapshot]:
@@ -58,3 +91,58 @@ def get_live_agents() -> list[AgentSnapshot]:
         ))
 
     return result
+
+
+# ------------------------------------------------------------------
+# Session queries
+# ------------------------------------------------------------------
+
+
+def get_all_sessions() -> list[SessionSummary]:
+    """Return all sessions from analytics.db, grouped by session_id."""
+    conn = _get_db_connection()
+    if conn is None:
+        return []
+
+    try:
+        names = _get_name_registry()
+        rows = conn.execute("""
+            SELECT
+                session_id,
+                agent_id,
+                COUNT(*) as action_count,
+                AVG(pressure) as avg_pressure,
+                MAX(pressure) as max_pressure,
+                SUM(token_count) as total_tokens,
+                SUM(cost) as total_cost,
+                SUM(error) as error_count,
+                MIN(timestamp) as start_time,
+                MAX(timestamp) as end_time,
+                MAX(mode) as mode
+            FROM actions
+            GROUP BY session_id
+            ORDER BY start_time DESC
+        """).fetchall()
+
+        sessions = []
+        for r in rows:
+            agent_id = r["agent_id"]
+            sessions.append(SessionSummary(
+                session_id=r["session_id"],
+                agent_id=agent_id,
+                display_name=names.get(agent_id, agent_id),
+                action_count=r["action_count"],
+                avg_pressure=round(r["avg_pressure"], 4),
+                max_pressure=round(r["max_pressure"], 4),
+                total_tokens=r["total_tokens"] or 0,
+                total_cost=round(r["total_cost"] or 0.0, 6),
+                error_count=int(r["error_count"] or 0),
+                start_time=r["start_time"],
+                end_time=r["end_time"],
+                mode=r["mode"] or "OBSERVE",
+            ))
+        return sessions
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
