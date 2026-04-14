@@ -1,116 +1,101 @@
 /**
- * Settings — Config editor with inline editing and save.
+ * Settings — Human-friendly config editor with grouped sections.
  */
 
 import { html } from 'htm/preact';
-import { useState, useCallback } from 'preact/hooks';
+import { useState, useCallback, useMemo } from 'preact/hooks';
 import api from '../api.js';
 
-function isObject(v) {
-  return v != null && typeof v === 'object' && !Array.isArray(v);
-}
+const SCHEMA = {
+  soma: {
+    _title: 'General',
+    _desc: 'Core SOMA settings',
+    mode: { type: 'select', options: ['observe', 'guide', 'reflex'], label: 'Operating Mode', desc: 'observe = silent metrics, guide = suggestions, reflex = auto-correct' },
+    profile: { type: 'select', options: ['claude-code', 'strict', 'relaxed', 'autonomous'], label: 'Agent Profile', desc: 'Preset sensitivity levels' },
+    version: { type: 'readonly', label: 'Version' },
+    store: { type: 'readonly', label: 'State File' },
+  },
+  budget: {
+    _title: 'Budget Limits',
+    _desc: 'Token and cost caps per session',
+    tokens: { type: 'number', label: 'Token Limit', desc: 'Max tokens per session (0 = unlimited)', step: 10000 },
+    cost_usd: { type: 'number', label: 'Cost Limit ($)', desc: 'Max cost in USD (0 = unlimited)', step: 1 },
+  },
+  thresholds: {
+    _title: 'Pressure Thresholds',
+    _desc: 'When SOMA escalates response mode',
+    guide: { type: 'slider', label: 'GUIDE', desc: 'Start suggesting corrections', min: 0, max: 1, step: 0.01 },
+    warn: { type: 'slider', label: 'WARN', desc: 'Show warnings about behavior', min: 0, max: 1, step: 0.01 },
+    block: { type: 'slider', label: 'BLOCK', desc: 'Block destructive actions', min: 0, max: 1, step: 0.01 },
+  },
+  hooks: {
+    _title: 'Features',
+    _desc: 'Toggle monitoring features on/off',
+    validate_python: { type: 'toggle', label: 'Python Validation', desc: 'Check syntax on Write' },
+    validate_js: { type: 'toggle', label: 'JS Validation', desc: 'Check JS syntax on Write' },
+    lint_python: { type: 'toggle', label: 'Python Linting', desc: 'Run ruff checks' },
+    predict: { type: 'toggle', label: 'Pressure Prediction', desc: 'Predict future spikes' },
+    fingerprint: { type: 'toggle', label: 'Behavioral Fingerprint', desc: 'Track behavior patterns' },
+    quality: { type: 'toggle', label: 'Quality Tracking', desc: 'Track error rates' },
+    task_tracking: { type: 'toggle', label: 'Task Tracking', desc: 'Detect scope drift' },
+    verbosity: { type: 'select', options: ['quiet', 'normal', 'verbose'], label: 'Verbosity', desc: 'Output level' },
+    stale_timeout: { type: 'number', label: 'Stale Timeout (s)', desc: 'Mark session stale after N seconds', step: 60 },
+  },
+};
 
-function ConfigValue({ path, value, onChange }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  function startEdit() {
-    setDraft(typeof value === 'string' ? value : JSON.stringify(value));
-    setEditing(true);
-  }
-
-  function commit() {
-    setEditing(false);
-    let parsed = draft;
-    // Try parsing as number or boolean
-    if (draft === 'true') parsed = true;
-    else if (draft === 'false') parsed = false;
-    else if (draft !== '' && !isNaN(Number(draft))) parsed = Number(draft);
-    onChange(path, parsed);
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === 'Enter') commit();
-    if (e.key === 'Escape') setEditing(false);
-  }
-
-  if (editing) {
-    return html`
-      <input class="config-input"
-             value=${draft}
-             onInput=${(e) => setDraft(e.target.value)}
-             onBlur=${commit}
-             onKeyDown=${handleKeyDown}
-             autoFocus />
-    `;
-  }
-
-  const display = value === true ? 'true' :
-                  value === false ? 'false' :
-                  value == null ? 'null' :
-                  typeof value === 'number' ? String(value) :
-                  String(value);
-
+function Toggle({ value, onChange }) {
+  const on = !!value;
   return html`
-    <span class="config-value"
-          onClick=${startEdit}
-          onKeyDown=${(e) => (e.key === 'Enter') && startEdit()}
-          tabindex="0"
-          role="button"
-          aria-label="Edit ${path}"
-          style="cursor:pointer;border-bottom:1px dashed var(--border)">
-      ${display}
-    </span>
+    <div onClick=${() => onChange(!on)} tabindex="0" role="switch" aria-checked=${on}
+         onKeyDown=${(e) => e.key === 'Enter' && onChange(!on)}
+         style="width:36px;height:20px;border-radius:10px;cursor:pointer;transition:background 0.2s;position:relative;
+                background:${on ? 'var(--accent)' : 'var(--border)'}">
+      <div style="width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;
+                  transition:left 0.2s;left:${on ? '18px' : '2px'}"></div>
+    </div>
   `;
 }
 
-function ConfigSection({ title, data, basePath = '', onChange }) {
-  if (!data || typeof data !== 'object') return null;
-
-  const entries = Object.entries(data);
-
+function Slider({ value, onChange, min = 0, max = 1, step = 0.01 }) {
   return html`
-    <div class="config-section">
-      ${title && html`<div class="config-section-title">${title}</div>`}
-      ${entries.map(([key, val]) => {
-        const fullPath = basePath ? `${basePath}.${key}` : key;
-        if (isObject(val)) {
-          return html`<${ConfigSection} key=${fullPath} title=${key} data=${val} basePath=${fullPath} onChange=${onChange} />`;
-        }
-        if (Array.isArray(val)) {
-          return html`
-            <div class="config-row" key=${fullPath}>
-              <span class="config-key">${key}</span>
-              <span class="config-value mono" style="font-size:0.6875rem">[${val.join(', ')}]</span>
-            </div>
-          `;
-        }
-        return html`
-          <div class="config-row" key=${fullPath}>
-            <span class="config-key">${key}</span>
-            <${ConfigValue} path=${fullPath} value=${val} onChange=${onChange} />
-          </div>
-        `;
-      })}
+    <div style="display:flex;align-items:center;gap:8px;min-width:160px">
+      <input type="range" min=${min} max=${max} step=${step} value=${value || 0}
+             onInput=${(e) => onChange(parseFloat(e.target.value))}
+             style="flex:1;accent-color:var(--accent)" />
+      <span class="mono" style="min-width:36px;text-align:right;font-size:0.75rem">${((value || 0) * 100).toFixed(0)}%</span>
     </div>
   `;
 }
 
 export function Settings({ config }) {
-  const [saving, setSaving] = useState(false);
   const [changes, setChanges] = useState({});
-  const [saveStatus, setSaveStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  const merged = useMemo(() => {
+    if (!config) return {};
+    const c = JSON.parse(JSON.stringify(config));
+    for (const [path, val] of Object.entries(changes)) {
+      const parts = path.split('.');
+      let obj = c;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]]) obj[parts[i]] = {};
+        obj = obj[parts[i]];
+      }
+      obj[parts[parts.length - 1]] = val;
+    }
+    return c;
+  }, [config, changes]);
 
   const handleChange = useCallback((path, value) => {
     setChanges(prev => ({ ...prev, [path]: value }));
+    setStatus(null);
   }, []);
 
   async function handleSave() {
     if (!Object.keys(changes).length) return;
     setSaving(true);
-    setSaveStatus(null);
     try {
-      // Build nested object from dot paths
       const payload = {};
       for (const [path, val] of Object.entries(changes)) {
         const parts = path.split('.');
@@ -122,53 +107,95 @@ export function Settings({ config }) {
         obj[parts[parts.length - 1]] = val;
       }
       await api.updateConfig(payload);
-      setSaveStatus('saved');
       setChanges({});
-      setTimeout(() => setSaveStatus(null), 2000);
-    } catch (e) {
-      setSaveStatus('error');
+      setStatus('saved');
+      setTimeout(() => setStatus(null), 3000);
+    } catch {
+      setStatus('error');
     } finally {
       setSaving(false);
     }
   }
 
   if (!config || Object.keys(config).length === 0) {
-    return html`
-      <div class="card empty-state">
-        <div class="empty-state-title">No configuration loaded</div>
-        <div class="empty-state-text">Configuration will appear once soma.toml is detected.</div>
-      </div>
-    `;
+    return html`<div class="card empty-state"><div class="empty-state-title">No configuration</div><div class="empty-state-text">Create soma.toml to configure SOMA.</div></div>`;
   }
 
   const changeCount = Object.keys(changes).length;
 
+  function getValue(section, key) {
+    return (merged[section] || {})[key];
+  }
+
+  function renderSection(sectionKey) {
+    const schema = SCHEMA[sectionKey];
+    if (!schema) return null;
+    const sectionData = merged[sectionKey];
+    if (!sectionData && sectionKey !== 'thresholds') return null;
+
+    return html`
+      <div class="card" style="margin-bottom:12px" key=${sectionKey}>
+        <div class="card-header">
+          <span class="card-title">${schema._title}</span>
+          <span style="font-size:0.6875rem;color:var(--text-tertiary)">${schema._desc || ''}</span>
+        </div>
+        ${Object.entries(schema).filter(([k]) => !k.startsWith('_')).map(([key, field]) => {
+          const path = `${sectionKey}.${key}`;
+          const val = getValue(sectionKey, key);
+          if (val === undefined && field.type !== 'slider') return null;
+
+          return html`
+            <div class="config-row" key=${path} style="padding:10px 0;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:12px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:0.8125rem;color:var(--text);font-weight:500">${field.label}</div>
+                ${field.desc && html`<div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:1px">${field.desc}</div>`}
+              </div>
+              <div style="display:flex;align-items:center;justify-content:flex-end">
+                ${field.type === 'toggle' && html`<${Toggle} value=${!!val} onChange=${(v) => handleChange(path, v)} />`}
+                ${field.type === 'slider' && html`<${Slider} value=${val || 0} onChange=${(v) => handleChange(path, v)} min=${field.min} max=${field.max} step=${field.step} />`}
+                ${field.type === 'number' && html`<input type="number" class="config-input" value=${val || 0} step=${field.step || 1} style="width:100px;text-align:right" onChange=${(e) => handleChange(path, parseFloat(e.target.value) || 0)} />`}
+                ${field.type === 'select' && html`<select class="config-input" value=${val || field.options[0]} onChange=${(e) => handleChange(path, e.target.value)}>${field.options.map(o => html`<option key=${o} value=${o}>${o}</option>`)}</select>`}
+                ${field.type === 'readonly' && html`<span class="mono" style="font-size:0.75rem;color:var(--text-secondary)">${val || '--'}</span>`}
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  const knownSections = ['soma', 'budget', 'thresholds', 'hooks'];
+  const unknownSections = Object.keys(merged).filter(k => !knownSections.includes(k) && typeof merged[k] === 'object');
+
   return html`
     <div class="animate-in">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <div>
-          <span style="font-size:0.75rem;color:var(--text-tertiary)">
-            Click any value to edit. Changes are saved to soma.toml.
-          </span>
-        </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
+        <span style="font-size:0.75rem;color:var(--text-tertiary)">
+          ${changeCount > 0 ? `${changeCount} unsaved change${changeCount > 1 ? 's' : ''}` : 'All settings saved'}
+        </span>
         <div style="display:flex;gap:8px;align-items:center">
-          ${saveStatus === 'saved' && html`
-            <span style="font-size:0.75rem;color:var(--success)">Saved</span>
-          `}
-          ${saveStatus === 'error' && html`
-            <span style="font-size:0.75rem;color:var(--error)">Save failed</span>
-          `}
-          <button class="btn btn-primary"
-                  onClick=${handleSave}
-                  disabled=${saving || changeCount === 0}>
-            ${saving ? 'Saving...' : `Save${changeCount > 0 ? ` (${changeCount})` : ''}`}
+          ${status === 'saved' && html`<span style="font-size:0.75rem;color:var(--success)">Saved</span>`}
+          ${status === 'error' && html`<span style="font-size:0.75rem;color:var(--error)">Failed</span>`}
+          ${changeCount > 0 && html`<button class="btn btn-ghost" onClick=${() => { setChanges({}); setStatus(null); }}>Discard</button>`}
+          <button class="btn btn-primary" onClick=${handleSave} disabled=${saving || changeCount === 0}>
+            ${saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
-      <div class="card">
-        <${ConfigSection} data=${config} onChange=${handleChange} />
-      </div>
+      ${knownSections.map(s => renderSection(s))}
+
+      ${unknownSections.map(s => html`
+        <div class="card" style="margin-bottom:12px" key=${s}>
+          <div class="card-header"><span class="card-title">${s}</span></div>
+          ${Object.entries(merged[s] || {}).map(([k, v]) => html`
+            <div class="config-row" key="${s}.${k}" style="padding:8px 0">
+              <span style="flex:1;font-size:0.8125rem">${k}</span>
+              <span class="mono" style="font-size:0.75rem;color:var(--text-secondary)">${typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+            </div>
+          `)}
+        </div>
+      `)}
     </div>
   `;
 }
