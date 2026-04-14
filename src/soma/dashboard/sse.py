@@ -146,7 +146,6 @@ async def event_stream(
     events only when something new appears.
     """
     prev_modes: dict[str, str] = {}
-    prev_findings_count = 0
     prev_reflex_log_size = 0
     prev_rca: dict[str, str] = {}  # agent_id -> last diagnosis text
 
