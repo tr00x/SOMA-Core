@@ -759,7 +759,7 @@ wheels = [
 
 [[package]]
 name = "soma-ai"
-version = "0.6.0"
+version = "0.6.3"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
