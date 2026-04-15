@@ -194,36 +194,21 @@ export function AgentPage({ id }) {
         </div>
       </div>
 
-      <!-- Tool Stats -->
-      ${tools.length > 0 && html`
-        <div class="card" style="margin-top:12px">
-          <div class="card-header"><span class="card-title">Tool Usage</span></div>
-          <${ToolStats} tools=${tools} />
-        </div>
-      `}
-
-      <!-- Audit + Findings: only show if they have data -->
-      ${audit.length > 0 && html`
-        <div class="card" style="margin-top:12px">
-          <div class="card-header"><span class="card-title">Audit Log (${audit.length})</span></div>
-          <${AuditLog} events=${audit} />
-        </div>
-      `}
-
-      ${findings.length > 0 && html`
-        <div class="card" style="margin-top:12px">
-          <div class="card-header"><span class="card-title">Findings (${findings.length})</span></div>
-          <${Findings} findings=${findings} />
-        </div>
-      `}
-
-      <!-- Timeline: capped, with "show more" -->
-      ${timeline.length > 0 && html`
-        <div class="card" style="margin-top:12px">
-          <div class="card-header">
-            <span class="card-title">Action Timeline</span>
-            <span class="mono" style="font-size:0.6875rem;color:var(--text-tertiary)">${timeline.length} total</span>
-          </div>
+      <!-- Tool Usage + Timeline side by side -->
+      ${(tools.length > 0 || timeline.length > 0) && html`
+        <div class="detail-grid" style="margin-top:12px">
+          ${tools.length > 0 && html`
+            <div class="card">
+              <div class="card-header"><span class="card-title">Tool Usage</span></div>
+              <${ToolStats} tools=${tools} />
+            </div>
+          `}
+          ${timeline.length > 0 && html`
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Action Timeline</span>
+                <span class="mono" style="font-size:0.6875rem;color:var(--text-tertiary)">${timeline.length} total</span>
+              </div>
           <div class="scroll-panel" style="max-height:400px" role="list">
             ${timeline.slice(0, timelineLimit).map((a, i) => html`
               <div class="timeline-item" key=${i} role="listitem">
@@ -249,6 +234,23 @@ export function AgentPage({ id }) {
               </button>
             </div>
           `}
+            </div>
+          `}
+        </div>
+      `}
+
+      <!-- Audit + Findings: only show if they have data -->
+      ${audit.length > 0 && html`
+        <div class="card" style="margin-top:12px">
+          <div class="card-header"><span class="card-title">Audit Log (${audit.length})</span></div>
+          <${AuditLog} events=${audit} />
+        </div>
+      `}
+
+      ${findings.length > 0 && html`
+        <div class="card" style="margin-top:12px">
+          <div class="card-header"><span class="card-title">Findings (${findings.length})</span></div>
+          <${Findings} findings=${findings} />
         </div>
       `}
     </div>
