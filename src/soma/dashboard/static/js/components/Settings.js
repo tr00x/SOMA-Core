@@ -41,6 +41,41 @@ const SCHEMA = {
     verbosity: { type: 'select', options: ['quiet', 'normal', 'verbose'], label: 'Verbosity', desc: 'Output level' },
     stale_timeout: { type: 'number', label: 'Stale Timeout (s)', desc: 'Mark session stale after N seconds', step: 60 },
   },
+  weights: {
+    _title: 'Signal Weights',
+    _desc: 'How much each signal contributes to pressure',
+    uncertainty: { type: 'number', label: 'Uncertainty', desc: 'Weight for action uncertainty signal', step: 0.1 },
+    drift: { type: 'number', label: 'Drift', desc: 'Weight for scope drift signal', step: 0.1 },
+    error_rate: { type: 'number', label: 'Error Rate', desc: 'Weight for error frequency signal', step: 0.1 },
+    cost: { type: 'number', label: 'Cost', desc: 'Weight for cost signal', step: 0.1 },
+    token_usage: { type: 'number', label: 'Token Usage', desc: 'Weight for token consumption signal', step: 0.1 },
+    resource: { type: 'number', label: 'Resource', desc: 'Weight for resource usage signal', step: 0.1 },
+    coherence: { type: 'number', label: 'Coherence', desc: 'Weight for goal coherence signal', step: 0.1 },
+  },
+  guidance: {
+    _title: 'Guidance Settings',
+    _desc: 'Smart Guidance v2 behavior',
+    cooldown_actions: { type: 'number', label: 'Cooldown Actions', desc: 'Actions between guidance messages', step: 1 },
+    escalation_enabled: { type: 'toggle', label: 'Escalation', desc: 'Enable escalation on ignored guidance' },
+    throttle_enabled: { type: 'toggle', label: 'Throttling', desc: 'Enable tool throttling on repeated issues' },
+    max_escalation_level: { type: 'number', label: 'Max Escalation', desc: 'Maximum escalation level (0-5)', step: 1 },
+  },
+  graph: {
+    _title: 'Pressure Graph',
+    _desc: 'Inter-agent pressure propagation',
+    damping: { type: 'number', label: 'Damping Factor', desc: 'How quickly pressure propagates between agents (0-1)', step: 0.01 },
+    trust_decay_rate: { type: 'number', label: 'Trust Decay', desc: 'Rate of trust decay between agents', step: 0.01 },
+    trust_recovery_rate: { type: 'number', label: 'Trust Recovery', desc: 'Rate of trust recovery', step: 0.01 },
+  },
+  vitals: {
+    _title: 'Vital Signals',
+    _desc: 'Fine-tune vital signal computation',
+    goal_coherence_threshold: { type: 'number', label: 'Coherence Threshold', desc: 'Min coherence before flagging drift', step: 0.05 },
+    goal_coherence_warmup_actions: { type: 'number', label: 'Coherence Warmup', desc: 'Actions before coherence kicks in', step: 1 },
+    baseline_integrity_error_ratio: { type: 'number', label: 'Baseline Error Ratio', desc: 'Error ratio threshold for baseline reset', step: 0.1 },
+    baseline_integrity_min_error_rate: { type: 'number', label: 'Min Error Rate', desc: 'Minimum error rate to trigger baseline check', step: 0.05 },
+    baseline_integrity_min_samples: { type: 'number', label: 'Min Samples', desc: 'Minimum samples before baseline checks', step: 1 },
+  },
 };
 
 function Toggle({ value, onChange }) {
@@ -164,7 +199,7 @@ export function Settings({ config }) {
     `;
   }
 
-  const knownSections = ['soma', 'budget', 'thresholds', 'hooks'];
+  const knownSections = ['soma', 'budget', 'thresholds', 'hooks', 'weights', 'guidance', 'graph', 'vitals'];
   const unknownSections = Object.keys(merged).filter(k => !knownSections.includes(k) && typeof merged[k] === 'object');
 
   return html`
