@@ -571,6 +571,40 @@ Session context goes to stdout because:
 3. LLMs ignore instructions but process environmental data
 4. It survives context compression (it's in tool results, not system messages)
 
+## Web Dashboard
+
+Modular FastAPI application at `src/soma/dashboard/`. Launch: `soma dashboard`.
+
+### Architecture
+
+```
+app.py          — Factory (~80 lines), CORS, SPA catch-all
+data.py         — 19 typed functions, single source of truth
+types.py        — 11 frozen dataclasses
+ws.py           — WebSocket, polls state.json every 1s, pushes diffs
+routes/         — 14 thin modules (agents, sessions, overview, guidance,
+                   analytics, config, budget, export, quality, graph,
+                   learning, baselines, findings, tools)
+static/         — Preact + HTM frontend (no build step, CDN imports)
+```
+
+### Data sources
+
+| Source | Updated by | Content |
+|--------|-----------|---------|
+| `state.json` | `save_state()` every tool call | Live agent pressure, vitals, mode |
+| `analytics.db` | `post_tool_use` hook | All historical actions (SQLite) |
+| `circuit_{id}.json` | `pre_tool_use` hook | Guidance v2 state per agent |
+| `agent_names.json` | `_get_display_name()` | Human-readable `{project} #{N}` names |
+| `archive/{id}_{ts}/` | `_cleanup_old_agents()` | Archived session data |
+
+### Pages
+
+- `/` — Overview: guidance rate, error rate, mode distribution, active agents, budget, sessions
+- `/agents/{id}` — Pressure chart, vitals, guidance state, tool usage, timeline
+- `/sessions/{id}` — Tool breakdown chart, action timeline, CSV/JSON export
+- `/settings` — Grouped controls (toggles, sliders, dropdowns) for all soma.toml sections
+
 ## Programmatic API
 
 ```python
@@ -619,3 +653,23 @@ Findings are surfaced in hook output, reports, and the TUI dashboard.
 | Learning | No | Self-learning pattern cache |
 | Multi-agent | Trace visualization | Trust-weighted pressure propagation |
 | Cross-session | Log aggregation | Behavioral fingerprinting + trajectory matching |
+
+## Testing
+
+1337 tests across 5 test files covering core engine, hooks, dashboard data layer, API, and WebSocket.
+
+```bash
+uv run pytest tests/ -q        # run all
+uv run pytest tests/ -x -v     # stop on first failure, verbose
+```
+
+| Suite | Tests | What it covers |
+|-------|-------|---------------|
+| `test_core.py` | ~800 | Engine, vitals, pressure, baseline, budget, graph, learning |
+| `test_claude_code_layer.py` | ~220 | Hooks, common utilities, session management, archive, display names |
+| `test_dashboard_data.py` | ~40 | All 19 data layer functions with SQLite fixtures |
+| `test_dashboard_api.py` | ~26 | All 22 API endpoints via httpx AsyncClient |
+| `test_dashboard_ws.py` | ~7 | WebSocket diff computation, ConnectionManager |
+| `test_integration_api.py` | 5 (skip) | Anthropic/OpenAI real API (requires keys) |
+
+CI runs on Python 3.11, 3.12, 3.13 via GitHub Actions.
