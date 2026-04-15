@@ -29,7 +29,7 @@ export function SettingsPage() {
             ${[1, 2, 3, 4, 5, 6].map(i => html`<div class="skeleton skeleton-row" key=${i}></div>`)}
           </div>
         `
-        : html`<${Settings} config=${config} />`
+        : html`<${Settings} config=${config} onConfigUpdate=${(c) => setConfig(c)} />`
       }
     </div>
   `;

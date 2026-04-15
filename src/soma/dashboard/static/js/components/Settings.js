@@ -108,7 +108,7 @@ function Slider({ value, onChange, min = 0, max = 1, step = 0.01 }) {
   `;
 }
 
-export function Settings({ config }) {
+export function Settings({ config, onConfigUpdate }) {
   const [changes, setChanges] = useState({});
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
@@ -147,7 +147,10 @@ export function Settings({ config }) {
         }
         obj[parts[parts.length - 1]] = val;
       }
-      await api.updateConfig(payload);
+      const updated = await api.updateConfig(payload);
+      // Reload fresh config from server to confirm save
+      const fresh = await api.config();
+      if (onConfigUpdate) onConfigUpdate(fresh || updated);
       setChanges({});
       setStatus('saved');
       setTimeout(() => setStatus(null), 3000);
