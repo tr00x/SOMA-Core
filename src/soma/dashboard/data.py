@@ -489,7 +489,7 @@ def update_config(patch: dict) -> dict:
             return base
 
         merged = _merge(current, patch)
-        config_path.write_bytes(tomli_w.dumps(merged))
+        config_path.write_text(tomli_w.dumps(merged))
         return merged
     except Exception:
         return get_config()
