@@ -356,20 +356,28 @@ SOMA is open-source under the MIT license, published as `soma-ai` on PyPI, and o
 
 ## References
 
-1. Kapoor, S. et al. (2026). AI Agents That Matter. *Princeton University.*
-2. MAST Benchmark Team (2025). Multi-Agent Safety Test. *Berkeley, NeurIPS 2025.*
-3. METR (2025). Autonomous Agents in Practice. *Model Evaluation and Threat Research.*
-4. Kamvar, S. et al. (2003). The EigenTrust Algorithm for Reputation Management. *WWW 2003.*
+1. Kapoor, S. et al. (2026). [AI Agents That Matter](https://arxiv.org/abs/2407.01502). *Princeton University.*
+2. MAST Benchmark Team (2025). [Multi-Agent Safety Test](https://arxiv.org/abs/2401.05778). *Berkeley, NeurIPS 2025.*
+3. METR (2025). [Autonomous Agents in Practice](https://metr.org/research). *Model Evaluation and Threat Research.*
+4. Kamvar, S. et al. (2003). [The EigenTrust Algorithm](https://doi.org/10.1145/775152.775242). *WWW 2003.*
 5. Slovic, P. (1993). Perceived Risk, Trust, and Democracy. *Risk Analysis, 13(6).*
 6. Shewhart, W. (1931). *Economic Control of Quality of Manufactured Product.* Van Nostrand.
-7. Astrom, K. & Murray, R. (2008). *Feedback Systems.* Princeton University Press.
-8. Bai, Y. et al. (2022). Constitutional AI: Harmlessness from AI Feedback. *Anthropic.*
-9. Kendall, A. & Gal, Y. (2017). What Uncertainties Do We Need in Bayesian Deep Learning? *NeurIPS 2017.*
-10. Brooks, R. (1991). Intelligence Without Representation. *Artificial Intelligence, 47.*
+7. Astrom, K. & Murray, R. (2008). [Feedback Systems](https://fbswiki.org/wiki/index.php/Main_Page). *Princeton University Press.*
+8. Bai, Y. et al. (2022). [Constitutional AI](https://arxiv.org/abs/2212.08073). *Anthropic.*
+9. Kendall, A. & Gal, Y. (2017). [What Uncertainties Do We Need in Bayesian Deep Learning?](https://arxiv.org/abs/1703.04977) *NeurIPS 2017.*
+10. Brooks, R. (1991). [Intelligence Without Representation](https://doi.org/10.1016/0004-3702(91)90053-M). *Artificial Intelligence, 47.*
 11. Damasio, A. (1994). *Descartes' Error: Emotion, Reason, and the Human Brain.* Putnam.
-12. Shinn, N. et al. (2023). Reflexion: Language Agents with Verbal Reinforcement Learning. *NeurIPS 2023.*
-13. Madaan, A. et al. (2023). Self-Refine: Iterative Refinement with Self-Feedback. *NeurIPS 2023.*
-14. Liu, N. et al. (2024). Lost in the Middle. *TACL.*
-15. Chan, A. et al. (2024). Visibility into AI Agents. *arXiv:2401.13138.*
-16. Anthropic (2025). Tool Use Error Propagation in Agent Systems. *Internal Report.*
-17. Partnership on AI (2025). Framework for Responsible AI Agent Deployment.
+12. Shinn, N. et al. (2023). [Reflexion: Language Agents with Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366). *NeurIPS 2023.*
+13. Madaan, A. et al. (2023). [Self-Refine: Iterative Refinement with Self-Feedback](https://arxiv.org/abs/2303.17651). *NeurIPS 2023.*
+14. Liu, N. et al. (2024). [Lost in the Middle](https://arxiv.org/abs/2307.03172). *TACL.*
+15. Chan, A. et al. (2024). [Visibility into AI Agents](https://arxiv.org/abs/2401.13138). *arXiv:2401.13138.*
+16. Anthropic (2025). [Tool Use Documentation](https://docs.anthropic.com/en/docs/build-with-claude/tool-use). *Anthropic.*
+17. Partnership on AI (2025). [Framework for Responsible AI Agent Deployment](https://partnershiponai.org/).
+
+## Links
+
+- **GitHub:** https://github.com/tr00x/SOMA-Core
+- **PyPI:** https://pypi.org/project/soma-ai/
+- **Docs:** [Quick Start](QUICKSTART.md) | [Architecture](ARCHITECTURE.md) | [Research](RESEARCH.md)
+- **Dashboard:** `soma dashboard` (requires `pip install soma-ai[dashboard]`)
+- **License:** MIT
