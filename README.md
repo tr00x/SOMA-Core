@@ -41,8 +41,6 @@ soma dashboard --port 8080  # custom port
 
 </details>
 
-Features: WebSocket live updates, SPA deep linking (`/agents/{id}`, `/sessions/{id}`), responsive grid, Preact + HTM (no build step).
-
 Requires: `pip install soma-ai[dashboard]`
 
 ## Who is this for
@@ -279,13 +277,9 @@ All prior work measures behavior *post-hoc for human review*. SOMA provides *rea
 
 See [docs/RESEARCH.md](docs/RESEARCH.md) for the full research mapping.
 
-## v0.6.0 highlights
-
-**Mirror** -- proprioceptive feedback via environment augmentation. Three escalation modes (PATTERN -> STATS -> SEMANTIC), self-learning from outcomes, zero-cost for pattern/stats modes. **Web dashboard** -- real-time FastAPI + SSE dashboard on port 7777 with 6 tabs (Overview, Deep Dive, Analytics, Logs, Sessions, Settings). See [CHANGELOG.md](CHANGELOG.md) for full history.
-
 ## Stats
 
-90 modules | 74 test files | 19k lines | Python 3.11+ | MIT license
+Python 3.11+ | 1337 tests | MIT license
 
 ## Links
 
