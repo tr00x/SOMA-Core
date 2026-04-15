@@ -56,6 +56,7 @@ ignore = ["E501"]  # line length handled by formatter
 "tests/**" = ["F401", "F811", "F841", "E402"]  # test files have relaxed lint rules
 "src/soma/cli/hub.py" = ["F401"]
 "src/soma/cli/tabs/**" = ["F401", "F541", "F841"]
+"src/soma/hooks/common.py" = ["F821"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soma"]
