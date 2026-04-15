@@ -112,11 +112,39 @@ export function Overview({ overview, agents, sessions, budget, loading }) {
               <div class="empty-state-text">Agents appear here once SOMA starts monitoring.</div>
             </div>
           `
-          : html`
-            <div class="agents-grid">
-              ${agentList.map(a => html`<${AgentCard} key=${a.agent_id} agent=${a} />`)}
-            </div>
-          `
+          : agentList.length <= 6
+            ? html`
+              <div class="agents-grid">
+                ${agentList.map(a => html`<${AgentCard} key=${a.agent_id} agent=${a} />`)}
+              </div>
+            `
+            : html`
+              <div class="card">
+                <div class="scroll-panel" style="max-height:400px">
+                  <table style="width:100%;border-collapse:collapse">
+                    <thead>
+                      <tr style="border-bottom:1px solid var(--border);font-size:0.6875rem;color:var(--text-tertiary);text-align:left">
+                        <th style="padding:6px 8px">Agent</th>
+                        <th style="padding:6px 8px">Mode</th>
+                        <th style="padding:6px 8px;text-align:right">Pressure</th>
+                        <th style="padding:6px 8px;text-align:right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${agentList.map(a => html`
+                        <tr key=${a.agent_id} style="border-bottom:1px solid var(--border-subtle);cursor:pointer"
+                            onClick=${() => { import('preact-router').then(m => m.route('/agents/' + a.agent_id)); }}>
+                          <td style="padding:6px 8px;font-size:0.8125rem">${a.display_name || a.agent_id}</td>
+                          <td style="padding:6px 8px"><span class="mode-badge mode-${(a.level||'observe').toLowerCase()}" style="font-size:0.5625rem;padding:1px 5px">${(a.level||'OBSERVE').toUpperCase()}</span></td>
+                          <td style="padding:6px 8px;text-align:right" class="mono" style="color:${pressureColor(a.pressure)}">${Math.round((a.pressure||0)*100)}%</td>
+                          <td style="padding:6px 8px;text-align:right" class="mono">${a.action_count||0}</td>
+                        </tr>
+                      `)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `
         }
       </div>
 
