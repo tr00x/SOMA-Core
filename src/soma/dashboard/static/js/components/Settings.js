@@ -78,6 +78,12 @@ const SCHEMA = {
   },
 };
 
+const AGENT_SCHEMA = {
+  autonomy: { type: 'select', options: ['human_in_the_loop', 'human_on_the_loop', 'full_autonomy'], label: 'Autonomy', desc: 'How much human oversight required' },
+  sensitivity: { type: 'select', options: ['strict', 'relaxed', 'autonomous'], label: 'Sensitivity', desc: 'How aggressively SOMA intervenes' },
+  tools: { type: 'readonly', label: 'Allowed Tools', desc: 'Tools this agent can use' },
+};
+
 function Toggle({ value, onChange }) {
   const on = !!value;
   return html`
@@ -199,7 +205,7 @@ export function Settings({ config }) {
     `;
   }
 
-  const knownSections = ['soma', 'budget', 'thresholds', 'hooks', 'weights', 'guidance', 'graph', 'vitals'];
+  const knownSections = ['soma', 'budget', 'thresholds', 'hooks', 'weights', 'guidance', 'graph', 'vitals', 'agents'];
   const unknownSections = Object.keys(merged).filter(k => !knownSections.includes(k) && typeof merged[k] === 'object');
 
   return html`
@@ -219,6 +225,37 @@ export function Settings({ config }) {
       </div>
 
       ${knownSections.map(s => renderSection(s))}
+
+      ${merged.agents && Object.keys(merged.agents).length > 0 && html`
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header">
+            <span class="card-title">Agent Profiles</span>
+            <span style="font-size:0.6875rem;color:var(--text-tertiary)">Per-agent configuration</span>
+          </div>
+          ${Object.entries(merged.agents).map(([agentName, agentConf]) => html`
+            <div key=${agentName} style="margin-bottom:12px">
+              <div style="font-size:0.75rem;font-weight:600;color:var(--accent);padding:8px 0 4px;border-bottom:1px solid var(--border)">${agentName}</div>
+              ${Object.entries(AGENT_SCHEMA).map(([key, field]) => {
+                const val = agentConf[key];
+                if (val === undefined) return null;
+                const path = 'agents.' + agentName + '.' + key;
+                return html`
+                  <div class="config-row" key=${path} style="padding:8px 0;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:12px">
+                    <div style="flex:1">
+                      <div style="font-size:0.8125rem;color:var(--text);font-weight:500">${field.label}</div>
+                      ${field.desc && html`<div style="font-size:0.6875rem;color:var(--text-tertiary);margin-top:1px">${field.desc}</div>`}
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:flex-end">
+                      ${field.type === 'select' && html`<select class="config-input" value=${val} onChange=${(e) => handleChange(path, e.target.value)}>${field.options.map(o => html`<option key=${o} value=${o}>${o}</option>`)}</select>`}
+                      ${field.type === 'readonly' && html`<span class="mono" style="font-size:0.6875rem;color:var(--text-secondary)">${Array.isArray(val) ? val.join(', ') : String(val)}</span>`}
+                    </div>
+                  </div>
+                `;
+              })}
+            </div>
+          `)}
+        </div>
+      `}
 
       ${unknownSections.map(s => html`
         <div class="card" style="margin-bottom:12px" key=${s}>
