@@ -6,7 +6,7 @@
  */
 
 import { html } from 'htm/preact';
-import { useMemo } from 'preact/hooks';
+import { useMemo, useState, useEffect, useRef } from 'preact/hooks';
 import { route } from 'preact-router';
 
 function modeClass(level) {
@@ -39,6 +39,18 @@ export function AgentCard({ agent }) {
   const pressure = agent.pressure ?? 0;
   const pct = pressure > 0 && pressure < 0.005 ? '<1' : Math.round(pressure * 100);
   const level = agent.level || agent.escalation_level || 'OBSERVE';
+
+  // Track if agent is live (action_count changed recently)
+  const prevCount = useRef(agent.action_count);
+  const [isLive, setIsLive] = useState(false);
+  useEffect(() => {
+    if (agent.action_count !== prevCount.current) {
+      prevCount.current = agent.action_count;
+      setIsLive(true);
+      const t = setTimeout(() => setIsLive(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [agent.action_count]);
 
   const vitals = useMemo(() => {
     if (!agent.vitals) return [];
@@ -79,6 +91,7 @@ export function AgentCard({ agent }) {
           <span class="badge-dot"></span>
           ${String(level).toUpperCase()}
         </span>
+        ${isLive && html`<span style="font-size:0.5625rem;color:var(--success);font-weight:600;animation:pulse 1.5s infinite;margin-left:4px">LIVE</span>`}
       </div>
 
       <div style="margin-bottom: 10px">

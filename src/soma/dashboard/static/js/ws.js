@@ -29,10 +29,12 @@ function handleMessage(event) {
   try {
     const msg = JSON.parse(event.data);
     if (msg.type === 'state_full' || msg.type === 'state_update') {
-      // WS sends raw state.json — only use budget from it.
-      // Agent list comes from REST API which has display names resolved.
       const partial = {};
       if (msg.data.budget) partial.budget = msg.data.budget;
+      // Refresh agents from REST API (has display names resolved)
+      if (msg.data.agents) {
+        api.agents().then(agents => store.update({ agents })).catch(() => {});
+      }
       store.update(partial);
     }
   } catch (e) {
