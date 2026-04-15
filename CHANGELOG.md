@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.7.0] — 2026-04-15
+
+Complete dashboard rebuild and Smart Guidance v2.
+
+### Added
+- **Dashboard rebuild** -- replaced 1823-line monolith with modular FastAPI architecture
+  - 19 typed data functions in `data.py` (single source of truth)
+  - 14 route modules, WebSocket with diff-based updates, SPA with deep linking
+  - Preact + HTM frontend (no build step): Overview, Agent Detail, Sessions, Settings
+  - `soma dashboard` CLI command to launch
+  - Real SOMA metrics: guidance rate, error rate, mode distribution, signal averages
+  - Live agent indicator (pulsing badge when action_count changes)
+  - Compact table view for 6+ agents
+  - Human-friendly Settings with toggles, sliders, dropdowns for all config sections
+- **Smart Guidance v2** -- actionable messages with cooldown escalation
+  - Signal-specific guidance messages (not generic "pressure high")
+  - Escalation levels (0-3) when agent ignores guidance
+  - Tool throttling for repeated issues
+  - Audit logging for all guidance events
+  - Circuit file persistence for guidance state
+- **Session archiving** -- `_cleanup_old_agents` archives to `~/.soma/archive/` instead of deleting
+- **Human-readable agent names** -- `{project} #{N}` format (e.g. "SOMA #1") instead of `cc-{ppid}`
+- **Stale session protection** -- sessions with recorded data are archived, not cleared
+
+### Fixed
+- 3 data-destruction bugs that made 35/45 sessions appear empty on dashboard
+- Pressure system recalibrated from 2-week production data (8,970 actions)
+- Error detection for Bash exit codes, Edit/Write failures
+- Config save (`write_bytes` → `write_text` for tomli_w compatibility)
+- Static file serving (SPA catch-all was intercepting `/static/*`)
+- WebSocket sends diffs instead of full state on each change
+- Routes return proper 404 for not-found resources
+- Server binds 127.0.0.1 (was 0.0.0.0), removed dev reload flag
+- CORS restricted to localhost (was allow all origins)
+- Unix timestamp conversion (×1000) for all frontend date displays
+
 ## [0.6.3] — 2026-04-14
 
 Pressure system recalibration based on 2-week production data (8,970 actions, 103 sessions).

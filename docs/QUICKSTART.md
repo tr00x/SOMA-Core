@@ -153,14 +153,15 @@ Priority: Gemini > Anthropic > OpenAI. Auto-detected from env vars.
 
 ## Web Dashboard
 
-SOMA includes a real-time web dashboard built on FastAPI + SSE:
-
 ```bash
-# Start the dashboard (runs on port 7777)
-python -m soma.dashboard.server
+pip install soma-ai[dashboard]   # install dashboard dependencies
+soma dashboard                   # launch at http://127.0.0.1:7777
+soma dashboard --port 8080       # custom port
 ```
 
-The dashboard has 6 tabs: Overview, Deep Dive, Analytics, Logs, Sessions, Settings. It reads state from `~/.soma/` and provides live updates via Server-Sent Events.
+4 pages: **Overview** (guidance rate, error rate, active agents with live indicators, mode distribution, budget), **Agent Detail** (pressure chart, vitals, tool usage, timeline), **Sessions** (all sessions, drill into any for tool breakdown + export), **Settings** (toggles, sliders, dropdowns for all config).
+
+Live updates via WebSocket. Deep linking to `/agents/{id}` and `/sessions/{id}`.
 
 ## Programmatic API
 

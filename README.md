@@ -14,31 +14,36 @@ pip install soma-ai
 
 ## Dashboard
 
-SOMA includes a real-time web dashboard (FastAPI + SSE, port 7777) for monitoring agent behavior, analyzing sessions, and configuring settings.
+Real-time web dashboard for monitoring, analyzing, and configuring SOMA.
+
+```bash
+soma dashboard          # launch at http://127.0.0.1:7777
+soma dashboard --port 8080  # custom port
+```
+
+**Overview** -- guidance rate, error rate, pressure trends, mode distribution, active agents with live indicators, token budget, signal averages, recent sessions.
 
 <p align="center">
-  <img src="docs/screenshots/overview.png" alt="Overview -- live pressure gauges, behavioral insights, and findings" width="100%">
+  <img src="docs/screenshots/overview.png" alt="Overview -- guidance rate, error rate, mode distribution, active agents" width="100%">
 </p>
 
 <details>
-<summary>More screenshots</summary>
+<summary>More pages</summary>
 
-**Deep Dive** -- per-agent pressure timeline, vitals breakdown, and baseline report
-<img src="docs/screenshots/deep-dive.png" alt="Deep Dive" width="100%">
+**Agent Detail** -- pressure history chart, vitals with baselines, guidance state, tool usage, action timeline with timestamps.
+<img src="docs/screenshots/agent-detail.png" alt="Agent Detail" width="100%">
 
-**Analytics** -- cross-session trends, tool usage distribution, mirror effectiveness
-<img src="docs/screenshots/analytics.png" alt="Analytics" width="100%">
-
-**Logs** -- filterable action log with tool names, pressure, errors, and timing
-<img src="docs/screenshots/logs.png" alt="Logs" width="100%">
-
-**Sessions** -- session history with cross-session trend comparison
+**Sessions** -- all sessions with pressure, mode badges, action counts. Click any session for tool breakdown chart, action timeline, and CSV/JSON export.
 <img src="docs/screenshots/sessions.png" alt="Sessions" width="100%">
 
-**Settings** -- mode selection, thresholds, weights, budget, and policy configuration
+**Settings** -- grouped controls with toggles, sliders, and dropdowns. Mode, thresholds, budget, signal weights, guidance, all hook features.
 <img src="docs/screenshots/settings.png" alt="Settings" width="100%">
 
 </details>
+
+Features: WebSocket live updates, SPA deep linking (`/agents/{id}`, `/sessions/{id}`), responsive grid, Preact + HTM (no build step).
+
+Requires: `pip install soma-ai[dashboard]`
 
 ## Who is this for
 
