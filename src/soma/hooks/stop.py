@@ -105,13 +105,52 @@ def main():
         log = read_action_log(agent_id)
         errors = sum(1 for e in log if e.get("error"))
 
-        # Only print enhanced summary for notable sessions
-        if action_count < 10 and pressure <= 0.3:
-            # Minimal summary for short/quiet sessions
-            print(f"SOMA: {action_count} actions, p={pressure:.0%}", file=sys.stderr)
-        else:
-            # Enhanced summary
-            traj = read_pressure_trajectory(agent_id)
+        # Count interventions from analytics
+        blocks = 0
+        guides = 0
+        warns = 0
+        try:
+            from soma.analytics import AnalyticsStore
+            analytics = AnalyticsStore()
+            cursor = analytics._conn.execute(
+                "SELECT mode, COUNT(*) FROM actions WHERE session_id = ? GROUP BY mode",
+                (agent_id,),
+            )
+            for mode, cnt in cursor.fetchall():
+                if mode == "BLOCK":
+                    blocks = cnt
+                elif mode == "GUIDE":
+                    guides = cnt
+                elif mode == "WARN":
+                    warns = cnt
+        except Exception:
+            pass
+
+        # Pressure trajectory
+        traj = read_pressure_trajectory(agent_id)
+        start_p = traj[0] if traj else 0.0
+        end_p = traj[-1] if traj else pressure
+
+        # Always print a useful one-liner
+        interventions = []
+        if errors:
+            interventions.append(f"{errors} errors")
+        if blocks:
+            interventions.append(f"{blocks} blocks")
+        if guides:
+            interventions.append(f"{guides} guides")
+        if warns:
+            interventions.append(f"{warns} warns")
+        intervention_str = ", ".join(interventions) if interventions else "clean"
+
+        print(
+            f"SOMA: {action_count} actions, {intervention_str}, "
+            f"pressure {start_p:.0%}\u2192{end_p:.0%}",
+            file=sys.stderr,
+        )
+
+        # Enhanced summary for notable sessions
+        if action_count >= 10 or pressure > 0.3:
             peak = max(traj) if traj else pressure
             peak_action = traj.index(peak) + 1 if traj else action_count
 
@@ -123,8 +162,6 @@ def main():
                 if first_ts and last_ts:
                     duration_min = int((last_ts - first_ts) / 60)
 
-            error_rate = errors / action_count if action_count > 0 else 0.0
-
             # Quality grade
             grade = "?"
             try:
@@ -135,29 +172,9 @@ def main():
             except Exception:
                 pass
 
-            # Pattern detection
-            tools_used: dict[str, int] = {}
-            for e in log:
-                t = e.get("tool", "?")
-                tools_used[t] = tools_used.get(t, 0) + 1
-            pattern_line = ""
-            if tools_used:
-                total_t = sum(tools_used.values())
-                for t, c in tools_used.items():
-                    if total_t > 5 and c / total_t > 0.6:
-                        pattern_line = f"Pattern: {t} heavy ({c}/{total_t} actions)"
-                        break
-
             parts = [
-                "\u2500\u2500 SOMA Session \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-                f"Duration: {duration_min}min  Actions: {action_count}  Grade: {grade}",
-                f"Peak: {peak:.0%} at action #{peak_action}",
-                f"Errors: {errors}/{action_count} ({error_rate:.0%})",
+                f"  Duration: {duration_min}min | Grade: {grade} | Peak: {peak:.0%} at #{peak_action}",
             ]
-            if pattern_line:
-                parts.append(pattern_line)
-            parts.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-
             print("\n".join(parts), file=sys.stderr)
     except Exception:
         pass  # Never crash Claude Code

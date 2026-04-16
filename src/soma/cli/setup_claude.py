@@ -58,6 +58,7 @@ def _install_hooks(settings_path: Path, hook_cmd: str) -> bool:
     hook_configs = {
         "PreToolUse": {"timeout": 5},
         "PostToolUse": {"timeout": 5},
+        "PostToolUseFailure": {"timeout": 5},
         "Stop": {"timeout": 10},
         "UserPromptSubmit": {"timeout": 3},
     }
@@ -207,7 +208,7 @@ def run_setup_claude() -> None:
     # 2. Install hooks
     settings_path = Path.home() / ".claude" / "settings.json"
     if _install_hooks(settings_path, hook_cmd):
-        changes.append("Installed SOMA hooks (PreToolUse, PostToolUse, UserPromptSubmit, Stop)")
+        changes.append("Installed SOMA hooks (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit, Stop)")
     else:
         print("  Hooks already installed. Skipping.")
 
@@ -274,6 +275,7 @@ def run_setup_claude() -> None:
     print("  How it works:")
     print("    PreToolUse        — checks pressure, guides with suggestions, blocks only destructive ops")
     print("    PostToolUse       — records action, validates code, computes vitals")
+    print("    PostToolUseFailure— catches tool errors (exit codes, failures) for error_rate signal")
     print("    UserPromptSubmit  — injects actionable tips into agent context")
     print("    Stop              — saves final state, cleans up session")
     print("    Status line       — shows live SOMA level in Claude Code UI")
