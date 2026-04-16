@@ -43,6 +43,17 @@ class AnalyticsStore:
             "CREATE INDEX IF NOT EXISTS idx_actions_timestamp "
             "ON actions(timestamp)"
         )
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS guidance_outcomes (
+                timestamp REAL NOT NULL,
+                agent_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                pattern_key TEXT NOT NULL,
+                helped INTEGER NOT NULL,
+                pressure_at_injection REAL,
+                pressure_after REAL
+            )
+        """)
         self._conn.commit()
 
     def record(
@@ -92,6 +103,40 @@ class AnalyticsStore:
         )
         columns = [desc[0] for desc in cursor.description]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def record_guidance_outcome(
+        self,
+        agent_id: str,
+        session_id: str,
+        pattern_key: str,
+        helped: bool,
+        pressure_at_injection: float,
+        pressure_after: float,
+    ) -> None:
+        """Record whether a guidance injection improved agent behavior."""
+        self._conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), agent_id, session_id, pattern_key,
+             int(helped), pressure_at_injection, pressure_after),
+        )
+        self._conn.commit()
+
+    def get_guidance_effectiveness(self, session_id: str | None = None) -> dict[str, Any]:
+        """Return guidance effectiveness stats, optionally filtered by session."""
+        where = "WHERE session_id = ?" if session_id else ""
+        params = (session_id,) if session_id else ()
+        cursor = self._conn.execute(
+            f"SELECT COUNT(*) as total, SUM(helped) as helped FROM guidance_outcomes {where}",
+            params,
+        )
+        row = cursor.fetchone()
+        total = row[0] or 0
+        helped = row[1] or 0
+        return {
+            "total": total,
+            "helped": helped,
+            "effectiveness_rate": helped / total if total > 0 else 0.0,
+        }
 
     def get_tool_stats(self, agent_id: str) -> dict[str, int]:
         """Return tool usage counts for an agent across all sessions."""

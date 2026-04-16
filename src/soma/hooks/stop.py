@@ -131,6 +131,17 @@ def main():
         start_p = traj[0] if traj else 0.0
         end_p = traj[-1] if traj else pressure
 
+        # Guidance effectiveness
+        effectiveness_str = ""
+        try:
+            from soma.analytics import AnalyticsStore
+            analytics_eff = AnalyticsStore()
+            eff = analytics_eff.get_guidance_effectiveness(session_id=agent_id)
+            if eff["total"] > 0:
+                effectiveness_str = f", guidance {eff['helped']}/{eff['total']} effective ({eff['effectiveness_rate']:.0%})"
+        except Exception:
+            pass
+
         # Always print a useful one-liner
         interventions = []
         if errors:
@@ -145,7 +156,7 @@ def main():
 
         print(
             f"SOMA: {action_count} actions, {intervention_str}, "
-            f"pressure {start_p:.0%}\u2192{end_p:.0%}",
+            f"pressure {start_p:.0%}\u2192{end_p:.0%}{effectiveness_str}",
             file=sys.stderr,
         )
 
