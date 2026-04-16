@@ -448,10 +448,18 @@ class Mirror:
         After EVAL_WINDOW actions post-injection, compares current pressure
         to injection-time pressure. Pressure drop ≥ IMPROVEMENT_RATIO means
         the context helped.
+
+        Stale entries (>1 hour old) are discarded to prevent unbounded growth.
         """
         still_pending: list[PendingEval] = []
+        now = time.time()
+        stale_cutoff = now - 3600  # 1 hour
 
         for pending in self._pending:
+            # Discard stale entries from dead sessions
+            if pending.timestamp < stale_cutoff:
+                continue
+
             if pending.agent_id != agent_id:
                 still_pending.append(pending)
                 continue
@@ -474,6 +482,8 @@ class Mirror:
                 pending.pattern_key,
                 pending.context_text,
                 helped,
+                pressure_at_injection=pending.pressure_at_injection,
+                pressure_after=current_pressure,
             )
 
         self._pending = still_pending
@@ -485,8 +495,10 @@ class Mirror:
         pattern_key: str,
         context_text: str,
         helped: bool,
+        pressure_at_injection: float = 0.0,
+        pressure_after: float = 0.0,
     ) -> None:
-        """Update pattern_db with outcome."""
+        """Update pattern_db with outcome and persist to analytics."""
         if not pattern_key:
             return
 
@@ -502,6 +514,21 @@ class Mirror:
             record.fail_count += 1
 
         record.last_used = time.time()
+
+        # Persist to analytics DB for cross-session tracking
+        try:
+            from soma.analytics import AnalyticsStore
+            analytics = AnalyticsStore()
+            analytics.record_guidance_outcome(
+                agent_id=agent_id,
+                session_id=agent_id,
+                pattern_key=pattern_key,
+                helped=helped,
+                pressure_at_injection=pressure_at_injection,
+                pressure_after=pressure_after,
+            )
+        except Exception:
+            pass  # Never crash for analytics
 
         # Prune ineffective patterns
         if record.total >= MIN_ATTEMPTS_FOR_PRUNE and record.success_rate < PRUNE_THRESHOLD:
