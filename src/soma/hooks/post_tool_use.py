@@ -150,7 +150,25 @@ def _persist_mirror_stats(mirror, agent_id: str) -> None:
             pass
 
 
-def main():
+def main_failure():
+    """Handle PostToolUseFailure — tool errors that Claude Code sends to a separate event.
+
+    PostToolUseFailure payload differs from PostToolUse:
+    - No tool_response field
+    - Has error (string describing failure)
+    - Has is_interrupt (boolean — user cancelled)
+    """
+    data = read_stdin()
+    # User interrupts are not real errors — skip them
+    if data.get("is_interrupt", False):
+        return
+    # Normalize: put error message into tool_response so main() can process it
+    error_msg = data.get("error", "Tool execution failed")
+    data["tool_response"] = f"Error: {error_msg}"
+    main(_data=data, _force_error=True)
+
+
+def main(*, _data: dict | None = None, _force_error: bool = False):
     global _prev_level, _prev_pressure
 
     global _mirror
@@ -170,7 +188,7 @@ def main():
     try:
         from soma.types import Action
 
-        data = read_stdin()
+        data = _data if _data is not None else read_stdin()
         tool_name = data.get("tool_name", os.environ.get("CLAUDE_TOOL_NAME", "unknown"))
 
         # Claude Code sends tool_response (not output)
@@ -182,32 +200,36 @@ def main():
             output = str(raw_response)[:500]
 
         # Error detection — multiple strategies for robustness
-        # Strategy 1: Claude Code's explicit error fields
-        raw_error = data.get("error", False)
-        raw_is_error = data.get("is_error", False)
-        # Handle string "true"/"false" (some Claude Code versions send strings)
-        if isinstance(raw_error, str):
-            raw_error = raw_error.lower() in ("true", "1", "yes")
-        if isinstance(raw_is_error, str):
-            raw_is_error = raw_is_error.lower() in ("true", "1", "yes")
-        error = bool(raw_error) or bool(raw_is_error)
+        if _force_error:
+            # PostToolUseFailure: Claude Code already told us this is an error
+            error = True
+        else:
+            # Strategy 1: Claude Code's explicit error fields
+            raw_error = data.get("error", False)
+            raw_is_error = data.get("is_error", False)
+            # Handle string "true"/"false" (some Claude Code versions send strings)
+            if isinstance(raw_error, str):
+                raw_error = raw_error.lower() in ("true", "1", "yes")
+            if isinstance(raw_is_error, str):
+                raw_is_error = raw_is_error.lower() in ("true", "1", "yes")
+            error = bool(raw_error) or bool(raw_is_error)
 
-        # Strategy 2: Bash exit code detection — search anywhere in response
-        if not error and tool_name == "Bash" and isinstance(raw_response, str):
-            import re
-            # Match "Exit code N" anywhere in the first 500 chars
-            m = re.search(r"Exit code (\d+)", raw_response[:500])
-            if m and m.group(1) != "0":
-                error = True
-            # Also catch common error prefixes
-            elif raw_response.lstrip().startswith("Error:") or raw_response.lstrip().startswith("error:"):
-                error = True
+            # Strategy 2: Bash exit code detection — search anywhere in response
+            if not error and tool_name == "Bash" and isinstance(raw_response, str):
+                import re
+                # Match "Exit code N" anywhere in the first 500 chars
+                m = re.search(r"Exit code (\d+)", raw_response[:500])
+                if m and m.group(1) != "0":
+                    error = True
+                # Also catch common error prefixes
+                elif raw_response.lstrip().startswith("Error:") or raw_response.lstrip().startswith("error:"):
+                    error = True
 
-        # Strategy 3: Edit/Write tool errors (file not found, permission denied)
-        if not error and tool_name in ("Edit", "Write") and isinstance(raw_response, str):
-            lower_resp = raw_response[:300].lower()
-            if any(p in lower_resp for p in ("error", "failed", "not found", "permission denied")):
-                error = True
+            # Strategy 3: Edit/Write tool errors (file not found, permission denied)
+            if not error and tool_name in ("Edit", "Write") and isinstance(raw_response, str):
+                lower_resp = raw_response[:300].lower()
+                if any(p in lower_resp for p in ("error", "failed", "not found", "permission denied")):
+                    error = True
 
         duration = float(data.get("duration_ms", 0)) / 1000.0
         file_path = _extract_file_path(data)

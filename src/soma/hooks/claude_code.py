@@ -15,6 +15,7 @@ import sys
 
 from soma.hooks.pre_tool_use import main as pre_tool_use
 from soma.hooks.post_tool_use import main as post_tool_use
+from soma.hooks.post_tool_use import main_failure as post_tool_use_failure
 from soma.hooks.stop import main as stop
 from soma.hooks.notification import main as notification
 from soma.hooks.base import HookInput, HookResult
@@ -23,6 +24,7 @@ from soma.hooks.base import HookInput, HookResult
 DISPATCH = {
     "PreToolUse": pre_tool_use,
     "PostToolUse": post_tool_use,
+    "PostToolUseFailure": post_tool_use_failure,
     "Stop": stop,
     "UserPromptSubmit": notification,
     "Notification": notification,

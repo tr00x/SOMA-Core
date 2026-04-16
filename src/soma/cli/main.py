@@ -622,7 +622,7 @@ def _cmd_doctor(_args: argparse.Namespace) -> None:
     if settings_path.exists():
         settings = json.loads(settings_path.read_text())
         hooks = settings.get("hooks", {})
-        expected = ["PreToolUse", "PostToolUse", "Stop", "UserPromptSubmit"]
+        expected = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "UserPromptSubmit"]
         for hook_type in expected:
             hook_list = hooks.get(hook_type, [])
             has_soma = any(
