@@ -562,7 +562,7 @@ class Mirror:
             if len(last_cmds) >= 2:
                 return (
                     "retry_loop",
-                    f"pattern: same bash cmd repeated {len(last_cmds)}x",
+                    f"same bash cmd repeated {len(last_cmds)}x — read the error output before retrying",
                 )
 
         # ── blind_edit: Write/Edit without prior Read of that file ──
@@ -585,16 +585,31 @@ class Mirror:
             files_str = ", ".join(blind_files[:3])
             return (
                 "blind_edit",
-                f"reads_before_writes: 0/{blind_count} ({files_str})",
+                f"{blind_count} files edited without reading first ({files_str}) — read before editing",
             )
+
+        # ── error_cascade: 3+ errors in last 5 actions ──
+        # ── budget_warning: >70% of token budget used ──
+        try:
+            health = self.engine._budget.health()
+            if health < 0.3:
+                pct = int((1.0 - health) * 100)
+                return (
+                    "budget_warning",
+                    f"{pct}% of token budget used — prioritize remaining work",
+                )
+        except Exception:
+            pass
 
         # ── error_cascade: 3+ errors in last 5 actions ──
         recent = actions[-5:] if len(actions) >= 5 else actions
         error_count = sum(1 for a in recent if a.error)
         if error_count >= 3:
+            failed_tools = [a.tool_name for a in recent if a.error]
+            tool_str = ", ".join(failed_tools[:3])
             return (
                 "error_cascade",
-                f"errors: {error_count}/{len(recent)} in last actions",
+                f"{error_count}/{len(recent)} recent actions failed ({tool_str}) — try a different approach",
             )
 
         return None

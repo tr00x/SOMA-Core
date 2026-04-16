@@ -156,7 +156,7 @@ class TestErrorCascadeInjection:
             ctx = mirror.generate(agent_id, _action(), "")
             assert ctx is not None
             assert "--- session context ---" in ctx
-            assert "actions:" in ctx or "errors:" in ctx
+            assert "actions:" in ctx or "errors:" in ctx or "failed" in ctx
 
 
 # ------------------------------------------------------------------

@@ -134,7 +134,7 @@ class TestBlindEdit:
         assert detected is not None
         key, desc = detected
         if key == "blind_edit":
-            assert "reads_before_writes" in desc
+            assert "edited without reading" in desc
         else:
             # error_cascade is also valid with 5 errors
             assert key in ("blind_edit", "error_cascade")
@@ -175,7 +175,7 @@ class TestErrorCascade:
         assert detected is not None
         key, desc = detected
         assert key == "error_cascade"
-        assert "errors:" in desc
+        assert "recent actions failed" in desc
 
     def test_no_cascade_with_few_errors(self):
         engine = _make_engine()
