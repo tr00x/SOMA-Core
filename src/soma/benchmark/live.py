@@ -20,7 +20,6 @@ import datetime
 import os
 import statistics
 import subprocess
-import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,217 +27,20 @@ from pathlib import Path
 import soma as soma_mod
 from soma.types import Action
 from soma.reflexes import evaluate as reflex_evaluate
+from soma.benchmark.tasks import TASKS as ALL_TASKS
 
 
 # ------------------------------------------------------------------
-# Step types
+# Legacy task definitions removed — now in soma.benchmark.tasks
+# Original 3 tasks preserved there alongside 7 new tasks (10 total).
 # ------------------------------------------------------------------
 
-@dataclass
-class TaskStep:
-    """A single step in a multi-turn task."""
-    prompt: str
-    test_cmd: str  # {file} replaced with temp file path
-    description: str = ""
-    inject_error: str | None = None  # fake error to inject regardless of test result
+# Re-export for backward compatibility
+TASKS = ALL_TASKS
 
 
-# ------------------------------------------------------------------
-# Task definitions — HARD tasks with 10+ steps
-# ------------------------------------------------------------------
-
-def _task_linked_list() -> dict:
-    """Build a linked list with multiple bugs injected via fake errors."""
-    return {
-        "name": "linked_list_with_bugs",
-        "description": "Build linked list, inject bugs via fake error feedback, force retries",
-        "system": textwrap.dedent("""\
-            You are a Python developer. Return ONLY a single python code block.
-            No explanations outside the code block. Include the complete file every time.
-            When given an error, fix it and return the COMPLETE updated file.
-        """),
-        "steps": [
-            TaskStep(
-                prompt="Write a Python file with a Node class and LinkedList class. LinkedList needs: append, prepend, delete(value), find(value)->bool, to_list()->list, reverse(), length. Include basic tests using assert statements at the bottom.",
-                test_cmd="python3 {file}",
-                description="initial implementation",
-            ),
-            TaskStep(
-                prompt="Error running tests:\nAssertionError: reverse() doesn't work for single-element list. Also length() returns wrong count after delete. Fix the COMPLETE file.",
-                test_cmd="python3 {file}",
-                description="fix reverse + length (may be fake error)",
-                inject_error="AssertionError: reverse() on single element list returned None instead of keeping the element",
-            ),
-            TaskStep(
-                prompt="New requirement: add insert_at(index, value) and remove_at(index) methods. insert_at(0, x) should work like prepend. insert_at(length, x) like append. Raise IndexError for invalid index. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); ll=LinkedList(); ll.append(1); ll.append(3); ll.insert_at(1,2); assert ll.to_list()==[1,2,3], f'got {{ll.to_list()}}'\"",
-                description="add insert_at + remove_at",
-            ),
-            TaskStep(
-                prompt="Test failed:\nIndexError: insert_at(-1, value) should raise IndexError but it silently inserts at head. Also remove_at on empty list segfaults. Fix COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); ll=LinkedList(); try:\\n    ll.insert_at(-1, 5)\\n    assert False, 'should raise'\\nexcept IndexError:\\n    pass\\nprint('ok')\"",
-                description="edge case fixes",
-            ),
-            TaskStep(
-                prompt="New requirement: add __iter__ and __repr__ methods. repr should show LinkedList([1, 2, 3]). Also add sort() method (any algorithm). Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); ll=LinkedList(); ll.append(3); ll.append(1); ll.append(2); ll.sort(); assert ll.to_list()==[1,2,3], f'sort failed: {{ll.to_list()}}'\"",
-                description="add iter, repr, sort",
-            ),
-            TaskStep(
-                prompt="sort() is broken — it loses nodes. After sorting [3,1,2] the length becomes 2 instead of 3. Fix the sort implementation. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); ll=LinkedList(); [ll.append(x) for x in [5,3,1,4,2]]; ll.sort(); r=ll.to_list(); assert r==[1,2,3,4,5], f'{{r}}'; assert ll.length==5\"",
-                description="fix sort losing nodes",
-                inject_error="AssertionError: after sort [5,3,1,4,2] got [1,3,5] — lost 2 nodes",
-            ),
-            TaskStep(
-                prompt="Add merge(other_list) that merges another sorted linked list into this sorted list (merge sort style). Return COMPLETE file with tests.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); a=LinkedList(); [a.append(x) for x in [1,3,5]]; b=LinkedList(); [b.append(x) for x in [2,4,6]]; a.merge(b); assert a.to_list()==[1,2,3,4,5,6]\"",
-                description="add merge for sorted lists",
-            ),
-            TaskStep(
-                prompt="merge() crashes when one list is empty. Also merge doesn't work when lists have duplicates — [1,1,2].merge([1,3]) should give [1,1,1,2,3]. Fix COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); a=LinkedList(); b=LinkedList(); [b.append(x) for x in [1,2,3]]; a.merge(b); assert a.to_list()==[1,2,3]; print('empty merge ok')\"",
-                description="fix merge edge cases",
-            ),
-            TaskStep(
-                prompt="Final: add has_cycle()->bool that detects if the linked list has a cycle (Floyd's algorithm). Add comprehensive tests for ALL methods. Return COMPLETE file.",
-                test_cmd="python3 {file}",
-                description="cycle detection + final tests",
-            ),
-            TaskStep(
-                prompt="Tests report: has_cycle returns True on a normal list with duplicate values. It should only return True when there's an actual pointer cycle. Fix it. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); ll=LinkedList(); [ll.append(x) for x in [1,1,1]]; assert not ll.has_cycle(), 'false positive on duplicates'\"",
-                description="fix cycle detection false positive",
-                inject_error="AssertionError: has_cycle() returned True for LinkedList([1,1,1]) — no cycle, just duplicates",
-            ),
-        ],
-    }
-
-
-def _task_state_machine() -> dict:
-    """Build a state machine with progressively harder requirements."""
-    return {
-        "name": "state_machine",
-        "description": "Build state machine with transitions, guards, hooks — error cascade test",
-        "system": textwrap.dedent("""\
-            You are a Python developer. Return ONLY a single python code block.
-            No explanations. Include the complete file. Fix ALL issues when given errors.
-        """),
-        "steps": [
-            TaskStep(
-                prompt="Write a StateMachine class with: add_state(name), add_transition(from_state, to_state, event), trigger(event), current_state property. Initial state is first added state. Raise ValueError on invalid transition. Include tests.",
-                test_cmd="python3 {file}",
-                description="basic state machine",
-            ),
-            TaskStep(
-                prompt="Error: trigger('nonexistent_event') doesn't raise ValueError, it silently does nothing. Also current_state is None before any state is added. Fix: raise ValueError for unknown events, raise RuntimeError if no states added. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); \\ntry:\\n    sm.trigger('x')\\n    assert False\\nexcept (RuntimeError, ValueError):\\n    pass\\nprint('ok')\"",
-                description="error handling",
-            ),
-            TaskStep(
-                prompt="Add guard conditions: add_transition(from, to, event, guard=None) where guard is a callable returning bool. Transition only fires if guard returns True. If guard returns False, raise GuardError. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); sm.add_state('a'); sm.add_state('b'); sm.add_transition('a','b','go', guard=lambda: False); \\ntry:\\n    sm.trigger('go')\\n    assert False, 'should raise'\\nexcept GuardError:\\n    pass\\nprint('guard ok')\"",
-                description="guard conditions",
-            ),
-            TaskStep(
-                prompt="Add on_enter and on_exit hooks: add_state(name, on_enter=None, on_exit=None). Hooks are callables, called during transitions. on_exit of source fires first, then on_enter of target. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); log=[]; sm=StateMachine(); sm.add_state('a', on_exit=lambda: log.append('exit_a')); sm.add_state('b', on_enter=lambda: log.append('enter_b')); sm.add_transition('a','b','go'); sm.trigger('go'); assert log==['exit_a','enter_b'], f'{{log}}'\"",
-                description="enter/exit hooks",
-            ),
-            TaskStep(
-                prompt="Error: hooks crash when they're None — TypeError: 'NoneType' is not callable. Also on_enter fires BEFORE on_exit. Fix the order and null checks. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); sm.add_state('a'); sm.add_state('b'); sm.add_transition('a','b','go'); sm.trigger('go'); assert sm.current_state=='b'\"",
-                description="fix hook ordering and null safety",
-                inject_error="TypeError: 'NoneType' object is not callable — hooks are None by default but called without check",
-            ),
-            TaskStep(
-                prompt="Add history: transition_history property returns list of (from_state, to_state, event) tuples. Add reset() method that returns to initial state and clears history. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); sm.add_state('a'); sm.add_state('b'); sm.add_transition('a','b','go'); sm.trigger('go'); assert len(sm.transition_history)==1; sm.reset(); assert sm.current_state=='a'; assert len(sm.transition_history)==0\"",
-                description="history + reset",
-            ),
-            TaskStep(
-                prompt="Add wildcard transitions: add_transition('*', 'error', 'fail') means ANY state can transition to 'error' on 'fail' event. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); sm.add_state('a'); sm.add_state('b'); sm.add_state('err'); sm.add_transition('a','b','go'); sm.add_transition('*','err','fail'); sm.trigger('go'); sm.trigger('fail'); assert sm.current_state=='err'\"",
-                description="wildcard transitions",
-            ),
-            TaskStep(
-                prompt="Wildcard transition takes priority over specific transition when both match. It should be the opposite — specific first, wildcard as fallback. Fix. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); sm=StateMachine(); sm.add_state('a'); sm.add_state('b'); sm.add_state('c'); sm.add_transition('a','b','go'); sm.add_transition('*','c','go'); sm.trigger('go'); assert sm.current_state=='b', f'got {{sm.current_state}}, specific should win over wildcard'\"",
-                description="fix wildcard priority",
-                inject_error="AssertionError: got c, specific should win over wildcard",
-            ),
-            TaskStep(
-                prompt="Final: add to_dot() method that exports the state machine as a Graphviz DOT string. Include all states, transitions, guards (show guard name), and mark current state. Add comprehensive final tests for everything. Return COMPLETE file.",
-                test_cmd="python3 {file}",
-                description="DOT export + comprehensive tests",
-            ),
-        ],
-    }
-
-
-def _task_expression_parser() -> dict:
-    """Build a math expression parser — complex multi-step task."""
-    return {
-        "name": "expression_parser",
-        "description": "Build recursive descent parser for math expressions — deep multi-step",
-        "system": textwrap.dedent("""\
-            You are a Python developer. Return ONLY a single python code block.
-            No explanations. Complete file every time. Fix ALL issues.
-        """),
-        "steps": [
-            TaskStep(
-                prompt="Write a math expression evaluator that handles +, -, *, / with correct precedence and parentheses. Use recursive descent parsing. Function: evaluate(expr: str) -> float. Include tests for: '2+3' -> 5, '2+3*4' -> 14, '(2+3)*4' -> 20, '10/3' -> 3.333...",
-                test_cmd="python3 {file}",
-                description="basic expression parser",
-            ),
-            TaskStep(
-                prompt="Error: evaluate('1+2+3') returns 6 but evaluate('10-3-2') returns 9 instead of 5. Left-to-right associativity is broken for subtraction. Fix. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert abs(evaluate('10-3-2') - 5.0) < 0.001, f'got {evaluate(\"10-3-2\")}'\"",
-                description="fix left associativity",
-                inject_error="AssertionError: evaluate('10-3-2') returned 9.0 instead of 5.0 — right-to-left parsing of subtraction",
-            ),
-            TaskStep(
-                prompt="Add support for unary minus: evaluate('-5') -> -5, evaluate('-(3+2)') -> -5, evaluate('2*-3') -> -6. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert evaluate('-5')==-5; assert evaluate('-(3+2)')==-5; assert evaluate('2*-3')==-6; print('unary ok')\"",
-                description="unary minus",
-            ),
-            TaskStep(
-                prompt="Add power operator ^ with right associativity: evaluate('2^3') -> 8, evaluate('2^3^2') -> 512 (= 2^(3^2), not (2^3)^2=64). Power has higher precedence than * /. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert evaluate('2^3')==8; assert evaluate('2^3^2')==512, f'got {{evaluate(\"2^3^2\")}}, want 512'; print('power ok')\"",
-                description="power operator with right associativity",
-            ),
-            TaskStep(
-                prompt="Error: '2^3^2' evaluates to 64 instead of 512. You made it left-associative (2^3)^2=64. Power must be RIGHT-associative: 2^(3^2)=2^9=512. Fix the parsing direction for ^. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); r=evaluate('2^3^2'); assert r==512, f'got {{r}}'\"",
-                description="fix power right-assoc",
-                inject_error="AssertionError: got 64.0 — power parsed left-to-right but should be right-to-left",
-            ),
-            TaskStep(
-                prompt="Add variables: evaluate('x+1', {'x': 5}) -> 6. Variables are single letters or words. Raise NameError for undefined variables. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert evaluate('x+y', {'x':3,'y':4})==7; \\ntry:\\n    evaluate('z+1', {})\\n    assert False\\nexcept NameError:\\n    pass\\nprint('vars ok')\"",
-                description="variable support",
-            ),
-            TaskStep(
-                prompt="Add built-in functions: sin, cos, sqrt, abs. evaluate('sqrt(16)') -> 4, evaluate('abs(-5)') -> 5. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert evaluate('sqrt(16)')==4; assert evaluate('abs(-5)')==5; import math; assert abs(evaluate('sin(0)') - 0) < 0.001; print('funcs ok')\"",
-                description="built-in functions",
-            ),
-            TaskStep(
-                prompt="Error: 'sqrt(2+2)' crashes with 'unexpected character (' — the parser doesn't handle function arguments as expressions. Also 'abs(sqrt(16))' crashes — nested function calls broken. Fix. Return COMPLETE file.",
-                test_cmd="python3 -c \"exec(open('{file}').read()); assert evaluate('sqrt(2+2)')==2; assert evaluate('abs(sqrt(16))')==4; print('nested ok')\"",
-                description="fix function arg parsing",
-                inject_error="SyntaxError: unexpected '(' in function argument — parser treats '(' after function name differently than grouping parens",
-            ),
-            TaskStep(
-                prompt="Final: add modulo operator %, implicit multiplication (2x -> 2*x, (2)(3) -> 6), and comprehensive tests. Return COMPLETE file.",
-                test_cmd="python3 {file}",
-                description="modulo + implicit multiply + final tests",
-            ),
-        ],
-    }
-
-
-TASKS = [_task_linked_list(), _task_state_machine(), _task_expression_parser()]
+# Task definitions live in soma.benchmark.tasks (10 tasks total).
+# TASKS re-exported above for backward compatibility.
 
 
 # ------------------------------------------------------------------

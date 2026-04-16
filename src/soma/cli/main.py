@@ -802,6 +802,58 @@ def _cmd_benchmark(args: argparse.Namespace) -> None:
     """Run SOMA behavioral benchmarks with A/B comparison."""
     from dataclasses import asdict
 
+    # A/B verdict mode — the definitive test
+    if getattr(args, "ab", False):
+        from soma.benchmark.live import run_live_benchmark
+        from soma.benchmark.ab_report import (
+            analyze_ab_results,
+            generate_ab_report,
+            render_ab_terminal,
+        )
+        model = getattr(args, "model", "claude-haiku-4-5-20251001")
+        runs = getattr(args, "runs", 3)
+        tasks_arg = getattr(args, "tasks", None)
+
+        # Optional task filter
+        task_defs = None
+        if tasks_arg:
+            from soma.benchmark.tasks import get_task_by_name
+            task_defs = []
+            for name in tasks_arg:
+                t = get_task_by_name(name)
+                if t:
+                    task_defs.append(t)
+                else:
+                    print(f"  Warning: unknown task '{name}', skipping")
+            if not task_defs:
+                print("  Error: no valid tasks specified")
+                return
+
+        n_tasks = len(task_defs) if task_defs else 10
+        est_calls = n_tasks * runs * 2 * 8  # tasks × runs × modes × ~steps
+        print("  SOMA A/B Benchmark — the definitive test")
+        print(f"  Model: {model} | Tasks: {n_tasks} | Runs: {runs}/task")
+        print(f"  Estimated API calls: ~{est_calls}")
+        print()
+
+        result = run_live_benchmark(runs_per_task=runs, model=model, tasks=task_defs)
+        verdict = analyze_ab_results(result)
+        render_ab_terminal(result, verdict)
+
+        output_path = Path(getattr(args, "output", "docs/AB-VERDICT.md"))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(generate_ab_report(result, verdict))
+        print(f"  Full report: {output_path}")
+
+        # JSON for reproducibility
+        json_path = getattr(args, "json", None)
+        if json_path:
+            jp = Path(json_path)
+            jp.parent.mkdir(parents=True, exist_ok=True)
+            jp.write_text(json.dumps(asdict(verdict), indent=2, default=str))
+            print(f"  Verdict JSON: {jp}")
+        return
+
     # Live benchmark mode — real LLM API calls
     if getattr(args, "live", False):
         from soma.benchmark.live import (
@@ -1040,8 +1092,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                   help="Run threshold tuner on results")
     benchmark_parser.add_argument("--live", action="store_true",
                                   help="Run live benchmark with real LLM API calls")
+    benchmark_parser.add_argument("--ab", action="store_true",
+                                  help="Run A/B verdict benchmark — the definitive SOMA vs no-SOMA test")
+    benchmark_parser.add_argument("--tasks", nargs="*", default=None,
+                                  help="Task names to run (default: all 10). Use 'soma benchmark --ab --tasks linked_list_with_bugs state_machine'")
     benchmark_parser.add_argument("--model", type=str, default="claude-haiku-4-5-20251001",
-                                  help="Model for live benchmark (default: claude-haiku-4-5-20251001)")
+                                  help="Model for live/ab benchmark (default: claude-haiku-4-5-20251001)")
 
     # ---- System ----
     subparsers.add_parser("version", help="Print the SOMA version and exit")
