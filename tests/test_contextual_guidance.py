@@ -536,6 +536,52 @@ def test_entropy_drop_detected(cg):
     assert "Bash" in msg.message
 
 
+def test_panic_detected_low_entropy_fast_velocity(cg):
+    """Low entropy + fast actions = panic, should escalate to critical.
+
+    With 7 Bash + 1 Read, entropy ≈ 0.54 (normally "warn").
+    Fast velocity (1s gaps) should escalate to "critical".
+    """
+    import time
+    now = time.time()
+    action_log = [
+        {"tool": "Read", "error": False, "file": "/f.py", "ts": now - 8},
+        {"tool": "Bash", "error": True, "file": "", "ts": now - 7},
+        {"tool": "Bash", "error": False, "file": "", "ts": now - 6},
+        {"tool": "Bash", "error": True, "file": "", "ts": now - 5},
+        {"tool": "Bash", "error": False, "file": "", "ts": now - 4},
+        {"tool": "Bash", "error": True, "file": "", "ts": now - 3},
+        {"tool": "Bash", "error": False, "file": "", "ts": now - 2},
+        {"tool": "Bash", "error": True, "file": "", "ts": now - 1},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "entropy_drop"
+    assert msg.severity == "critical"  # Panic: low entropy + fast velocity
+
+
+def test_entropy_warn_without_velocity(cg):
+    """Same low entropy but no timestamps = stays at warn, not critical."""
+    action_log = [
+        {"tool": "Read", "error": False, "file": "/f.py"},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "entropy_drop"
+    assert msg.severity == "warn"  # No velocity data = stays warn
+
+
 def test_entropy_drop_not_fired_with_diverse_tools(cg):
     """Diverse tool usage = healthy, no warning."""
     action_log = [
