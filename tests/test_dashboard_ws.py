@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+pytest.importorskip("fastapi")
 from soma.dashboard.ws import ConnectionManager, _compute_diff
 
 
