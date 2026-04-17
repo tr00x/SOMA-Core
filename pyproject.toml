@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-ai"
-version = "0.7.0"
+version = "2026.4.0"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -23,6 +23,7 @@ dependencies = [
     "tomli-w>=1.0",
     "rich>=13.0",
     "textual>=3.0",
+    "google-genai>=1.73.1",
 ]
 
 [project.optional-dependencies]
