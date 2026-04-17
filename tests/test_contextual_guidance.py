@@ -490,6 +490,27 @@ def test_no_false_positives_on_clean_session(cg):
 
 
 # ---------------------------------------------------------------------------
+# Healing Transition Prescriptions
+# ---------------------------------------------------------------------------
+
+def test_healing_transition_suggested_after_bash_error(cg):
+    """After Bash errors, guidance should suggest Read (historically reduces pressure)."""
+    action_log = [
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    # Should mention Read as healing transition with data (in suggestion or message)
+    combined = msg.suggestion + " " + msg.message
+    assert "Read" in combined or "read" in combined.lower()
+    assert "7%" in combined or "pressure" in combined.lower()
+
+
+# ---------------------------------------------------------------------------
 # Pattern 8: Entropy Drop (monotool tunnel vision)
 # ---------------------------------------------------------------------------
 

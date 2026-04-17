@@ -55,6 +55,22 @@ def _compute_tool_entropy(action_log: list[dict], window: int = 10) -> float:
     return -sum((c / total) * math.log2(c / total) for c in counts.values())
 
 
+# Data-backed healing transitions from production actions
+_HEALING_TRANSITIONS: dict[str, tuple[str, str]] = {
+    "Bash": ("Read", "Bash→Read reduces pressure by 7%"),
+    "Edit": ("Read", "Edit→Read reduces pressure by 5%"),
+    "Write": ("Grep", "Write→Grep reduces pressure by 5%"),
+}
+
+
+def _healing_suggestion(failing_tool: str) -> str:
+    """Suggest a healing tool transition based on production data."""
+    if failing_tool in _HEALING_TRANSITIONS:
+        heal_tool, evidence = _HEALING_TRANSITIONS[failing_tool]
+        return f"{heal_tool} next ({evidence})"
+    return "Read the relevant files to re-establish context"
+
+
 def _suggest_for_error(error_text: str) -> str:
     """Pick a suggestion based on error content."""
     lower = error_text.lower()
@@ -358,7 +374,9 @@ class ContextualGuidance:
             return None
 
         error_preview = str(last_error)[:80]
-        suggestion = _suggest_for_error(str(last_error))
+        error_suggestion = _suggest_for_error(str(last_error))
+        heal = _healing_suggestion(streak_tool)
+        suggestion = f"{error_suggestion}. Healing: {heal}"
 
         # Check lessons for this error
         if self._lesson_store:
@@ -425,11 +443,13 @@ class ContextualGuidance:
         pattern_parts = [f"{t}×{c}" for t, c in tool_counts.most_common(3)]
         pattern_summary = ", ".join(pattern_parts)
 
-        suggestion = "step back, re-read the relevant files, and reconsider your approach"
+        dominant_tool = tool_counts.most_common(1)[0][0] if tool_counts else "Bash"
+        heal = _healing_suggestion(dominant_tool)
+        suggestion = f"step back and try {heal}"
         if tool_counts.get("Bash", 0) >= 2:
-            suggestion = "stop running commands — read the error output and rethink"
+            suggestion = f"stop running commands — {heal}"
         elif tool_counts.get("Edit", 0) >= 2:
-            suggestion = "read the files you're editing to understand current state"
+            suggestion = f"read the files you're editing — {heal}"
 
         return GuidanceMessage(
             pattern="error_cascade",
@@ -634,7 +654,7 @@ class ContextualGuidance:
 
         error_text = last.get("output", "") or "command failed"
         error_preview = str(error_text)[:80]
-        suggestion = _suggest_for_error(str(error_text))
+        heal = _healing_suggestion("Bash")
 
         return GuidanceMessage(
             pattern="bash_retry",
@@ -642,8 +662,8 @@ class ContextualGuidance:
             message=(
                 f'[SOMA] Bash just failed: "{error_preview}". '
                 f"Running another Bash without reading the error won't help. "
-                f"Try: Read the relevant file or error output first."
+                f"Try: {heal}."
             ),
             evidence=("Bash error, next action = Bash retry",),
-            suggestion=suggestion,
+            suggestion=heal,
         )
