@@ -29,7 +29,7 @@ class GuidanceMessage:
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
 # Pattern priority within same severity (higher = wins ties)
-_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "retry_storm": 3, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1, "drift": 0}
+_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "retry_storm": 3, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1, "drift": 0}
 
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
@@ -212,6 +212,10 @@ class ContextualGuidance:
             candidates.append(msg)
 
         msg = self._check_blind_edit(action_log, current_tool, current_input)
+        if msg:
+            candidates.append(msg)
+
+        msg = self._check_bash_retry(action_log, current_tool)
         if msg:
             candidates.append(msg)
 
@@ -595,4 +599,51 @@ class ContextualGuidance:
             ),
             evidence=(f"Tool entropy {entropy:.2f}, {dominant} at {pct}%",),
             suggestion=f"diversify — use Read or Grep before continuing with {dominant}",
+        )
+
+    # ── Pattern 9: Bash Retry Intercept ──
+
+    def _check_bash_retry(
+        self, action_log: list[dict], current_tool: str,
+    ) -> GuidanceMessage | None:
+        if current_tool != "Bash":
+            return None
+        if not action_log:
+            return None
+
+        # Check if last action was a failed Bash
+        last = action_log[-1]
+        if last.get("tool") != "Bash" or not last.get("error"):
+            return None
+
+        # Don't fire if already in retry_storm territory (3+ consecutive Bash fails)
+        # or error_cascade territory (3+ consecutive errors of any tool)
+        consecutive_bash = 0
+        consecutive_any = 0
+        for entry in reversed(action_log):
+            if entry.get("error"):
+                consecutive_any += 1
+                if entry.get("tool") == "Bash":
+                    consecutive_bash += 1
+            else:
+                break
+        if consecutive_bash >= 3:
+            return None  # Let retry_storm handle this
+        if consecutive_any >= 3:
+            return None  # Let error_cascade handle this
+
+        error_text = last.get("output", "") or "command failed"
+        error_preview = str(error_text)[:80]
+        suggestion = _suggest_for_error(str(error_text))
+
+        return GuidanceMessage(
+            pattern="bash_retry",
+            severity="warn",
+            message=(
+                f'[SOMA] Bash just failed: "{error_preview}". '
+                f"Running another Bash without reading the error won't help. "
+                f"Try: Read the relevant file or error output first."
+            ),
+            evidence=("Bash error, next action = Bash retry",),
+            suggestion=suggestion,
         )

@@ -533,3 +533,43 @@ def test_entropy_drop_not_fired_with_diverse_tools(cg):
         action_log=action_log, current_tool="Bash", current_input={}, vitals={},
     )
     assert msg is None or msg.pattern != "entropy_drop"
+
+
+# ---------------------------------------------------------------------------
+# Pattern 9: Bash Retry Intercept
+# ---------------------------------------------------------------------------
+
+def test_bash_retry_intercepted(cg):
+    """After Bash error, trying Bash again should trigger warning."""
+    action_log = [
+        {"tool": "Read", "error": False, "file": "/src/a.py"},
+        {"tool": "Bash", "error": True, "file": "", "output": "Error: test failed"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+    assert "Read" in msg.message or "error" in msg.message.lower()
+
+
+def test_bash_retry_not_fired_after_success(cg):
+    """After successful Bash, another Bash is fine."""
+    action_log = [
+        {"tool": "Bash", "error": False, "file": ""},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_retry"
+
+
+def test_bash_retry_not_fired_for_different_tool(cg):
+    """After Bash error, using Read is fine — no warning."""
+    action_log = [
+        {"tool": "Bash", "error": True, "file": "", "output": "Error: failed"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Read", current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_retry"
