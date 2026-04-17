@@ -524,6 +524,8 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     followthrough_data["file"] = file_path
                 elif cg_msg.pattern == "retry_storm":
                     followthrough_data["tool"] = tool_name
+                elif cg_msg.pattern in ("entropy_drop", "bash_retry"):
+                    followthrough_data["tool"] = tool_name
                 write_guidance_followthrough(followthrough_data, agent_id)
                 # Audit
                 try:

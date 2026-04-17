@@ -193,6 +193,23 @@ def check_followthrough(
                 return True
         return None
 
+    if pattern == "entropy_drop":
+        # Did they diversify tools?
+        failing_tool = pending.get("tool", "")
+        if tool_name != failing_tool:
+            return True  # Switched to different tool — good
+        return None
+
+    if pattern == "bash_retry":
+        # Did they stop retrying Bash?
+        if tool_name != "Bash":
+            return True  # Good — switched away
+        if tool_name == "Bash" and not error:
+            return True  # Bash succeeded
+        if tool_name == "Bash" and error:
+            return False  # Still retrying
+        return None
+
     return None
 
 
@@ -608,6 +625,15 @@ class ContextualGuidance:
         pct = tools[dominant] * 100 // len(recent)
 
         severity = "critical" if entropy < 0.5 else "warn"
+
+        # Panic detection: low entropy + high velocity = critical
+        recent_ts = [e.get("ts", 0) for e in recent if e.get("ts")]
+        if len(recent_ts) >= 3:
+            gaps = [recent_ts[i] - recent_ts[i - 1] for i in range(1, len(recent_ts)) if recent_ts[i - 1] > 0]
+            if gaps:
+                avg_gap = sum(gaps) / len(gaps)
+                if avg_gap < 3.0:  # Less than 3 seconds between actions
+                    severity = "critical"  # Panic: monotool + fast = disaster
 
         return GuidanceMessage(
             pattern="entropy_drop",
