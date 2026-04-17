@@ -860,3 +860,259 @@
   height: 40px;
   margin-bottom: 4px;
 }
+
+/* ─── ROI Page ─── */
+.roi-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.roi-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.roi-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.roi-subtitle {
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+.roi-hero {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 32px;
+}
+
+.roi-gauge {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.roi-gauge-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.roi-gauge-number {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+.roi-gauge-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+
+.roi-hero-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex: 1;
+}
+
+.roi-metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.roi-metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1.1;
+}
+
+.roi-metric-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.roi-metric-sub {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.roi-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.roi-section h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.roi-section-desc {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  margin-bottom: 20px;
+}
+
+.roi-health-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.roi-health-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.roi-health-key {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.roi-health-val {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* Pattern bars */
+.roi-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.roi-bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 80px;
+  align-items: center;
+  gap: 12px;
+}
+
+.roi-bar-label {
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roi-bar-track {
+  position: relative;
+  height: 20px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.roi-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+  transition: width 0.4s ease;
+}
+
+.roi-bar-followed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  opacity: 0.7;
+  transition: width 0.4s ease;
+}
+
+.roi-bar-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+}
+
+.roi-bar-count {
+  color: var(--text-secondary);
+}
+
+.roi-bar-rate {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.roi-bars-legend {
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.roi-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.roi-legend-dot.fired {
+  background: var(--accent-glow-strong);
+}
+
+.roi-legend-dot.followed {
+  background: var(--accent);
+}
+
+.roi-loading, .roi-empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .roi-hero {
+    flex-direction: column;
+    gap: 24px;
+  }
+  .roi-bar-row {
+    grid-template-columns: 80px 1fr 60px;
+  }
+  .roi-health-grid {
+    grid-template-columns: 1fr;
+  }
+}

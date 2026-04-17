@@ -18,6 +18,7 @@ import OverviewPage from './pages/OverviewPage.js';
 import AgentPage from './pages/AgentPage.js';
 import SessionPage from './pages/SessionPage.js';
 import SettingsPage from './pages/SettingsPage.js';
+import RoiPage from './pages/RoiPage.js';
 
 /** Inline SVG for SOMA logo */
 function SomaLogo() {
@@ -49,6 +50,11 @@ function Nav({ currentPath, wsConnected }) {
         <li role="none">
           <a href="/" class="nav-link ${isActive('/') && !isActive('/agents') && !isActive('/sessions') && !isActive('/settings') ? 'active' : ''}" role="menuitem">
             Overview
+          </a>
+        </li>
+        <li role="none">
+          <a href="/roi" class="nav-link ${isActive('/roi') ? 'active' : ''}" role="menuitem">
+            ROI
           </a>
         </li>
         <li role="none">
@@ -114,6 +120,7 @@ function App() {
     <main id="main-content" role="main">
       <${Router} onChange=${handleRoute}>
         <${OverviewPage} path="/" />
+        <${RoiPage} path="/roi" />
         <${AgentPage} path="/agents/:id" />
         <${SessionPage} path="/sessions/:id" />
         <${SessionPage} path="/sessions" />

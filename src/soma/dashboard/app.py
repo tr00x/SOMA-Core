@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
         learning,
         overview,
         quality,
+        roi,
         sessions,
         tools,
     )
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
         baselines.router,
         findings.router,
         tools.router,
+        roi.router,
         ws_router,
     ]:
         app.include_router(router)
