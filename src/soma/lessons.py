@@ -7,6 +7,20 @@ import time
 from pathlib import Path
 
 
+def _trigrams(text: str) -> set[str]:
+    """Extract character trigrams from text."""
+    if len(text) < 3:
+        return {text} if text else set()
+    return {text[i:i+3] for i in range(len(text) - 2)}
+
+
+def _trigram_similarity(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity over trigram sets. 0-1 scale."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 class LessonStore:
     """Persisted store of error→fix lessons learned across sessions."""
 
@@ -55,14 +69,29 @@ class LessonStore:
         self._save()
 
     def query(self, error_text: str, tool: str = "", max_results: int = 3) -> list[dict]:
-        """Find lessons matching an error. Simple keyword overlap."""
+        """Find lessons matching an error. Trigram similarity + keyword overlap."""
         error_lower = error_text.lower()
         error_words = set(error_lower.split())
+        error_trigrams = _trigrams(error_lower)
         scored: list[tuple[float, dict]] = []
         for lesson in self._lessons:
-            lesson_words = set(lesson["error"].lower().split())
+            lesson_lower = lesson["error"].lower()
+            lesson_words = set(lesson_lower.split())
+
+            # Trigram similarity (0-1 scale)
+            tri_sim = _trigram_similarity(error_trigrams, _trigrams(lesson_lower))
+
+            # Keyword overlap bonus
             overlap = len(error_words & lesson_words)
-            if overlap >= 2 or (overlap >= 1 and tool and lesson.get("tool") == tool):
-                scored.append((overlap, lesson))
+
+            # Combined score: trigram similarity is primary, overlap is bonus
+            score = tri_sim + overlap * 0.1
+
+            # Tool match bonus
+            if tool and lesson.get("tool") == tool:
+                score += 0.15
+
+            if score >= 0.3:
+                scored.append((score, lesson))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [s[1] for s in scored[:max_results]]
