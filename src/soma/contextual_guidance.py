@@ -276,7 +276,7 @@ class ContextualGuidance:
                 if streak_tool is None:
                     streak_tool = t
                     streak_count = 1
-                    last_error = entry.get("output", "") or f"{t} failed"
+                    last_error = entry.get("output", "") or entry.get("test_output", "") or f"{t} failed"
                 elif t == streak_tool:
                     streak_count += 1
                 else:
@@ -286,6 +286,10 @@ class ContextualGuidance:
 
         if streak_count < 3:
             return None
+
+        # Cap at 3 — don't spam "failed 4/5/6/7 times"
+        if streak_count > 3:
+            streak_count = 3
 
         # Is the current tool the same as the failing streak?
         if current_tool != streak_tool:
