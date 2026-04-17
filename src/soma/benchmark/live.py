@@ -231,9 +231,9 @@ def _run_multi_turn(
         engine = soma_mod.quickstart(budget={"tokens": 10_000_000})
         engine.register_agent("live-bench")
         # Reduce grace period from 10 to 3 so SOMA activates during the task
-        agent_state = engine._agents.get("live-bench")
-        if agent_state:
-            agent_state.baseline.min_samples = 3
+        baseline = engine.get_baseline("live-bench")
+        if baseline:
+            baseline.min_samples = 3
 
     raw_client = anthropic.Anthropic()
 
