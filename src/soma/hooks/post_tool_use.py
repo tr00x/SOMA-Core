@@ -375,6 +375,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 cost=action.cost,
                 mode=result.mode.name,
                 error=error,
+                source="hook",
             )
         except Exception:
             pass  # Never crash for analytics

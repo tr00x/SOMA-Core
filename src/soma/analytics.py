@@ -32,7 +32,9 @@ class AnalyticsStore:
                 token_count INTEGER,
                 cost REAL,
                 mode TEXT,
-                error INTEGER
+                error INTEGER,
+                source TEXT DEFAULT 'unknown',
+                soma_version TEXT DEFAULT ''
             )
         """)
         self._conn.execute(
@@ -54,6 +56,12 @@ class AnalyticsStore:
                 pressure_after REAL
             )
         """)
+        # Migrate existing DBs: add source/soma_version columns if missing
+        try:
+            self._conn.execute("SELECT source FROM actions LIMIT 0")
+        except sqlite3.OperationalError:
+            self._conn.execute("ALTER TABLE actions ADD COLUMN source TEXT DEFAULT 'unknown'")
+            self._conn.execute("ALTER TABLE actions ADD COLUMN soma_version TEXT DEFAULT ''")
         self._conn.commit()
 
     def record(
@@ -70,15 +78,33 @@ class AnalyticsStore:
         cost: float = 0.0,
         mode: str = "OBSERVE",
         error: bool = False,
+        source: str = "unknown",
     ) -> None:
         """Record a single action snapshot to the analytics DB."""
         self._conn.execute(
-            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), agent_id, session_id, tool_name,
              pressure, uncertainty, drift, error_rate, context_usage,
-             token_count, cost, mode, int(error)),
+             token_count, cost, mode, int(error), source, self._version()),
         )
         self._conn.commit()
+
+    @staticmethod
+    def _version() -> str:
+        """Return SOMA version string."""
+        try:
+            from importlib.metadata import version
+            return version("soma-ai")
+        except Exception:
+            return ""
+
+    def purge_before(self, timestamp: float) -> int:
+        """Delete actions before timestamp. Returns count deleted."""
+        cursor = self._conn.execute(
+            "DELETE FROM actions WHERE timestamp < ?", (timestamp,)
+        )
+        self._conn.commit()
+        return cursor.rowcount
 
     def get_agent_trends(self, agent_id: str, last_n_sessions: int = 10) -> list[dict[str, Any]]:
         """Return per-session aggregates for an agent."""

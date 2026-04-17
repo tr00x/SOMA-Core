@@ -82,3 +82,44 @@ def test_wal_mode(tmp_path: Path):
 def test_close_does_not_raise(tmp_path: Path):
     store = AnalyticsStore(path=tmp_path / "a.db")
     store.close()  # Should not raise
+
+
+# ---------------------------------------------------------------------------
+# Source tagging
+# ---------------------------------------------------------------------------
+
+def test_record_with_source(tmp_path: Path):
+    """Analytics records should include source field."""
+    store = AnalyticsStore(path=tmp_path / "test.db")
+    store.record(
+        agent_id="test", session_id="test", tool_name="Bash",
+        pressure=0.1, uncertainty=0.0, drift=0.0, error_rate=0.0,
+        context_usage=0.0, token_count=100, cost=0.0, mode="OBSERVE",
+        error=False, source="hook",
+    )
+    import sqlite3
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    row = conn.execute("SELECT source FROM actions LIMIT 1").fetchone()
+    assert row[0] == "hook"
+    conn.close()
+    store.close()
+
+
+def test_purge_before(tmp_path: Path):
+    """purge_before() deletes actions before a timestamp."""
+    import time
+    store = AnalyticsStore(path=tmp_path / "test.db")
+    store.record("a", "s", "Bash", pressure=0.1)
+    cutoff = time.time() + 1
+    store.record("a", "s", "Read", pressure=0.2)
+    # Both records exist
+    import sqlite3
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    assert conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0] == 2
+    # Purge before cutoff — first record should be deleted
+    deleted = store.purge_before(cutoff)
+    assert deleted >= 1
+    remaining = conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0]
+    assert remaining <= 1
+    conn.close()
+    store.close()
