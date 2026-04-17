@@ -255,6 +255,8 @@ class WrappedClient:
         self._recorder = SessionRecorder()
         self._pending_context_action = "pass"
         self._model_detected: bool = False
+        self._guidance_enabled: bool = True
+        self._action_log: list[dict] = []
 
         # Push auto_export into the engine so record_action() handles it
         self._engine._auto_export = auto_export
@@ -336,6 +338,10 @@ class WrappedClient:
                     kwargs["messages"] = [m for m in messages if m.get("role") == "system"][:1] or messages[-1:]
                 self._pending_context_action = "pass"
 
+            # 0.5. Contextual guidance — inject into messages before API call
+            if self._guidance_enabled:
+                self._inject_contextual_guidance(kwargs, tool_name)
+
             # 1. Pre-check: should we block?
             level = self._engine.get_level(self._agent_id)
             if level >= self._block_at:
@@ -390,7 +396,7 @@ class WrappedClient:
                 result = self._engine.record_action(self._agent_id, action)
                 self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
-                # export_state() is now handled by engine.record_action() when auto_export=True
+                self._track_action(tool_name, error)
 
         return wrapper
 
@@ -411,6 +417,10 @@ class WrappedClient:
                 elif self._pending_context_action in ("block_destructive", "quarantine", "restart", "safe_mode"):
                     kwargs["messages"] = [m for m in messages if m.get("role") == "system"][:1] or messages[-1:]
                 self._pending_context_action = "pass"
+
+            # 0.5. Contextual guidance — inject into messages before API call
+            if self._guidance_enabled:
+                self._inject_contextual_guidance(kwargs, tool_name)
 
             # 1. Pre-check: should we block?
             level = self._engine.get_level(self._agent_id)
@@ -459,6 +469,7 @@ class WrappedClient:
                 result = self._engine.record_action(self._agent_id, action)
                 self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
+                self._track_action(tool_name, error)
 
         return wrapper
 
@@ -486,6 +497,69 @@ class WrappedClient:
             return SomaStreamContext(underlying, self, tool_name)
 
         return stream_wrapper
+
+    def _inject_contextual_guidance(self, kwargs: dict, tool_name: str = "") -> None:
+        """Inject contextual guidance into messages before API call.
+
+        Deep injection: guidance becomes a user message in conversation history.
+        The LLM processes it as part of the conversation context — impossible to ignore.
+        """
+        try:
+            from soma.contextual_guidance import ContextualGuidance
+
+            snap = self._engine.get_snapshot(self._agent_id)
+            vitals = snap.get("vitals", {})
+            if hasattr(vitals, "__dict__") and not isinstance(vitals, dict):
+                vitals = {
+                    k: getattr(vitals, k, 0)
+                    for k in ("uncertainty", "drift", "error_rate", "token_usage", "context_usage")
+                }
+
+            budget_health = 1.0
+            try:
+                budget_health = self._engine.get_budget_health()
+            except Exception:
+                pass
+
+            cg = ContextualGuidance()
+            msg = cg.evaluate(
+                action_log=self._action_log,
+                current_tool=tool_name,
+                current_input={},
+                vitals=vitals,
+                budget_health=budget_health,
+                action_number=snap.get("action_count", 0),
+            )
+
+            if msg:
+                messages = kwargs.get("messages", [])
+                if messages:
+                    # Inject as the last user message content
+                    last = messages[-1]
+                    if last.get("role") == "user":
+                        content = last.get("content", "")
+                        if isinstance(content, str):
+                            last["content"] = f"{content}\n\n{msg.message}"
+                        elif isinstance(content, list):
+                            last["content"] = [*content, {"type": "text", "text": f"\n\n{msg.message}"}]
+                    else:
+                        messages.append({"role": "user", "content": msg.message})
+                    kwargs["messages"] = messages
+                    self._last_guidance = msg
+        except Exception:
+            pass  # Never crash for guidance
+
+    def _track_action(self, tool_name: str, error: bool) -> None:
+        """Track action in internal log for contextual guidance."""
+        self._action_log.append({
+            "tool": tool_name,
+            "error": error,
+            "file": "",
+            "ts": time.time(),
+        })
+        # Keep last 20
+        if len(self._action_log) > 20:
+            self._action_log = self._action_log[-20:]
 
     def _extract_response_data(self, response: Any) -> tuple[str, int]:
         """Extract text and token count from API response."""
@@ -550,6 +624,7 @@ def wrap(
     auto_export: bool = True,
     block_at: ResponseMode = ResponseMode.BLOCK,
     engine: SOMAEngine | None = None,
+    guidance: bool = True,
 ) -> WrappedClient:
     """Wrap an API client with SOMA monitoring and control.
 
@@ -562,6 +637,7 @@ def wrap(
         engine: Optional shared SOMAEngine. If provided, budget is ignored.
             Pass the same engine to multiple wrap() calls so agents share
             pressure state and can propagate signals to each other.
+        guidance: Enable contextual guidance injection into messages (default: True).
 
     Returns:
         A WrappedClient that proxies all calls through SOMA.
@@ -589,10 +665,12 @@ def wrap(
     """
     if engine is None:
         engine = SOMAEngine(budget=budget or {"tokens": 100_000})
-    return WrappedClient(
+    wc = WrappedClient(
         client=client,
         engine=engine,
         agent_id=agent_id,
         auto_export=auto_export,
         block_at=block_at,
     )
+    wc._guidance_enabled = guidance
+    return wc

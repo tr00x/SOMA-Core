@@ -160,31 +160,48 @@ def _run_test(cmd: str, file_path: str) -> tuple[bool, str]:
         return False, str(e)[:500]
 
 
-def _build_guidance(engine, agent_id: str) -> str:
-    """Build SOMA guidance from engine state."""
+def _build_guidance(engine, agent_id: str, action_log: list[dict] | None = None, current_step: dict | None = None) -> str:
+    """Build SOMA guidance from engine state using contextual guidance.
+
+    Uses pattern-based contextual guidance (ContextualGuidance) that cites
+    specific actions and suggests concrete next steps, instead of abstract
+    pressure-based messages.
+    """
     try:
+        from soma.contextual_guidance import ContextualGuidance
+
         snap = engine.get_snapshot(agent_id)
+        vitals = snap.get("vitals", {})
+        if hasattr(vitals, "__dict__") and not isinstance(vitals, dict):
+            vitals = {k: getattr(vitals, k, 0) for k in ("uncertainty", "drift", "error_rate", "token_usage")}
+
+        budget_health = 1.0
+        try:
+            budget_health = engine.get_budget_health()
+        except Exception:
+            pass
+
+        cg = ContextualGuidance()
+        msg = cg.evaluate(
+            action_log=action_log or [],
+            current_tool=current_step.get("tool_name", "Edit") if current_step else "Edit",
+            current_input=current_step or {},
+            vitals=vitals,
+            budget_health=budget_health,
+            action_number=snap.get("action_count", 0),
+        )
+        if msg:
+            return msg.message
+
+        # Fallback: if contextual guidance didn't fire but mode > OBSERVE,
+        # return a minimal pressure indicator
         pressure = snap.get("pressure", 0.0)
         mode = snap.get("mode")
         mode_name = mode.name if hasattr(mode, "name") else str(mode)
+        if mode_name != "OBSERVE":
+            return f"[SOMA {mode_name} p={pressure:.0%}]"
 
-        if mode_name == "OBSERVE":
-            return ""
-
-        vitals = snap.get("vitals", {})
-        parts = [f"[SOMA {mode_name} p={pressure:.0%}]"]
-
-        er = vitals.get("error_rate", 0)
-        if er > 0.3:
-            parts.append(f"Error rate {er:.0%} — try a COMPLETELY different approach.")
-        unc = vitals.get("uncertainty", 0)
-        if unc > 0.3:
-            parts.append("High uncertainty — read the error carefully, don't just retry.")
-        drift = vitals.get("drift", 0)
-        if drift > 0.2:
-            parts.append("You're drifting. Focus on the specific error, not adding features.")
-
-        return " ".join(parts)
+        return ""
     except Exception:
         return ""
 
@@ -200,10 +217,16 @@ def _run_multi_turn(
     reflex_enabled: bool,
     model: str,
 ) -> LiveRunResult:
-    """Run a multi-turn agent loop."""
+    """Run a multi-turn agent loop.
+
+    When soma_enabled=True, uses soma.wrap() for deep guidance injection.
+    Guidance is injected directly into messages by the wrapped client,
+    not manually prepended to prompts.
+    """
     import anthropic
 
     engine = None
+    wrapped_client = None
     if soma_enabled:
         engine = soma_mod.quickstart()
         engine.register_agent("live-bench")
@@ -212,7 +235,22 @@ def _run_multi_turn(
         if agent_state:
             agent_state.baseline.min_samples = 3
 
-    client = anthropic.Anthropic()
+    raw_client = anthropic.Anthropic()
+
+    if soma_enabled:
+        # Deep injection: wrap() injects contextual guidance into messages
+        from soma.wrap import wrap
+        wrapped_client = wrap(
+            raw_client,
+            engine=engine,
+            agent_id="live-bench",
+            guidance=True,
+            auto_export=False,
+        )
+        client = wrapped_client
+    else:
+        client = raw_client
+
     steps_results: list[StepResult] = []
     messages: list[dict] = []
     total_tokens = 0
@@ -230,15 +268,14 @@ def _run_multi_turn(
         for step_idx, step in enumerate(task["steps"]):
             t0 = time.monotonic()
 
-            # Build prompt
+            # With soma.wrap(), guidance is injected automatically into messages
+            # No manual _build_guidance() needed — the wrapped client handles it
             guidance_text = ""
-            if engine and soma_enabled:
-                guidance_text = _build_guidance(engine, "live-bench")
+            if engine and soma_enabled and wrapped_client:
+                # Check what guidance would fire (for logging only)
+                guidance_text = _build_guidance(engine, "live-bench", action_log=action_log)
 
             user_prompt = step.prompt
-            if guidance_text:
-                user_prompt = f"{guidance_text}\n\n{user_prompt}"
-
             messages.append({"role": "user", "content": user_prompt})
 
             # Check reflex before calling LLM (simulates PreToolUse)
@@ -316,10 +353,16 @@ def _run_multi_turn(
                 )
                 pressure = result.pressure
                 mode_name = result.mode.name
-                action_log.append({
+                action_entry = {
                     "tool": "Edit", "error": not test_passed,
                     "file": tmp_file, "ts": time.time(),
-                })
+                }
+                action_log.append(action_entry)
+                # Feed wrapped client's action_log for contextual guidance
+                if wrapped_client is not None:
+                    wrapped_client._action_log.append(action_entry)
+                    if len(wrapped_client._action_log) > 20:
+                        wrapped_client._action_log = wrapped_client._action_log[-20:]
 
             elapsed = time.monotonic() - t0
 

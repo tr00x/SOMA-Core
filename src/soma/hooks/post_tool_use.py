@@ -239,6 +239,37 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
 
         append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id)
 
+        # Contextual guidance follow-through tracking
+        try:
+            from soma.hooks.common import read_guidance_followthrough, write_guidance_followthrough
+            pending = read_guidance_followthrough(agent_id)
+            if pending:
+                from soma.contextual_guidance import check_followthrough
+                _tool_input = data.get("tool_input", {})
+                if not isinstance(_tool_input, dict):
+                    _tool_input = {}
+                followed = check_followthrough(pending, tool_name, _tool_input, file_path, error)
+                if followed is not None:
+                    try:
+                        from soma.audit import AuditLogger
+                        logger = AuditLogger()
+                        logger.append(
+                            agent_id=agent_id,
+                            tool_name=tool_name,
+                            error=False,
+                            pressure=0.0,
+                            mode="followthrough",
+                            type="contextual_guidance",
+                            detail=f"pattern={pending.get('pattern')}, followed={followed}",
+                            pattern=pending.get("pattern", ""),
+                            guidance_followed=followed,
+                        )
+                    except Exception:
+                        pass
+                    write_guidance_followthrough(None, agent_id)  # clear pending
+        except Exception:
+            pass  # Never crash for follow-through tracking
+
         if hook_config.get("task_tracking", True):
             try:
                 import os as _os
@@ -413,6 +444,68 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 save_predictor(predictor, agent_id=agent_id)
             except Exception:
                 pass
+
+        # ── Contextual Guidance: pattern-based messages via stdout (tool result injection) ──
+        # stdout in PostToolUse is appended to the tool result, so the LLM
+        # reads it as part of the tool's response — impossible to ignore.
+        try:
+            from soma.contextual_guidance import ContextualGuidance
+            from soma.hooks.common import read_action_log, write_guidance_followthrough
+
+            cg = ContextualGuidance()
+            cg_action_log = read_action_log(agent_id)
+            cg_vitals = {
+                "uncertainty": vitals.uncertainty,
+                "drift": vitals.drift,
+                "error_rate": vitals.error_rate,
+                "token_usage": getattr(vitals, "token_usage", 0) or getattr(vitals, "context_usage", 0),
+            }
+            budget_health = 1.0
+            try:
+                budget_health = engine.get_budget_health()
+            except Exception:
+                pass
+
+            cg_msg = cg.evaluate(
+                action_log=cg_action_log,
+                current_tool=tool_name,
+                current_input=data.get("tool_input", {}),
+                vitals=cg_vitals,
+                budget_health=budget_health,
+                action_number=len(cg_action_log),
+            )
+            if cg_msg:
+                # stdout → appended to tool response (deep injection)
+                print(f"\n{cg_msg.message}")
+                # Record follow-through for next action evaluation
+                followthrough_data = {
+                    "pattern": cg_msg.pattern,
+                    "suggestion": cg_msg.suggestion,
+                    "actions_since": 0,
+                }
+                if cg_msg.pattern == "blind_edit":
+                    followthrough_data["file"] = file_path
+                elif cg_msg.pattern == "retry_storm":
+                    followthrough_data["tool"] = tool_name
+                write_guidance_followthrough(followthrough_data, agent_id)
+                # Audit
+                try:
+                    from soma.audit import AuditLogger
+                    logger = AuditLogger()
+                    logger.append(
+                        agent_id=agent_id,
+                        tool_name=tool_name,
+                        error=False,
+                        pressure=pressure,
+                        mode=cg_msg.severity,
+                        type="contextual_guidance",
+                        detail=cg_msg.message,
+                        pattern=cg_msg.pattern,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Never crash for contextual guidance
 
         _prev_level = level_name
         _prev_pressure = pressure
