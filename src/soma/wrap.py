@@ -397,7 +397,7 @@ class WrappedClient:
                 result = self._engine.record_action(self._agent_id, action)
                 self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
-                self._track_action(tool_name, error)
+                self._track_action(tool_name, error, output_text)
 
         return wrapper
 
@@ -470,7 +470,7 @@ class WrappedClient:
                 result = self._engine.record_action(self._agent_id, action)
                 self._pending_context_action = result.context_action
                 self._recorder.record(self._agent_id, action)
-                self._track_action(tool_name, error)
+                self._track_action(tool_name, error, output_text)
 
         return wrapper
 
@@ -565,14 +565,17 @@ class WrappedClient:
         except Exception:
             pass  # Never crash for guidance
 
-    def _track_action(self, tool_name: str, error: bool) -> None:
+    def _track_action(self, tool_name: str, error: bool, output_text: str = "") -> None:
         """Track action in internal log for contextual guidance."""
-        self._action_log.append({
+        entry: dict = {
             "tool": tool_name,
             "error": error,
             "file": "",
             "ts": time.time(),
-        })
+        }
+        if output_text and error:
+            entry["output"] = output_text[:200]
+        self._action_log.append(entry)
         # Keep last 20
         if len(self._action_log) > 20:
             self._action_log = self._action_log[-20:]
