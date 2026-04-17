@@ -45,6 +45,23 @@ def test_blind_edit_not_fired_when_file_was_read(cg):
     assert msg is None or msg.pattern != "blind_edit"
 
 
+def test_blind_edit_includes_file_content(cg, tmp_path):
+    """When blind_edit fires and file exists, message includes file content."""
+    target = tmp_path / "foo.py"
+    target.write_text("def hello():\n    return 'world'\n\ndef broken():\n    pass\n")
+    action_log = [{"tool": "Bash", "error": False, "file": ""}]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Edit",
+        current_input={"file_path": str(target)},
+        vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "blind_edit"
+    assert "def hello" in msg.message  # file content injected
+    assert "foo.py" in msg.message
+
+
 def test_blind_edit_not_fired_for_non_edit_tools(cg):
     action_log = [{"tool": "Bash", "error": False, "file": ""}]
     msg = cg.evaluate(
@@ -106,6 +123,30 @@ def test_retry_storm_not_fired_under_threshold(cg):
     assert msg is None or msg.pattern != "retry_storm"
 
 
+def test_retry_storm_includes_lesson(tmp_path):
+    """If a lesson exists for the error, include it in the message."""
+    from soma.lessons import LessonStore
+    store = LessonStore(path=tmp_path / "lessons.json")
+    store.record(
+        pattern="permission_denied",
+        error_text="Permission denied: /etc/shadow",
+        fix_text="Run with sudo or check file ownership",
+        tool="Bash",
+    )
+    cg = ContextualGuidance(lesson_store=store)
+
+    action_log = [
+        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
+        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
+        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert "sudo" in msg.message.lower() or "ownership" in msg.message.lower()
+
+
 # ── Error Cascade ──
 
 
@@ -150,6 +191,36 @@ def test_error_cascade_not_fired_when_success_breaks_streak(cg):
         current_input={},
         vitals={},
     )
+    assert msg is None or msg.pattern != "error_cascade"
+
+
+def test_error_cascade_suppressed_when_within_baseline():
+    """If agent's baseline error_rate is high, 3 errors shouldn't trigger."""
+    from soma.baseline import Baseline
+    baseline = Baseline(alpha=0.08, min_samples=3)
+    # Train baseline: agent normally has ~40% error rate
+    for _ in range(10):
+        baseline.update("error_rate", 0.4)
+
+    cg = ContextualGuidance(baseline=baseline)
+
+    # 3 errors in 10 actions = 30% — below agent's normal 40%
+    action_log = [
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    # Should NOT fire error_cascade — this is within agent's baseline
     assert msg is None or msg.pattern != "error_cascade"
 
 
@@ -257,6 +328,50 @@ def test_drift_not_fired_low_drift(cg):
         vitals={"drift": 0.1},
     )
     assert msg is None or msg.pattern != "drift"
+
+
+# ── Cost Spiral ──
+
+
+def test_cost_spiral_detected(cg):
+    """Detect expensive retry loop — many errors + high token usage."""
+    action_log = [
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+        {"tool": "Bash", "error": True, "file": "", "output": "test failed"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"token_usage": 0.6},
+        budget_health=0.3,
+    )
+    assert msg is not None
+    assert msg.pattern == "cost_spiral"
+    assert "cheaper" in msg.message.lower() or "debug" in msg.message.lower()
+
+
+def test_cost_spiral_not_fired_when_healthy(cg):
+    """No cost spiral when budget is healthy."""
+    action_log = [
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+        {"tool": "Bash", "error": True, "file": ""},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"token_usage": 0.2},
+        budget_health=0.8,
+    )
+    # Should fire retry_storm or error_cascade, not cost_spiral
+    assert msg is None or msg.pattern != "cost_spiral"
 
 
 # ── Cooldown ──

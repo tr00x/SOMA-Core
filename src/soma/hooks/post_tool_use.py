@@ -270,6 +270,30 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         except Exception:
             pass  # Never crash for follow-through tracking
 
+        # Record lesson when error streak breaks (success after errors)
+        try:
+            from soma.hooks.common import read_action_log
+            recent = read_action_log(agent_id)[-5:]
+            if not error and len(recent) >= 2:
+                prev_errors = []
+                for entry in reversed(recent[:-1]):
+                    if entry.get("error"):
+                        prev_errors.append(entry)
+                    else:
+                        break
+                if len(prev_errors) >= 2:
+                    from soma.lessons import LessonStore
+                    store = LessonStore()
+                    last_err = prev_errors[0].get("output", "") or prev_errors[0].get("tool", "")
+                    store.record(
+                        pattern="error_resolved",
+                        error_text=last_err,
+                        fix_text=f"Resolved by {tool_name} on {file_path or 'unknown'}",
+                        tool=prev_errors[0].get("tool", ""),
+                    )
+        except Exception:
+            pass  # Never crash for lesson recording
+
         if hook_config.get("task_tracking", True):
             try:
                 import os as _os
