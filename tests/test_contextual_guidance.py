@@ -487,3 +487,49 @@ def test_no_false_positives_on_clean_session(cg):
         budget_health=0.8,
     )
     assert msg is None
+
+
+# ---------------------------------------------------------------------------
+# Pattern 8: Entropy Drop (monotool tunnel vision)
+# ---------------------------------------------------------------------------
+
+def test_entropy_drop_detected(cg):
+    """Low tool entropy (monotool) triggers warning."""
+    action_log = [
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Bash", "error": False, "file": ""},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "entropy_drop"
+    assert "Bash" in msg.message
+
+
+def test_entropy_drop_not_fired_with_diverse_tools(cg):
+    """Diverse tool usage = healthy, no warning."""
+    action_log = [
+        {"tool": "Read", "error": False, "file": "/src/a.py"},
+        {"tool": "Grep", "error": False, "file": ""},
+        {"tool": "Edit", "error": False, "file": "/src/a.py"},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Read", "error": False, "file": "/src/b.py"},
+        {"tool": "Glob", "error": False, "file": ""},
+        {"tool": "Edit", "error": False, "file": "/src/b.py"},
+        {"tool": "Bash", "error": False, "file": ""},
+        {"tool": "Read", "error": False, "file": "/src/c.py"},
+        {"tool": "Write", "error": False, "file": "/src/c.py"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "entropy_drop"
