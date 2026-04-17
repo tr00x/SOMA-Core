@@ -1,123 +1,81 @@
 # Contributing to SOMA
 
-## Development Setup
+## Requirements
 
-Prerequisites: Python 3.11+, uv (recommended) or pip
+- Python 3.11+
+- [uv](https://github.com/astral-sh/uv) for dependency management
+
+## Setup
 
 ```bash
-# Clone the repo
-git clone https://github.com/tr00x/SOMA-Core.git
-cd SOMA-Core
-
-# Install with dev dependencies (using uv)
-uv pip install -e ".[dev]"
-
-# Or with pip
-pip install -e ".[dev]"
+git clone https://github.com/your-org/soma.git
+cd soma
+uv sync --all-extras
 ```
 
 ## Running Tests
 
 ```bash
-# Run all tests
-python -m pytest tests/ -x -v
-
-# Run with coverage
-python -m pytest tests/ --cov=soma --cov-report=term-missing
-
-# Run a specific test file
-python -m pytest tests/test_engine.py -x -v
-
-# Run integration tests (requires API keys)
-ANTHROPIC_API_KEY=sk-... OPENAI_API_KEY=sk-... python -m pytest tests/test_integration_api.py -x -v
+uv run pytest tests/ -x -q          # fast, stop on first failure
+uv run pytest tests/ --cov=soma     # with coverage
+uv run ruff check src/              # lint
 ```
 
 ## Linting
 
-```bash
-ruff check src/ tests/
-ruff format src/ tests/
+Ruff is configured in `pyproject.toml`:
+- Rules: `F` (Pyflakes) and `E` (pycodestyle)
+- Line length: 88 (E501 ignored -- formatter handles wrapping)
+- Tests allow unused imports (F401, F811, F841)
+
+## Adding a New Guidance Pattern
+
+SOMA uses contextual guidance patterns to detect specific agent behaviors and inject targeted advice. Follow TDD:
+
+### 1. Write the test first
+
+In `tests/test_contextual_guidance.py`:
+
+```python
+def test_my_new_pattern(cg):
+    # The `cg` fixture creates ContextualGuidance(cooldown_actions=0)
+    # so patterns fire immediately without cooldown delays.
+
+    # Simulate the actions that should trigger the pattern
+    for i in range(3):
+        cg.record_action("Bash", success=False, error_output="error msg")
+
+    result = cg.evaluate("Bash", context={})
+    assert result is not None
+    assert "expected keyword" in result.guidance
 ```
 
-## Project Structure
+### 2. Implement the pattern
 
-```
-src/soma/
-  __init__.py          # Public API exports
-  engine.py            # Main pipeline: record_action() -> vitals -> pressure -> mode
-  types.py             # Action, VitalsSnapshot, ResponseMode, AgentConfig
-  vitals.py            # Signal computation (uncertainty, drift, error_rate)
-  pressure.py          # Aggregate pressure from signals
-  baseline.py          # EMA baselines with cold-start blending
-  guidance.py          # Pressure -> response mode mapping
-  mirror.py            # Proprioceptive feedback (PATTERN/STATS/SEMANTIC)
-  wrap.py              # soma.wrap() universal client wrapper
-  proxy.py             # SOMAProxy universal tool wrapper
-  audit.py             # JSON Lines audit logging
-  budget.py            # Multi-dimensional budget tracking
-  graph.py             # Trust-weighted pressure propagation
-  halflife.py          # Temporal success rate modeling
-  learning.py          # Adaptive threshold learning
-  policy.py            # YAML/TOML policy engine
-  predictor.py         # Pressure prediction and forecasting
-  quality.py           # Quality scoring (A/B/C/D/F)
-  rca.py               # Root cause analysis
-  patterns.py          # Pattern detection (blind edits, thrashing, etc.)
-  findings.py          # Aggregated monitoring insights
-  fingerprint.py       # Cross-session behavioral fingerprinting
-  reliability.py       # Calibration, VBD detection
-  recorder.py          # Session recording
-  persistence.py       # Engine state save/load (atomic writes)
-  context.py           # Session context and workflow detection
-  session_memory.py    # Cross-session memory
-  subagent_monitor.py  # Multi-agent child tracking
-  task_tracker.py      # Phase detection and scope drift
-  reflexes.py          # Reflex system (hard safety blocks)
-  ring_buffer.py       # Fixed-capacity action buffer
-  events.py            # Event bus for engine events
-  errors.py            # Custom exception hierarchy
-  models.py            # Data models
-  state.py             # Transient subsystem state management
-  report.py            # Session report generation
-  analytics.py         # Historical analytics
-  sdk/                 # Framework adapters (LangChain, CrewAI, AutoGen)
-  cli/                 # CLI commands and TUI dashboard
-  hooks/               # Hook integration (Claude Code, Cursor, Windsurf)
-  dashboard/           # Web dashboard (FastAPI + SSE, port 7777)
-  exporters/           # OpenTelemetry, webhooks
-  benchmark/           # Behavioral benchmarks
-tests/                 # 74 test files
-```
+In `src/soma/contextual_guidance.py`:
 
-## How to Contribute
+- Add a `_detect_my_pattern()` method that inspects the action history
+- Return a `GuidanceResult` with the guidance text, or `None` if the pattern does not match
 
-1. Fork the repo and create a feature branch
-2. Write tests first (TDD encouraged)
-3. Make your changes
-4. Run `python -m pytest tests/ -x` and `ruff check src/ tests/`
-5. Submit a PR with a clear description
+### 3. Wire it into evaluate()
+
+Add your detector to the `evaluate()` method's pattern check list.
+
+### 4. Set priority
+
+Update `_PATTERN_PRIORITY` to control firing order when multiple patterns match simultaneously. Lower number = higher priority.
+
+## Architecture Notes
+
+- `src/soma/contextual_guidance.py` -- all pattern detection and guidance generation
+- `tests/test_contextual_guidance.py` -- pattern tests using the `cg` fixture
+- `src/soma/guidance.py` -- pressure-to-mode mapping and destructive tool evaluation
+- `src/soma/hooks/` -- Claude Code integration layer
 
 ## Code Style
 
-- Python 3.11+ with full type hints
-- Ruff for linting (F + E rules)
-- Line length: 88 chars (formatter)
-- Frozen dataclasses for immutable types
-- Explicit `__all__` in public modules
-- snake_case for functions/variables, PascalCase for classes
-
-## Architecture
-
-SOMA is a behavioral monitoring pipeline:
-
-```
-Action -> Vitals -> Pressure -> Mode -> Guidance
-```
-
-Core principle: Actions flow through the engine, vitals are computed, pressure is aggregated, a response mode is determined, and guidance is emitted. The engine never modifies the agent directly -- it observes and advises.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture document.
-
-## License
-
-MIT. All contributions are under the same license.
+- Type hints on all function signatures
+- Union types use `|` syntax: `str | None`
+- Frozen dataclasses for immutable values, mutable for config
+- `from __future__ import annotations` at top of files
+- Keep functions focused: 10-30 lines typical
