@@ -249,7 +249,11 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 if not isinstance(_tool_input, dict):
                     _tool_input = {}
                 followed = check_followthrough(pending, tool_name, _tool_input, file_path, error)
-                if followed is not None:
+                if followed is None:
+                    # Increment actions_since so timeout eventually triggers
+                    pending["actions_since"] = pending.get("actions_since", 0) + 1
+                    write_guidance_followthrough(pending, agent_id)
+                elif followed is not None:
                     try:
                         from soma.audit import AuditLogger
                         logger = AuditLogger()
@@ -490,6 +494,9 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             except Exception:
                 pass
             cg = ContextualGuidance(lesson_store=lesson_store, baseline=baseline)
+            # Restore cooldown state from disk so patterns don't spam
+            from soma.hooks.common import read_guidance_cooldowns
+            cg._last_fired = read_guidance_cooldowns(agent_id)
             cg_action_log = read_action_log(agent_id)
             cg_vitals = {
                 "uncertainty": vitals.uncertainty,
@@ -511,6 +518,9 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 budget_health=budget_health,
                 action_number=len(cg_action_log),
             )
+            # Persist cooldown state so patterns don't re-fire across hook calls
+            from soma.hooks.common import write_guidance_cooldowns
+            write_guidance_cooldowns(cg._last_fired, agent_id)
             if cg_msg:
                 # stdout → appended to tool response (deep injection)
                 print(f"\n{cg_msg.message}")

@@ -38,24 +38,30 @@ In `tests/test_contextual_guidance.py`:
 
 ```python
 def test_my_new_pattern(cg):
-    # The `cg` fixture creates ContextualGuidance(cooldown_actions=0)
-    # so patterns fire immediately without cooldown delays.
-
-    # Simulate the actions that should trigger the pattern
-    for i in range(3):
-        cg.record_action("Bash", success=False, error_output="error msg")
-
-    result = cg.evaluate("Bash", context={})
-    assert result is not None
-    assert "expected keyword" in result.guidance
+    # The `cg` fixture creates ContextualGuidance(cooldown_actions=5)
+    # Pass action_number to avoid cooldown in tests.
+    action_log = [
+        {"tool": "Bash", "error": True, "file": "", "output": "error msg"},
+        {"tool": "Bash", "error": True, "file": "", "output": "error msg"},
+        {"tool": "Bash", "error": True, "file": "", "output": "error msg"},
+    ]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "my_pattern"
+    assert "expected keyword" in msg.message
 ```
 
 ### 2. Implement the pattern
 
 In `src/soma/contextual_guidance.py`:
 
-- Add a `_detect_my_pattern()` method that inspects the action history
-- Return a `GuidanceResult` with the guidance text, or `None` if the pattern does not match
+- Add a `_check_my_pattern()` method that inspects the action_log
+- Return a `GuidanceMessage` with pattern, severity, message, evidence, suggestion — or `None`
 
 ### 3. Wire it into evaluate()
 
@@ -63,7 +69,7 @@ Add your detector to the `evaluate()` method's pattern check list.
 
 ### 4. Set priority
 
-Update `_PATTERN_PRIORITY` to control firing order when multiple patterns match simultaneously. Lower number = higher priority.
+Update `_PATTERN_PRIORITY` to control firing order when multiple patterns match at the same severity. Higher number = wins ties.
 
 ## Architecture Notes
 

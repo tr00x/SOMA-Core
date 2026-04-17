@@ -841,6 +841,39 @@ def write_guidance_followthrough(pending: dict | None, agent_id: str = "") -> No
         pass
 
 
+def read_guidance_cooldowns(agent_id: str = "") -> dict[str, int]:
+    """Read pattern cooldown state (pattern → last action_number) from circuit file."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        if path.exists():
+            data = json.loads(path.read_text())
+            cd = data.get("guidance_cooldowns")
+            if isinstance(cd, dict):
+                return cd
+    except Exception:
+        pass
+    return {}
+
+
+def write_guidance_cooldowns(cooldowns: dict[str, int], agent_id: str = "") -> None:
+    """Persist pattern cooldown state into circuit file."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, IOError):
+                data = {}
+        data["guidance_cooldowns"] = cooldowns
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
 def _auto_checkpoint(checkpoint_number: int) -> bool:
     """Run git stash push as an auto-checkpoint. Returns True on success.
 
