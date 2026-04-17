@@ -1,9 +1,4 @@
-# Contributing to SOMA
-
-## Requirements
-
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) for dependency management
+# Contributing
 
 ## Setup
 
@@ -13,7 +8,11 @@ cd SOMA-Core
 uv sync --all-extras
 ```
 
-## Running Tests
+Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
+
+---
+
+## Tests & Lint
 
 ```bash
 uv run pytest tests/ -x -q          # fast, stop on first failure
@@ -21,25 +20,31 @@ uv run pytest tests/ --cov=soma     # with coverage
 uv run ruff check src/              # lint
 ```
 
-## Linting
+All PRs must pass tests and lint. Currently 1438 tests.
 
-Ruff is configured in `pyproject.toml`:
-- Rules: `F` (Pyflakes) and `E` (pycodestyle)
-- Line length: 88 (E501 ignored -- formatter handles wrapping)
-- Tests allow unused imports (F401, F811, F841)
+---
 
-## Adding a New Guidance Pattern
+## Code Style
 
-SOMA uses contextual guidance patterns to detect specific agent behaviors and inject targeted advice. Follow TDD:
+- Type hints on all function signatures (`str | None`, not `Optional[str]`)
+- `from __future__ import annotations` at top of files
+- Frozen dataclasses for immutable values, mutable for config
+- Functions: 10-30 lines typical, single responsibility
+- Ruff rules: `F` (Pyflakes) + `E` (pycodestyle), line length 88
 
-### 1. Write the test first
+---
+
+## Adding a Guidance Pattern
+
+SOMA's contextual guidance lives in `src/soma/contextual_guidance.py`. Follow TDD.
+
+### 1. Write the test
 
 In `tests/test_contextual_guidance.py`:
 
 ```python
 def test_my_new_pattern(cg):
-    # The `cg` fixture creates ContextualGuidance(cooldown_actions=5)
-    # Pass action_number to avoid cooldown in tests.
+    # cg fixture creates ContextualGuidance(cooldown_actions=5)
     action_log = [
         {"tool": "Bash", "error": True, "file": "", "output": "error msg"},
         {"tool": "Bash", "error": True, "file": "", "output": "error msg"},
@@ -56,32 +61,29 @@ def test_my_new_pattern(cg):
     assert "expected keyword" in msg.message
 ```
 
-### 2. Implement the pattern
+### 2. Implement
 
-In `src/soma/contextual_guidance.py`:
+In `contextual_guidance.py`:
+- Add `_check_my_pattern()` method inspecting the action log
+- Return `GuidanceMessage(pattern, severity, message, evidence, suggestion)` or `None`
 
-- Add a `_check_my_pattern()` method that inspects the action_log
-- Return a `GuidanceMessage` with pattern, severity, message, evidence, suggestion — or `None`
+### 3. Wire into evaluate()
 
-### 3. Wire it into evaluate()
-
-Add your detector to the `evaluate()` method's pattern check list.
+Add your detector to the `evaluate()` pattern check list.
 
 ### 4. Set priority
 
-Update `_PATTERN_PRIORITY` to control firing order when multiple patterns match at the same severity. Higher number = wins ties.
+Update `_PATTERN_PRIORITY` dict. Higher number wins ties when multiple patterns match at the same severity.
 
-## Architecture Notes
+---
 
-- `src/soma/contextual_guidance.py` -- all pattern detection and guidance generation
-- `tests/test_contextual_guidance.py` -- pattern tests using the `cg` fixture
-- `src/soma/guidance.py` -- pressure-to-mode mapping and destructive tool evaluation
-- `src/soma/hooks/` -- Claude Code integration layer
+## Key Files
 
-## Code Style
-
-- Type hints on all function signatures
-- Union types use `|` syntax: `str | None`
-- Frozen dataclasses for immutable values, mutable for config
-- `from __future__ import annotations` at top of files
-- Keep functions focused: 10-30 lines typical
+| File | What it does |
+|:-----|:-------------|
+| `src/soma/contextual_guidance.py` | All 9 pattern detectors + guidance generation |
+| `src/soma/guidance.py` | Pressure-to-mode mapping, destructive tool evaluation |
+| `src/soma/engine.py` | Core pipeline orchestration |
+| `src/soma/hooks/` | Claude Code integration layer |
+| `tests/test_contextual_guidance.py` | Pattern tests using the `cg` fixture |
+| `docs/ARCHITECTURE.md` | Full technical architecture doc |
