@@ -7,7 +7,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+
+httpx = pytest.importorskip("httpx")
+ASGITransport = httpx.ASGITransport
+AsyncClient = httpx.AsyncClient
 
 import soma.dashboard.data as data_mod
 from soma.dashboard.app import create_app
