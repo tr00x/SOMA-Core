@@ -204,6 +204,10 @@ class SOMAEngine:
         state = self._agents.get(agent_id)
         return state.baseline if state else None
 
+    def get_budget_health(self, agent_id: str | None = None) -> float:
+        """Return budget health (0-1). 1.0 = full budget, 0.0 = exhausted."""
+        return self._budget.health() if self._budget else 1.0
+
     def get_snapshot(self, agent_id: str) -> dict[str, Any]:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)

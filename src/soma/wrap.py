@@ -688,6 +688,7 @@ def wrap(
         client=client,
         engine=engine,
         agent_id=agent_id,
+        display_name=display_name,
         auto_export=auto_export,
         block_at=block_at,
     )

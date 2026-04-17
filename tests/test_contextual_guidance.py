@@ -640,3 +640,186 @@ def test_bash_retry_not_fired_for_different_tool(cg):
         action_log=action_log, current_tool="Read", current_input={}, vitals={},
     )
     assert msg is None or msg.pattern != "bash_retry"
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — blind_edit
+# ---------------------------------------------------------------------------
+
+def test_followthrough_blind_edit_followed():
+    """Reading the suggested file counts as following blind_edit guidance."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "blind_edit", "file": "/src/foo.py", "actions_since": 0}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is True
+
+
+def test_followthrough_blind_edit_ignored():
+    """Editing again without reading means guidance was ignored."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "blind_edit", "file": "/src/foo.py", "actions_since": 0}
+    result = check_followthrough(pending, "Edit", {"file_path": "/src/foo.py"}, "/src/foo.py", error=False)
+    assert result is False
+
+
+def test_followthrough_blind_edit_waiting():
+    """Using an unrelated tool (Grep on a different file) is inconclusive."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "blind_edit", "file": "/src/foo.py", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "ls"}, "", error=False)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — retry_storm
+# ---------------------------------------------------------------------------
+
+def test_followthrough_retry_storm_followed():
+    """Switching to a different tool means agent stopped retrying."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is True
+
+
+def test_followthrough_retry_storm_succeeded():
+    """Same tool but succeeding counts as following guidance."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=False)
+    assert result is True
+
+
+def test_followthrough_retry_storm_ignored():
+    """Same tool, still erroring means guidance was ignored."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=True)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — error_cascade
+# ---------------------------------------------------------------------------
+
+def test_followthrough_error_cascade_followed():
+    """Next action succeeding means agent broke the cascade."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "error_cascade", "actions_since": 0}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is True
+
+
+def test_followthrough_error_cascade_waiting():
+    """Still erroring is inconclusive (agent may recover next action)."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "error_cascade", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "make"}, "", error=True)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — budget
+# ---------------------------------------------------------------------------
+
+def test_followthrough_budget_followed():
+    """Running git commit means agent is wrapping up as suggested."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "budget", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "git commit -m 'save'"}, "", error=False)
+    assert result is True
+
+
+def test_followthrough_budget_waiting():
+    """Using Edit (not git commit) is inconclusive for budget guidance."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "budget", "actions_since": 0}
+    result = check_followthrough(pending, "Edit", {"file_path": "/src/foo.py"}, "/src/foo.py", error=False)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — entropy_drop
+# ---------------------------------------------------------------------------
+
+def test_followthrough_entropy_drop_followed():
+    """Switching to a different tool means agent diversified."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is True
+
+
+def test_followthrough_entropy_drop_ignored():
+    """Same tool 3+ actions after guidance means agent ignored it."""
+    from soma.contextual_guidance import check_followthrough
+
+    # actions_since will be incremented to 3 inside check_followthrough
+    pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 2}
+    result = check_followthrough(pending, "Bash", {"command": "ls"}, "", error=False)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — bash_retry
+# ---------------------------------------------------------------------------
+
+def test_followthrough_bash_retry_followed():
+    """Switching away from Bash to Read means agent followed guidance."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "bash_retry", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is True
+
+
+def test_followthrough_bash_retry_succeeded():
+    """Bash succeeding counts as positive outcome."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "bash_retry", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=False)
+    assert result is True
+
+
+def test_followthrough_bash_retry_ignored():
+    """Bash still erroring means guidance was ignored."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "bash_retry", "tool": "Bash", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=True)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — timeout & unknown
+# ---------------------------------------------------------------------------
+
+def test_followthrough_timeout():
+    """More than 5 actions since guidance means gave up waiting."""
+    from soma.contextual_guidance import check_followthrough
+
+    # actions_since=5 will be incremented to 6 inside, triggering timeout
+    pending = {"pattern": "blind_edit", "file": "/src/foo.py", "actions_since": 5}
+    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    assert result is False
+
+
+def test_followthrough_unknown_pattern():
+    """Unknown pattern returns None (inconclusive)."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "totally_unknown_pattern", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {}, "", error=False)
+    assert result is None
