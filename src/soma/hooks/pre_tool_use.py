@@ -285,7 +285,6 @@ def main():
 
     if msg:
         print(msg, file=sys.stderr)
-        # Audit log guidance message for effectiveness measurement
         try:
             from soma.audit import AuditLogger
             logger = AuditLogger()

@@ -803,6 +803,42 @@ def read_signal_pressures(agent_id: str = "") -> dict[str, float]:
     return {}
 
 
+def read_guidance_followthrough(agent_id: str = "") -> dict | None:
+    """Read pending contextual guidance follow-through from circuit file."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        if path.exists():
+            data = json.loads(path.read_text())
+            ft = data.get("guidance_followthrough")
+            if isinstance(ft, dict) and ft.get("pattern"):
+                return ft
+    except Exception:
+        pass
+    return None
+
+
+def write_guidance_followthrough(pending: dict | None, agent_id: str = "") -> None:
+    """Persist pending contextual guidance follow-through into circuit file."""
+    try:
+        aid = agent_id or "default"
+        path = SOMA_DIR / f"circuit_{aid}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, IOError):
+                data = {}
+        if pending is None:
+            data.pop("guidance_followthrough", None)
+        else:
+            data["guidance_followthrough"] = pending
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
 def _auto_checkpoint(checkpoint_number: int) -> bool:
     """Run git stash push as an auto-checkpoint. Returns True on success.
 
