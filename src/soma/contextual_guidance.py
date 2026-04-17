@@ -29,7 +29,7 @@ class GuidanceMessage:
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
 # Pattern priority within same severity (higher = wins ties)
-_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "retry_storm": 3, "error_cascade": 2, "blind_edit": 1, "context": 1, "drift": 0}
+_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "retry_storm": 3, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1, "drift": 0}
 
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
@@ -40,6 +40,19 @@ _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
     (["import error", "modulenotfounderror", "no module named"], "check the import path and installed packages"),
     (["timeout", "timed out"], "the command is too slow — simplify or break it up"),
 ]
+
+
+def _compute_tool_entropy(action_log: list[dict], window: int = 10) -> float:
+    """Shannon entropy of tool distribution in recent actions. 0 = monotool, 2+ = diverse."""
+    import math
+    from collections import Counter
+    recent = action_log[-window:]
+    if len(recent) < 8:
+        return 2.0  # Not enough data, assume healthy
+    tools = [e.get("tool", "?") for e in recent]
+    counts = Counter(tools)
+    total = len(tools)
+    return -sum((c / total) * math.log2(c / total) for c in counts.values())
 
 
 def _suggest_for_error(error_text: str) -> str:
@@ -219,6 +232,10 @@ class ContextualGuidance:
             candidates.append(msg)
 
         msg = self._check_drift(action_log, vitals)
+        if msg:
+            candidates.append(msg)
+
+        msg = self._check_entropy_drop(action_log)
         if msg:
             candidates.append(msg)
 
@@ -545,4 +562,37 @@ class ContextualGuidance:
             ),
             evidence=(f"{error_count} errors, {pct_context}% context, {pct_budget}% budget",),
             suggestion="switch to cheaper model for debug phase",
+        )
+
+    # ── Pattern 8: Entropy Drop ──
+
+    def _check_entropy_drop(
+        self, action_log: list[dict],
+    ) -> GuidanceMessage | None:
+        if len(action_log) < 8:
+            return None
+
+        entropy = _compute_tool_entropy(action_log)
+        if entropy >= 1.0:
+            return None  # Healthy diversity
+
+        # Identify the dominant tool
+        from collections import Counter
+        recent = action_log[-10:]
+        tools = Counter(e.get("tool", "?") for e in recent)
+        dominant = tools.most_common(1)[0][0]
+        pct = tools[dominant] * 100 // len(recent)
+
+        severity = "critical" if entropy < 0.5 else "warn"
+
+        return GuidanceMessage(
+            pattern="entropy_drop",
+            severity=severity,
+            message=(
+                f"[SOMA] Tool tunnel vision: {pct}% of last {len(recent)} actions used {dominant}. "
+                f"Diverse tool usage correlates with success. "
+                f"Consider: Read files for context, Grep to search, or rethink your approach."
+            ),
+            evidence=(f"Tool entropy {entropy:.2f}, {dominant} at {pct}%",),
+            suggestion=f"diversify — use Read or Grep before continuing with {dominant}",
         )
