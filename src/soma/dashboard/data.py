@@ -625,3 +625,174 @@ def export_session(session_id: str, fmt: str = "json") -> bytes:
     else:
         import dataclasses
         return json.dumps(dataclasses.asdict(detail), indent=2).encode("utf-8")
+
+
+# ------------------------------------------------------------------
+# ROI (Return on Investment)
+# ------------------------------------------------------------------
+
+# Average tokens wasted per error cascade action (conservative estimate)
+_AVG_TOKENS_PER_ERROR_ACTION = 800
+
+
+def get_roi_data() -> dict:
+    """Aggregate all ROI metrics into a single response."""
+    return {
+        "guidance_effectiveness": _get_guidance_effectiveness(),
+        "pattern_hit_rates": _get_pattern_hit_rates(),
+        "tokens_saved_estimate": _get_tokens_saved_estimate(),
+        "session_health": _get_session_health_score(),
+        "cascades_broken": _get_cascades_broken(),
+    }
+
+
+def _get_guidance_effectiveness() -> dict:
+    """Guidance precision: followthrough True / total followthrough results."""
+    conn = _get_db_connection()
+    if not conn:
+        return {"total": 0, "helped": 0, "effectiveness_rate": 0.0}
+    try:
+        cursor = conn.execute(
+            "SELECT COUNT(*) as total, SUM(helped) as helped "
+            "FROM guidance_outcomes"
+        )
+        row = cursor.fetchone()
+        total = row["total"] or 0
+        helped = row["helped"] or 0
+        return {
+            "total": total,
+            "helped": helped,
+            "effectiveness_rate": helped / total if total > 0 else 0.0,
+        }
+    except Exception:
+        return {"total": 0, "helped": 0, "effectiveness_rate": 0.0}
+    finally:
+        conn.close()
+
+
+def _get_pattern_hit_rates() -> list[dict]:
+    """Which patterns fire most and which get followed."""
+    conn = _get_db_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.execute(
+            "SELECT pattern_key, COUNT(*) as fires, "
+            "SUM(helped) as followed, "
+            "ROUND(CAST(SUM(helped) AS REAL) / COUNT(*), 3) as follow_rate "
+            "FROM guidance_outcomes "
+            "GROUP BY pattern_key ORDER BY fires DESC"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def _get_tokens_saved_estimate() -> dict:
+    """Estimate tokens saved by breaking error cascades early.
+
+    Logic: each guidance intervention that helped likely prevented
+    continued error actions. Estimate = helped_count * avg_tokens_per_error.
+    """
+    conn = _get_db_connection()
+    if not conn:
+        return {"estimated_tokens_saved": 0, "interventions_helped": 0}
+    try:
+        cursor = conn.execute(
+            "SELECT COUNT(*) as total, SUM(helped) as helped "
+            "FROM guidance_outcomes"
+        )
+        row = cursor.fetchone()
+        helped = row["helped"] or 0
+        # Each successful intervention prevents ~3 wasted error actions on average
+        estimated = helped * 3 * _AVG_TOKENS_PER_ERROR_ACTION
+        return {
+            "estimated_tokens_saved": estimated,
+            "interventions_helped": helped,
+        }
+    except Exception:
+        return {"estimated_tokens_saved": 0, "interventions_helped": 0}
+    finally:
+        conn.close()
+
+
+def _get_session_health_score() -> dict:
+    """Session health 0-100 from current vitals (entropy, error_rate, drift)."""
+    # Read latest vitals from engine_state.json
+    state_path = SOMA_DIR / "engine_state.json"
+    if not state_path.exists():
+        return {"score": 100, "components": {}}
+    try:
+        state = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"score": 100, "components": {}}
+
+    # Find the most recent agent's vitals
+    agents = state.get("agents", {})
+    if not agents:
+        return {"score": 100, "components": {}}
+
+    # Average across all active agents
+    total_error = 0.0
+    total_uncertainty = 0.0
+    total_drift = 0.0
+    count = 0
+    for agent_data in agents.values():
+        vitals = agent_data.get("last_vitals", {})
+        if vitals:
+            total_error += vitals.get("error_rate", 0.0)
+            total_uncertainty += vitals.get("uncertainty", 0.0)
+            total_drift += vitals.get("drift", 0.0)
+            count += 1
+
+    if count == 0:
+        return {"score": 100, "components": {}}
+
+    avg_error = total_error / count
+    avg_uncertainty = total_uncertainty / count
+    avg_drift = total_drift / count
+
+    # Score: 100 = perfect, penalize for each signal
+    # Calibrated: 5% error + 8% uncertainty + 2% drift ≈ 83 (healthy)
+    # 20% error + 20% uncertainty + 20% drift ≈ 30 (bad)
+    error_penalty = min(avg_error * 150, 40)  # 10% = 15pts, 27%+ = 40 cap
+    uncertainty_penalty = min(avg_uncertainty * 100, 30)  # 10% = 10pts, 30%+ = 30 cap
+    drift_penalty = min(avg_drift * 100, 30)  # 10% = 10pts, 30%+ = 30 cap
+
+    score = max(0, round(100 - error_penalty - uncertainty_penalty - drift_penalty))
+    return {
+        "score": score,
+        "components": {
+            "error_rate": round(avg_error, 4),
+            "uncertainty": round(avg_uncertainty, 4),
+            "drift": round(avg_drift, 4),
+        },
+    }
+
+
+def _get_cascades_broken() -> dict:
+    """Count of error cascades broken by intervention type."""
+    conn = _get_db_connection()
+    if not conn:
+        return {"total": 0, "by_pattern": {}}
+    try:
+        cascade_patterns = ("retry_storm", "error_cascade", "bash_retry")
+        placeholders = ",".join("?" for _ in cascade_patterns)
+        cursor = conn.execute(
+            f"SELECT pattern_key, COUNT(*) as count "
+            f"FROM guidance_outcomes "
+            f"WHERE helped = 1 AND pattern_key IN ({placeholders}) "
+            f"GROUP BY pattern_key",
+            cascade_patterns,
+        )
+        by_pattern = {row["pattern_key"]: row["count"] for row in cursor.fetchall()}
+        return {
+            "total": sum(by_pattern.values()),
+            "by_pattern": by_pattern,
+        }
+    except Exception:
+        return {"total": 0, "by_pattern": {}}
+    finally:
+        conn.close()

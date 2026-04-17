@@ -61,6 +61,9 @@ export const api = {
   // Heatmap
   heatmap: (agentId) => request(`/api/heatmap?agent_id=${encodeURIComponent(agentId)}`),
 
+  // ROI
+  roi: () => request('/api/roi'),
+
   // Config
   config: () => request('/api/config'),
   updateConfig: (data) =>
