@@ -253,7 +253,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     # Increment actions_since so timeout eventually triggers
                     pending["actions_since"] = pending.get("actions_since", 0) + 1
                     write_guidance_followthrough(pending, agent_id)
-                elif followed is not None:
+                else:
                     try:
                         from soma.audit import AuditLogger
                         logger = AuditLogger()
