@@ -257,6 +257,7 @@ class WrappedClient:
         self._model_detected: bool = False
         self._guidance_enabled: bool = True
         self._action_log: list[dict] = []
+        self._contextual_guidance = None  # Lazy init, persists across calls
 
         # Push auto_export into the engine so record_action() handles it
         self._engine._auto_export = auto_export
@@ -521,8 +522,9 @@ class WrappedClient:
             except Exception:
                 pass
 
-            cg = ContextualGuidance()
-            msg = cg.evaluate(
+            if self._contextual_guidance is None:
+                self._contextual_guidance = ContextualGuidance()
+            msg = self._contextual_guidance.evaluate(
                 action_log=self._action_log,
                 current_tool=tool_name,
                 current_input={},

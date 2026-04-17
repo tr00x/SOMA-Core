@@ -228,7 +228,7 @@ def _run_multi_turn(
     engine = None
     wrapped_client = None
     if soma_enabled:
-        engine = soma_mod.quickstart()
+        engine = soma_mod.quickstart(budget={"tokens": 10_000_000})
         engine.register_agent("live-bench")
         # Reduce grace period from 10 to 3 so SOMA activates during the task
         agent_state = engine._agents.get("live-bench")
@@ -356,6 +356,7 @@ def _run_multi_turn(
                 action_entry = {
                     "tool": "Edit", "error": not test_passed,
                     "file": tmp_file, "ts": time.time(),
+                    "output": test_output[:200] if not test_passed else "",
                 }
                 action_log.append(action_entry)
                 # Feed wrapped client's action_log for contextual guidance
