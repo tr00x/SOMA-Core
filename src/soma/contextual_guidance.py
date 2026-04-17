@@ -56,7 +56,9 @@ def _read_file_snippet(file_path: str, max_lines: int = 20) -> str:
     try:
         from pathlib import Path
         p = Path(file_path)
-        if not p.exists() or not p.is_file():
+        if not p.exists() or not p.is_file() or p.is_symlink():
+            return ""
+        if p.stat().st_size > 100_000:  # Skip files >100KB
             return ""
         lines = p.read_text(errors="replace").splitlines()
         if len(lines) <= max_lines:

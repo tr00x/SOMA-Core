@@ -24,9 +24,20 @@ class LessonStore:
             self._lessons = []
 
     def _save(self) -> None:
+        import os
+        import tempfile
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(json.dumps(self._lessons, indent=2))
+            fd, tmp = tempfile.mkstemp(dir=str(self._path.parent), suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(self._lessons, f, indent=2)
+                os.replace(tmp, str(self._path))
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
         except Exception:
             pass
 

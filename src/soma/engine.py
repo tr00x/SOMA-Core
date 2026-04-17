@@ -199,6 +199,11 @@ class SOMAEngine:
             raise AgentNotFound(agent_id)
         return self._agents[agent_id].mode
 
+    def get_baseline(self, agent_id: str):
+        """Return the Baseline object for an agent, or None if not found."""
+        state = self._agents.get(agent_id)
+        return state.baseline if state else None
+
     def get_snapshot(self, agent_id: str) -> dict[str, Any]:
         if agent_id not in self._agents:
             raise AgentNotFound(agent_id)

@@ -237,7 +237,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         from soma.hooks.common import get_hook_config
         hook_config = get_hook_config()
 
-        append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id)
+        append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id, output=output if error else "")
 
         # Contextual guidance follow-through tracking
         try:
@@ -284,10 +284,11 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 if len(prev_errors) >= 2:
                     from soma.lessons import LessonStore
                     store = LessonStore()
-                    last_err = prev_errors[0].get("output", "") or prev_errors[0].get("tool", "")
+                    # Use output from action log, fall back to tool response from current context
+                    last_err = prev_errors[0].get("output", "") or prev_errors[0].get("tool_response", "") or prev_errors[0].get("tool", "")
                     store.record(
                         pattern="error_resolved",
-                        error_text=last_err,
+                        error_text=last_err[:200],
                         fix_text=f"Resolved by {tool_name} on {file_path or 'unknown'}",
                         tool=prev_errors[0].get("tool", ""),
                     )

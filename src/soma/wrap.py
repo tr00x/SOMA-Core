@@ -531,9 +531,7 @@ class WrappedClient:
                     pass
                 baseline = None
                 try:
-                    agent_state = self._engine._agents.get(self._agent_id)
-                    if agent_state:
-                        baseline = agent_state.baseline
+                    baseline = self._engine.get_baseline(self._agent_id)
                 except Exception:
                     pass
                 self._contextual_guidance = ContextualGuidance(
