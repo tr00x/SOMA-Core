@@ -477,7 +477,18 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             from soma.contextual_guidance import ContextualGuidance
             from soma.hooks.common import read_action_log, write_guidance_followthrough
 
-            cg = ContextualGuidance()
+            lesson_store = None
+            try:
+                from soma.lessons import LessonStore
+                lesson_store = LessonStore()
+            except Exception:
+                pass
+            baseline = None
+            try:
+                baseline = engine.get_baseline(agent_id)
+            except Exception:
+                pass
+            cg = ContextualGuidance(lesson_store=lesson_store, baseline=baseline)
             cg_action_log = read_action_log(agent_id)
             cg_vitals = {
                 "uncertainty": vitals.uncertainty,
