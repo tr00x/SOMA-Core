@@ -76,7 +76,7 @@ src/soma/
   |     |
   |     +-- analytics.py     SQLite analytics, source-tagged, soma_version
   |
-  +-- contextual_guidance.py 10 pattern-based guidance messages
+  +-- contextual_guidance.py 9 pattern-based guidance messages
   |                          cooldowns, severity ranking, healing transitions
   |
   +-- context.py             Session context (GSD mode, action count)

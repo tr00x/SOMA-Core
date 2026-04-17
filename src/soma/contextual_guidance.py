@@ -80,12 +80,19 @@ def _suggest_for_error(error_text: str) -> str:
     return "read the error output and try a fundamentally different approach"
 
 
+_SENSITIVE_PATTERNS = {".env", "credentials", "secret", "private_key", ".pem", ".key", ".ssh", "token"}
+
+
 def _read_file_snippet(file_path: str, max_lines: int = 20) -> str:
     """Read a snippet of a file for context enrichment. Never raises."""
     try:
         from pathlib import Path
-        p = Path(file_path)
+        p = Path(file_path).resolve()
         if not p.exists() or not p.is_file() or p.is_symlink():
+            return ""
+        # Don't inject sensitive files into agent context
+        lower_name = p.name.lower()
+        if any(pat in lower_name for pat in _SENSITIVE_PATTERNS):
             return ""
         if p.stat().st_size > 100_000:  # Skip files >100KB
             return ""
@@ -198,6 +205,8 @@ def check_followthrough(
         failing_tool = pending.get("tool", "")
         if tool_name != failing_tool:
             return True  # Switched to different tool — good
+        if actions_since >= 3:
+            return False  # Still monotool after 3 actions — ignored
         return None
 
     if pattern == "bash_retry":
