@@ -96,7 +96,7 @@ def read_action_log(agent_id: str = "") -> list[dict]:
 
 
 def append_action_log(tool_name: str, error: bool = False, file_path: str = "",
-                      agent_id: str = "") -> list[dict]:
+                      agent_id: str = "", output: str = "") -> list[dict]:
     """Append an action to the log and return updated log.
 
     Uses file locking to prevent race conditions when multiple
@@ -110,6 +110,8 @@ def append_action_log(tool_name: str, error: bool = False, file_path: str = "",
         "file": file_path,
         "ts": time.time(),
     }
+    if output and error:
+        entry["output"] = output[:200]  # Only store error output, truncated
 
     path = _action_log_path(agent_id)
 
