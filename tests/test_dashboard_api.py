@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("fastapi")
 httpx = pytest.importorskip("httpx")
 ASGITransport = httpx.ASGITransport
 AsyncClient = httpx.AsyncClient
