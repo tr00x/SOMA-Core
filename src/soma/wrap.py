@@ -523,7 +523,23 @@ class WrappedClient:
                 pass
 
             if self._contextual_guidance is None:
-                self._contextual_guidance = ContextualGuidance()
+                lesson_store = None
+                try:
+                    from soma.lessons import LessonStore
+                    lesson_store = LessonStore()
+                except Exception:
+                    pass
+                baseline = None
+                try:
+                    agent_state = self._engine._agents.get(self._agent_id)
+                    if agent_state:
+                        baseline = agent_state.baseline
+                except Exception:
+                    pass
+                self._contextual_guidance = ContextualGuidance(
+                    lesson_store=lesson_store,
+                    baseline=baseline,
+                )
             msg = self._contextual_guidance.evaluate(
                 action_log=self._action_log,
                 current_tool=tool_name,

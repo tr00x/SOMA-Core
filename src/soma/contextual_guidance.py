@@ -28,6 +28,9 @@ class GuidanceMessage:
 # Severity ordering for comparison
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
+# Pattern priority within same severity (higher = wins ties)
+_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "retry_storm": 3, "error_cascade": 2, "blind_edit": 1, "context": 1, "drift": 0}
+
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
     (["permission denied", "access denied"], "check file permissions or run with appropriate access"),
@@ -46,6 +49,26 @@ def _suggest_for_error(error_text: str) -> str:
         if any(kw in lower for kw in keywords):
             return suggestion
     return "read the error output and try a fundamentally different approach"
+
+
+def _read_file_snippet(file_path: str, max_lines: int = 20) -> str:
+    """Read a snippet of a file for context enrichment. Never raises."""
+    try:
+        from pathlib import Path
+        p = Path(file_path)
+        if not p.exists() or not p.is_file():
+            return ""
+        lines = p.read_text(errors="replace").splitlines()
+        if len(lines) <= max_lines:
+            snippet = "\n".join(f"  {i+1}: {ln}" for i, ln in enumerate(lines))
+        else:
+            # Show first 10 + last 10
+            top = "\n".join(f"  {i+1}: {ln}" for i, ln in enumerate(lines[:10]))
+            bot = "\n".join(f"  {i+1}: {ln}" for i, ln in enumerate(lines[-10:], len(lines)-10))
+            snippet = f"{top}\n  ...\n{bot}"
+        return snippet
+    except Exception:
+        return ""
 
 
 def _recent_reads(action_log: list[dict], n: int = 5) -> list[str]:
@@ -149,10 +172,12 @@ class ContextualGuidance:
     Tracks cooldowns per pattern to avoid spamming.
     """
 
-    def __init__(self, cooldown_actions: int = 5):
+    def __init__(self, cooldown_actions: int = 5, lesson_store=None, baseline=None):
         self._cooldown_actions = cooldown_actions
         # pattern → last action_number when this pattern fired
         self._last_fired: dict[str, int] = {}
+        self._lesson_store = lesson_store
+        self._baseline = baseline
 
     def evaluate(
         self,
@@ -166,7 +191,11 @@ class ContextualGuidance:
         """Check all patterns, return highest-severity message or None."""
         candidates: list[GuidanceMessage] = []
 
-        # Check each pattern
+        # Check each pattern (cost_spiral first — subsumes retry_storm/error_cascade)
+        msg = self._check_cost_spiral(action_log, vitals, budget_health)
+        if msg:
+            candidates.append(msg)
+
         msg = self._check_blind_edit(action_log, current_tool, current_input)
         if msg:
             candidates.append(msg)
@@ -202,8 +231,8 @@ class ContextualGuidance:
         if not active:
             return None
 
-        # Pick highest severity
-        best = max(active, key=lambda m: _SEVERITY_ORDER.get(m.severity, 0))
+        # Pick highest severity, break ties by pattern priority
+        best = max(active, key=lambda m: (_SEVERITY_ORDER.get(m.severity, 0), _PATTERN_PRIORITY.get(m.pattern, 0)))
 
         # Record cooldown
         self._last_fired[best.pattern] = action_number
@@ -245,13 +274,23 @@ class ContextualGuidance:
         reads = _recent_reads(action_log)
         reads_str = ", ".join(reads[:3]) if reads else "none"
 
+        snippet = _read_file_snippet(file_path)
+        if snippet:
+            message = (
+                f"[SOMA] You're editing {short} without reading it first. "
+                f"Here's the current content:\n{snippet}\n"
+                f"Review before editing."
+            )
+        else:
+            message = (
+                f"[SOMA] You're editing {short} without reading it first. "
+                f"Last read files: {reads_str}. Consider reading {short} to check current state."
+            )
+
         return GuidanceMessage(
             pattern="blind_edit",
             severity="warn",
-            message=(
-                f"[SOMA] You're editing {short} without reading it first. "
-                f"Last read files: {reads_str}. Consider reading {short} to check current state."
-            ),
+            message=message,
             evidence=(f"Edit to {short} with no prior Read",),
             suggestion=f"Read {short} before editing",
         )
@@ -298,6 +337,16 @@ class ContextualGuidance:
         error_preview = str(last_error)[:80]
         suggestion = _suggest_for_error(str(last_error))
 
+        # Check lessons for this error
+        if self._lesson_store:
+            try:
+                lessons = self._lesson_store.query(error_text=str(last_error), tool=streak_tool)
+                if lessons:
+                    lesson_text = lessons[0]["fix"]
+                    suggestion = f"{suggestion}. Past fix: {lesson_text}"
+            except Exception:
+                pass
+
         return GuidanceMessage(
             pattern="retry_storm",
             severity="critical",
@@ -333,6 +382,16 @@ class ContextualGuidance:
 
         if consecutive < 3:
             return None
+
+        # If we have a baseline and this error rate is within normal range, suppress
+        if self._baseline and self._baseline.get_count("error_rate") >= 3:
+            recent_len = len(action_log[-10:])
+            error_rate = consecutive / recent_len if recent_len else 0
+            baseline_er = self._baseline.get("error_rate")
+            baseline_std = self._baseline.get_std("error_rate")
+            # Only fire if current error rate is >1.5 std above baseline
+            if error_rate < baseline_er + 1.5 * baseline_std:
+                return None
 
         last_error = _last_error_line(action_log)
         error_preview = last_error[:100] if last_error else "multiple tool failures"
@@ -449,4 +508,39 @@ class ContextualGuidance:
             ),
             evidence=(f"Tool shift: {initial} → {current}",),
             suggestion="refocus on original task",
+        )
+
+    # ── Pattern 7: Cost Spiral ──
+
+    def _check_cost_spiral(
+        self, action_log: list[dict], vitals: dict, budget_health: float,
+    ) -> GuidanceMessage | None:
+        if len(action_log) < 5:
+            return None
+
+        # Need: 5+ errors in last 8 actions AND (high token usage OR low budget)
+        recent = action_log[-8:]
+        error_count = sum(1 for e in recent if e.get("error"))
+        if error_count < 5:
+            return None
+
+        token_usage = vitals.get("token_usage", 0) or vitals.get("context_usage", 0)
+        if token_usage < 0.5 and budget_health > 0.4:
+            return None  # Not expensive enough to warn
+
+        pct_budget = int(budget_health * 100)
+        pct_context = int(token_usage * 100)
+
+        return GuidanceMessage(
+            pattern="cost_spiral",
+            severity="critical",
+            message=(
+                f"[SOMA] {error_count} errors in last {len(recent)} actions while "
+                f"using {pct_context}% context and {pct_budget}% budget remaining. "
+                f"You're burning tokens on a retry loop. "
+                f"Consider: use a cheaper model (Haiku) for debugging this issue, "
+                f"then switch back once you understand the problem."
+            ),
+            evidence=(f"{error_count} errors, {pct_context}% context, {pct_budget}% budget",),
+            suggestion="switch to cheaper model for debug phase",
         )
