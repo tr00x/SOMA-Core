@@ -8,8 +8,8 @@
 ## Setup
 
 ```bash
-git clone https://github.com/your-org/soma.git
-cd soma
+git clone https://github.com/tr00x/SOMA-Core.git
+cd SOMA-Core
 uv sync --all-extras
 ```
 
