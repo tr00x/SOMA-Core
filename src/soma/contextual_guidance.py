@@ -138,22 +138,56 @@ def _last_error_line(action_log: list[dict]) -> str:
     return ""
 
 
+_PRESSURE_DROP_HELPED = 0.15  # pressure drop ≥ 15% counts as "guidance worked"
+_PRESSURE_FALSE_ACTIONS = 2    # after this many actions with no drop, count as ignored
+
+
+def _resolve_via_pressure(pressure_delta: float | None, actions_since: int) -> bool | None:
+    """Fallback outcome resolver for patterns without explicit followthrough.
+
+    Returns True if pressure dropped ≥15% (guidance worked),
+    False if pressure did not drop after 2+ actions (guidance ignored),
+    None if still inconclusive.
+    """
+    if pressure_delta is None:
+        return None
+    if pressure_delta >= _PRESSURE_DROP_HELPED:
+        return True
+    if actions_since >= _PRESSURE_FALSE_ACTIONS and pressure_delta <= 0:
+        return False
+    return None
+
+
 def check_followthrough(
     pending: dict,
     tool_name: str,
     tool_input: dict,
     file_path: str,
     error: bool,
+    pressure_after: float | None = None,
 ) -> bool | None:
     """Check if the agent followed contextual guidance.
 
     Returns True if followed, False if ignored, None if inconclusive (keep waiting).
+
+    When `pressure_after` is provided, patterns without explicit followthrough
+    semantics (drift, cost_spiral, context, budget, error_cascade) resolve via
+    pressure delta: a drop of >=15% = True, a non-drop after 2 actions = False.
     """
     pattern = pending.get("pattern", "")
     actions_since = pending.get("actions_since", 0) + 1
 
     if actions_since > 5:
         return False  # Gave up waiting
+
+    # Pressure-delta signal shared by patterns without explicit detection.
+    pressure_at = pending.get("pressure_at_injection")
+    pressure_delta: float | None = None
+    if pressure_after is not None and pressure_at is not None:
+        try:
+            pressure_delta = float(pressure_at) - float(pressure_after)
+        except (TypeError, ValueError):
+            pressure_delta = None
 
     if pattern == "blind_edit":
         # Did they read the file?
@@ -179,7 +213,7 @@ def check_followthrough(
     if pattern == "error_cascade":
         if not error:
             return True  # Next action succeeded
-        return None  # Still erroring
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "context":
         # Did they compact/summarize?
@@ -187,10 +221,10 @@ def check_followthrough(
             cmd = tool_input.get("command", "")
             if "compact" in cmd.lower() or "summarize" in cmd.lower():
                 return True
-        return None
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "drift":
-        return None  # Hard to evaluate, just record
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "budget":
         # Did they commit/wrap up?
@@ -198,7 +232,10 @@ def check_followthrough(
             cmd = tool_input.get("command", "")
             if "git commit" in cmd or "git add" in cmd:
                 return True
-        return None
+        return _resolve_via_pressure(pressure_delta, actions_since)
+
+    if pattern == "cost_spiral":
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "entropy_drop":
         # Did they diversify tools?

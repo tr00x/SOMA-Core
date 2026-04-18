@@ -151,6 +151,67 @@ class TestCascadesBroken:
         assert result == {"total": 0, "by_pattern": {}}
 
 
+# ---------------------------------------------------------------------------
+# Test-fixture pollution filtering
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def polluted_db(tmp_path):
+    """analytics.db seeded with BOTH real patterns and test-fixture garbage."""
+    db_path = tmp_path / "analytics.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE guidance_outcomes (
+            timestamp REAL, agent_id TEXT, session_id TEXT,
+            pattern_key TEXT, helped INTEGER,
+            pressure_at_injection REAL, pressure_after REAL
+        )
+    """)
+    now = time.time()
+    rows = [
+        # Real production patterns
+        (now - 10, "cc-1", "s1", "bash_retry", 1, 0.7, 0.2),
+        (now - 20, "cc-1", "s1", "blind_edit", 1, 0.5, 0.2),
+        # Test-fixture garbage that must be filtered
+        (now - 30, "test", "s2", "retry_loop", 1, 0.6, 0.3),
+        (now - 40, "test", "s2", "mixed", 0, 0.5, 0.5),
+        (now - 50, "test", "s2", "bad_pattern", 0, 0.5, 0.5),
+        (now - 60, "test", "s2", "maybe_bad", 0, 0.5, 0.5),
+        (now - 70, "test", "s2", "test_key", 1, 0.5, 0.2),
+    ]
+    conn.executemany(
+        "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+    )
+    conn.commit()
+    conn.close()
+    return tmp_path
+
+
+def test_guidance_effectiveness_filters_test_fixture_patterns(polluted_db):
+    """Dashboard must exclude mirror/test pattern_keys from ROI metrics."""
+    with _patch_soma_dir(polluted_db):
+        result = data._get_guidance_effectiveness()
+    # Only bash_retry + blind_edit count (2 real, 2 helped)
+    assert result["total"] == 2
+    assert result["helped"] == 2
+    assert result["effectiveness_rate"] == 1.0
+
+
+def test_pattern_hit_rates_filters_test_fixture_patterns(polluted_db):
+    """retry_loop/mixed/bad_pattern/maybe_bad/test_key must not appear."""
+    with _patch_soma_dir(polluted_db):
+        result = data._get_pattern_hit_rates()
+    keys = {r["pattern_key"] for r in result}
+    assert keys == {"bash_retry", "blind_edit"}
+
+
+def test_tokens_saved_estimate_filters_test_fixture_patterns(polluted_db):
+    """Tokens-saved count must only reflect real production patterns."""
+    with _patch_soma_dir(polluted_db):
+        result = data._get_tokens_saved_estimate()
+    assert result["interventions_helped"] == 2  # not 3 (test_key excluded)
+
+
 class TestGetRoiData:
     def test_aggregates_all(self, analytics_db, engine_state):
         # Copy engine_state.json into analytics_db dir

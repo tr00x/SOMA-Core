@@ -823,3 +823,127 @@ def test_followthrough_unknown_pattern():
     pending = {"pattern": "totally_unknown_pattern", "actions_since": 0}
     result = check_followthrough(pending, "Bash", {}, "", error=False)
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Guidance outcome analytics bridge
+# ---------------------------------------------------------------------------
+
+def test_record_outcome_writes_to_analytics_when_followed(tmp_path):
+    """When followthrough is detected, outcome must be persisted to
+    analytics.db.guidance_outcomes so dashboard ROI page can see it."""
+    from soma.hooks.post_tool_use import _record_outcome_if_resolved
+    from soma.analytics import AnalyticsStore
+
+    db_path = tmp_path / "analytics.db"
+    pending = {
+        "pattern": "bash_retry",
+        "suggestion": "Read next",
+        "tool": "Bash",
+        "actions_since": 0,
+        "pressure_at_injection": 0.7,
+    }
+
+    _record_outcome_if_resolved(
+        agent_id="cc-test",
+        pending=pending,
+        followed=True,
+        pressure_after=0.15,
+        analytics_path=db_path,
+    )
+
+    store = AnalyticsStore(path=db_path)
+    rows = store._conn.execute(
+        "SELECT pattern_key, helped, pressure_at_injection, pressure_after "
+        "FROM guidance_outcomes WHERE agent_id=?",
+        ("cc-test",),
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0] == ("bash_retry", 1, 0.7, 0.15)
+
+
+def test_record_outcome_writes_failure_when_ignored(tmp_path):
+    """Ignored guidance must be recorded as helped=0."""
+    from soma.hooks.post_tool_use import _record_outcome_if_resolved
+    from soma.analytics import AnalyticsStore
+
+    db_path = tmp_path / "analytics.db"
+    pending = {
+        "pattern": "blind_edit",
+        "actions_since": 0,
+        "pressure_at_injection": 0.55,
+    }
+
+    _record_outcome_if_resolved(
+        agent_id="cc-ignored",
+        pending=pending,
+        followed=False,
+        pressure_after=0.60,
+        analytics_path=db_path,
+    )
+
+    rows = AnalyticsStore(path=db_path)._conn.execute(
+        "SELECT pattern_key, helped FROM guidance_outcomes WHERE agent_id=?",
+        ("cc-ignored",),
+    ).fetchall()
+    assert rows == [("blind_edit", 0)]
+
+
+# ---------------------------------------------------------------------------
+# check_followthrough — pressure-based resolution for non-explicit patterns
+# ---------------------------------------------------------------------------
+
+def test_followthrough_drift_resolved_by_pressure_drop():
+    """drift has no explicit detection, but a big pressure drop = helped=True."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
+    # Agent did something, pressure dropped from 0.65 → 0.35 = 30% drop
+    result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.35)
+    assert result is True
+
+
+def test_followthrough_drift_resolved_false_when_pressure_stays_high():
+    """Pressure still high after 3 actions = helped=False."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "drift", "actions_since": 2, "pressure_at_injection": 0.65}
+    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.68)
+    assert result is False
+
+
+def test_followthrough_drift_still_waiting_when_small_change():
+    """Small pressure delta and early = still waiting."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
+    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.63)
+    assert result is None
+
+
+def test_followthrough_cost_spiral_resolved_by_pressure_drop():
+    """cost_spiral had no branch at all — pressure drop resolves it."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "cost_spiral", "actions_since": 0, "pressure_at_injection": 0.75}
+    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.45)
+    assert result is True
+
+
+def test_followthrough_context_resolved_by_pressure_drop():
+    """context pattern also resolves via pressure drop if no explicit compact."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "context", "actions_since": 1, "pressure_at_injection": 0.60}
+    result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.28)
+    assert result is True
+
+
+def test_followthrough_pressure_signal_ignored_when_absent():
+    """Without pressure_after, fall back to existing pattern-specific logic."""
+    from soma.contextual_guidance import check_followthrough
+
+    # drift with no pressure data = keep waiting (None) until timeout
+    pending = {"pattern": "drift", "actions_since": 0}
+    result = check_followthrough(pending, "Bash", {}, "", error=False)
+    assert result is None

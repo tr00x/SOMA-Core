@@ -634,6 +634,23 @@ def export_session(session_id: str, fmt: str = "json") -> bytes:
 # Average tokens wasted per error cascade action (conservative estimate)
 _AVG_TOKENS_PER_ERROR_ACTION = 800
 
+# Whitelist of pattern_keys produced by real production guidance paths.
+# Anything else in guidance_outcomes is test-fixture pollution and must be
+# excluded from ROI metrics (mirror test patterns, unit-test seeds, etc.).
+_REAL_PATTERN_KEYS = (
+    "bash_retry",
+    "retry_storm",
+    "entropy_drop",
+    "blind_edit",
+    "error_cascade",
+    "drift",
+    "context",
+    "budget",
+    "cost_spiral",
+    "_stats",
+)
+_REAL_PATTERN_PLACEHOLDERS = ",".join("?" for _ in _REAL_PATTERN_KEYS)
+
 
 def get_roi_data() -> dict:
     """Aggregate all ROI metrics into a single response."""
@@ -653,8 +670,10 @@ def _get_guidance_effectiveness() -> dict:
         return {"total": 0, "helped": 0, "effectiveness_rate": 0.0}
     try:
         cursor = conn.execute(
-            "SELECT COUNT(*) as total, SUM(helped) as helped "
-            "FROM guidance_outcomes"
+            f"SELECT COUNT(*) as total, SUM(helped) as helped "
+            f"FROM guidance_outcomes "
+            f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS})",
+            _REAL_PATTERN_KEYS,
         )
         row = cursor.fetchone()
         total = row["total"] or 0
@@ -677,11 +696,13 @@ def _get_pattern_hit_rates() -> list[dict]:
         return []
     try:
         cursor = conn.execute(
-            "SELECT pattern_key, COUNT(*) as fires, "
-            "SUM(helped) as followed, "
-            "ROUND(CAST(SUM(helped) AS REAL) / COUNT(*), 3) as follow_rate "
-            "FROM guidance_outcomes "
-            "GROUP BY pattern_key ORDER BY fires DESC"
+            f"SELECT pattern_key, COUNT(*) as fires, "
+            f"SUM(helped) as followed, "
+            f"ROUND(CAST(SUM(helped) AS REAL) / COUNT(*), 3) as follow_rate "
+            f"FROM guidance_outcomes "
+            f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS}) "
+            f"GROUP BY pattern_key ORDER BY fires DESC",
+            _REAL_PATTERN_KEYS,
         )
         return [dict(row) for row in cursor.fetchall()]
     except Exception:
@@ -701,8 +722,10 @@ def _get_tokens_saved_estimate() -> dict:
         return {"estimated_tokens_saved": 0, "interventions_helped": 0}
     try:
         cursor = conn.execute(
-            "SELECT COUNT(*) as total, SUM(helped) as helped "
-            "FROM guidance_outcomes"
+            f"SELECT COUNT(*) as total, SUM(helped) as helped "
+            f"FROM guidance_outcomes "
+            f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS})",
+            _REAL_PATTERN_KEYS,
         )
         row = cursor.fetchone()
         helped = row["helped"] or 0

@@ -19,6 +19,33 @@ _prev_pressure: float = 0.0
 _mirror = None  # Lazy-initialized Mirror instance
 
 
+def _record_outcome_if_resolved(
+    agent_id: str,
+    pending: dict,
+    followed: bool,
+    pressure_after: float,
+    analytics_path=None,
+) -> None:
+    """Persist a contextual-guidance outcome to analytics.db.
+
+    Bridges the gap between audit.jsonl firings and the dashboard's
+    guidance_outcomes table so ROI metrics reflect real production patterns.
+    """
+    try:
+        from soma.analytics import AnalyticsStore
+        store = AnalyticsStore(path=analytics_path) if analytics_path else AnalyticsStore()
+        store.record_guidance_outcome(
+            agent_id=agent_id,
+            session_id=agent_id,
+            pattern_key=pending.get("pattern", ""),
+            helped=bool(followed),
+            pressure_at_injection=float(pending.get("pressure_at_injection", 0.0)),
+            pressure_after=float(pressure_after),
+        )
+    except Exception:
+        pass  # Never crash the hook for analytics
+
+
 def _validate_python_file(file_path: str) -> str | None:
     if not file_path or not file_path.endswith(".py"):
         return None
@@ -239,41 +266,6 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
 
         append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id, output=output if error else "")
 
-        # Contextual guidance follow-through tracking
-        try:
-            from soma.hooks.common import read_guidance_followthrough, write_guidance_followthrough
-            pending = read_guidance_followthrough(agent_id)
-            if pending:
-                from soma.contextual_guidance import check_followthrough
-                _tool_input = data.get("tool_input", {})
-                if not isinstance(_tool_input, dict):
-                    _tool_input = {}
-                followed = check_followthrough(pending, tool_name, _tool_input, file_path, error)
-                if followed is None:
-                    # Increment actions_since so timeout eventually triggers
-                    pending["actions_since"] = pending.get("actions_since", 0) + 1
-                    write_guidance_followthrough(pending, agent_id)
-                else:
-                    try:
-                        from soma.audit import AuditLogger
-                        logger = AuditLogger()
-                        logger.append(
-                            agent_id=agent_id,
-                            tool_name=tool_name,
-                            error=False,
-                            pressure=0.0,
-                            mode="followthrough",
-                            type="contextual_guidance",
-                            detail=f"pattern={pending.get('pattern')}, followed={followed}",
-                            pattern=pending.get("pattern", ""),
-                            guidance_followed=followed,
-                        )
-                    except Exception:
-                        pass
-                    write_guidance_followthrough(None, agent_id)  # clear pending
-        except Exception:
-            pass  # Never crash for follow-through tracking
-
         # Record lesson when error streak breaks (success after errors)
         try:
             from soma.hooks.common import read_action_log
@@ -425,6 +417,49 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         pressure = result.pressure
         vitals = result.vitals
 
+        # Contextual guidance follow-through tracking (runs after pressure is
+        # known so pressure-delta resolution works for drift/cost_spiral/etc.)
+        try:
+            from soma.hooks.common import read_guidance_followthrough, write_guidance_followthrough
+            pending = read_guidance_followthrough(agent_id)
+            if pending:
+                from soma.contextual_guidance import check_followthrough
+                _tool_input = data.get("tool_input", {})
+                if not isinstance(_tool_input, dict):
+                    _tool_input = {}
+                followed = check_followthrough(
+                    pending, tool_name, _tool_input, file_path, error,
+                    pressure_after=pressure,
+                )
+                if followed is None:
+                    pending["actions_since"] = pending.get("actions_since", 0) + 1
+                    write_guidance_followthrough(pending, agent_id)
+                else:
+                    try:
+                        from soma.audit import AuditLogger
+                        AuditLogger().append(
+                            agent_id=agent_id,
+                            tool_name=tool_name,
+                            error=False,
+                            pressure=pressure,
+                            mode="followthrough",
+                            type="contextual_guidance",
+                            detail=f"pattern={pending.get('pattern')}, followed={followed}",
+                            pattern=pending.get("pattern", ""),
+                            guidance_followed=followed,
+                        )
+                    except Exception:
+                        pass
+                    _record_outcome_if_resolved(
+                        agent_id=agent_id,
+                        pending=pending,
+                        followed=bool(followed),
+                        pressure_after=pressure,
+                    )
+                    write_guidance_followthrough(None, agent_id)
+        except Exception:
+            pass  # Never crash for follow-through tracking
+
         # Quality tracking — only Write/Edit (Bash errors tracked by engine error_rate)
         if hook_config.get("quality", True) and tool_name in ("Write", "Edit", "NotebookEdit"):
             try:
@@ -529,6 +564,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     "pattern": cg_msg.pattern,
                     "suggestion": cg_msg.suggestion,
                     "actions_since": 0,
+                    "pressure_at_injection": pressure,
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
