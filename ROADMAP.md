@@ -40,21 +40,35 @@ Two integration paths: hooks (zero-code for Claude Code) and `soma.wrap()` (any 
 - Session recording + replay
 - Atomic state persistence with file locking
 
+### TypeScript SDK (alpha)
+- `packages/soma-ai` npm package (v0.1.0)
+- Core exports: `SOMAEngine`, `quickstart`, `track`, `wrap`
+- Parity surface with Python `soma.wrap()` for JS/TS agents
+- Vitest test suite
+
+### OpenTelemetry Exporter
+- `src/soma/exporters/otel.py` — OTLP trace + metric export
+- Optional `otel` extra in pyproject
+- Integration tests in `tests/test_otel_exporter.py`
+
+### Framework Adapters
+- LangChain, CrewAI, AutoGen examples in `examples/`
+
 ---
 
-## Next: Data Validation (May 2026)
+## Next: v2026.5.0 — Self-Calibration + Strict Mode (April–May 2026)
 
-Requires 2+ weeks of clean data from production usage.
+Full plan in `SELF_CALIBRATION_PLAN.md`. Release blocks external marketing.
 
-- Validate healing transition numbers from real data
-- Calibrate entropy threshold (1.0 vs 0.8 vs 1.2)
-- Task complexity proxy from initial tool entropy
-- Predictive budgeting from session clustering
-- Guidance reinforcement learning (boost effective patterns, dampen ignored)
+- **Self-calibration:** per-user warmup (0-100 actions) → calibrated thresholds from percentiles → adaptive auto-silence of noisy patterns
+- **Strict mode:** PreToolUse hard blocks replace passive advice; `soma unblock` CLI
+- **Signal pruning:** drop `_stats` (31% noise), audit `context` trigger, keep `entropy_drop` subject to auto-silence
+- **User visibility:** colored statusline, terminal bell, end-of-session summary
 
 ## Future
 
+- Predictive budgeting from session clustering
 - Autonomous model switching (Opus→Sonnet on cost spiral via wrap)
 - Pressure reset detector (context compaction detection)
-- Multi-framework adapters (LangChain, CrewAI, AutoGen)
-- OpenTelemetry export
+- Guidance reinforcement learning (boost effective patterns, dampen ignored)
+- TypeScript SDK → v1.0 + npm publish
