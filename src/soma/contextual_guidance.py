@@ -224,6 +224,9 @@ def check_followthrough(
         return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "drift":
+        # Agent reoriented via Read/Grep/Glob = followed the advice
+        if tool_name in ("Read", "Grep", "Glob"):
+            return True
         return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "budget":
@@ -575,7 +578,7 @@ class ContextualGuidance:
         self, action_log: list[dict], vitals: dict,
     ) -> GuidanceMessage | None:
         drift = vitals.get("drift", 0)
-        if drift < 0.3:
+        if drift < 0.5:
             return None
 
         if len(action_log) < 10:
@@ -593,27 +596,20 @@ class ContextualGuidance:
         current = recent_tools.most_common(1)[0][0] if recent_tools else "?"
 
         if initial == current:
-            # Tools haven't changed, drift might be from other signals
-            return GuidanceMessage(
-                pattern="drift",
-                severity="info",
-                message=(
-                    f"[SOMA] Behavioral drift detected (drift={drift:.2f}). "
-                    f"If intentional, continue. If not, refocus on the original task."
-                ),
-                evidence=(f"Drift score {drift:.2f}",),
-                suggestion="verify you're still on the original task",
-            )
+            # Drift signal is high but tool distribution hasn't shifted — source is
+            # within-tool behavior change (args, files, args). Nothing actionable
+            # we can prescribe here; stay silent rather than emit vague advice.
+            return None
 
         return GuidanceMessage(
             pattern="drift",
             severity="warn",
             message=(
                 f"[SOMA] You started with mostly {initial} but shifted to {current}. "
-                f"If intentional, continue. If not, refocus on the original task."
+                f"Re-read the original task spec or grep for the main keyword to refocus."
             ),
             evidence=(f"Tool shift: {initial} → {current}",),
-            suggestion="refocus on original task",
+            suggestion="Read or Grep the original task spec",
         )
 
     # ── Pattern 7: Cost Spiral ──

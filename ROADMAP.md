@@ -1,8 +1,8 @@
 # Roadmap
 
-## Current: v2026.4.0
+## Current: v2026.4.2
 
-9 guidance patterns | 1438 tests | Python 3.11+ | MIT
+9 guidance patterns | 1451 tests | Python 3.11+ | MIT
 
 Two integration paths: hooks (zero-code for Claude Code) and `soma.wrap()` (any LLM SDK).
 
