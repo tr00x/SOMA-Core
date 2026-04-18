@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-ai"
-version = "2026.4.0"
+version = "2026.4.1"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -24,13 +24,14 @@ dependencies = [
     "rich>=13.0",
     "textual>=3.0",
     "google-genai>=1.73.1",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
 ]
 
 [project.optional-dependencies]
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20", "opentelemetry-exporter-otlp-proto-grpc>=1.20"]
-dashboard = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
 dev = ["pytest>=8.0", "pytest-cov", "pytest-asyncio>=0.21", "ruff", "pyyaml>=6.0"]
-all = ["soma-ai[otel,dashboard,dev]"]
+all = ["soma-ai[otel,dev]"]
 
 [project.scripts]
 soma = "soma.cli.main:main"
@@ -61,6 +62,16 @@ ignore = ["E501"]  # line length handled by formatter
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soma"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/soma",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
 
 
 [dependency-groups]

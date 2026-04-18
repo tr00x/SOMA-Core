@@ -785,12 +785,7 @@ def _cmd_policy(args: argparse.Namespace) -> None:
 
 def _cmd_dashboard(args: argparse.Namespace) -> None:
     """Launch the SOMA web dashboard."""
-    try:
-        import uvicorn
-    except ImportError:
-        print("Dashboard requires extra dependencies. Install with:")
-        print("  pip install soma-ai[dashboard]")
-        sys.exit(1)
+    import uvicorn
 
     host = args.host
     port = args.port
