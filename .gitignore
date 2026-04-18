@@ -14,22 +14,33 @@ build/
 *.jsonl
 .soma/
 node_modules/
-package-lock.json
-package.json
 .serena/
 .claude-plugin/
 .claude/
 test-results/
+graphify-out/
+
+# Top-level (playwright dev-only, not part of any sub-package)
+/package.json
+/package-lock.json
+
+# Sub-package build artifacts
+packages/*/dist/
 
 # Local config
 soma.toml
 soma_session.json
 .coveragerc
 
+# Personal — never commit plans or benchmarks
+*_PLAN.md
+PRODUCTION_PLAN.md
+SELF_CALIBRATION_PLAN.md
+benchmarks/
+
 # Internal
 experiments/
 scripts/
-packages/
 docs/specs/
 docs/superpowers/
 skills/
