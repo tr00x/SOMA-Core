@@ -311,12 +311,25 @@ def test_drift_detected_with_tool_shift(cg):
         action_log=action_log,
         current_tool="Bash",
         current_input={},
-        vitals={"drift": 0.4},
+        vitals={"drift": 0.6},
     )
     assert msg is not None
     assert msg.pattern == "drift"
     assert "Read" in msg.message
     assert "Bash" in msg.message
+
+
+def test_drift_not_fired_when_tools_unchanged(cg):
+    # Drift score high but tool distribution unchanged — pattern stays silent
+    # (regression guard for removed info-only branch).
+    action_log = [{"tool": "Bash", "error": False, "file": ""} for _ in range(10)]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"drift": 0.7},
+    )
+    assert msg is None or msg.pattern != "drift"
 
 
 def test_drift_not_fired_low_drift(cg):
@@ -894,13 +907,24 @@ def test_record_outcome_writes_failure_when_ignored(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_followthrough_drift_resolved_by_pressure_drop():
-    """drift has no explicit detection, but a big pressure drop = helped=True."""
+    """drift with non-reorient tool + big pressure drop = helped=True."""
     from soma.contextual_guidance import check_followthrough
 
     pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
-    # Agent did something, pressure dropped from 0.65 → 0.35 = 30% drop
-    result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.35)
+    # Agent did something non-reorient (Bash), pressure dropped 0.65 → 0.35 = 30%
+    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.35)
     assert result is True
+
+
+def test_followthrough_drift_resolved_by_read_or_grep():
+    """Read/Grep/Glob after drift guidance = followed the advice to reorient."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
+    # Agent re-read the spec — direct followthrough, no pressure check needed
+    assert check_followthrough(pending, "Read", {}, "spec.md", error=False) is True
+    assert check_followthrough(pending, "Grep", {}, "", error=False) is True
+    assert check_followthrough(pending, "Glob", {}, "", error=False) is True
 
 
 def test_followthrough_drift_resolved_false_when_pressure_stays_high():

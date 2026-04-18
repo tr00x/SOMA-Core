@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026.4.2
+
+Released April 18, 2026.
+
+### Precision Fixes
+- fix: drift pattern — fire targeting tightened to tool-shift cases, Read/Grep/Glob recognized as explicit followthrough, threshold raised 0.3→0.5 to reduce low-signal firings, vague "refocus" message replaced with concrete "Re-read the original task spec or grep for the main keyword". Prior analytics showed 0% precision (19 firings, 0 helped) — all firings landed in low-pressure contexts where the pressure-drop fallback was mathematically unreachable.
+
+### Known Issues (deferred to 2026.4.3)
+- retry_storm: audit revealed all 28 firings in analytics came from a single broken hook dispatcher session (claude-code agent_id, 384 consecutive Bash errors). Lowering detection threshold would amplify the artifact, not fix it. Fix requires session-type filtering in analytics aggregation — tracked for next release.
+
+### Docs
+- docs: PRODUCTION_PLAN.md — honest per-pattern precision metrics + P0/P1/P2 roadmap
+
+## 2026.4.1
+
+Released April 17, 2026.
+
+### Guidance → Analytics Pipeline
+- fix: `_record_outcome_if_resolved` bridges pattern firings to analytics.db guidance_outcomes
+- fix: `_resolve_via_pressure` helper for implicit pattern resolution (drift/cost_spiral/context/budget/error_cascade)
+- fix: ROI dashboard whitelist filter — excludes test-fixture pollution (test_key/retry_loop/mixed/bad_pattern/maybe_bad)
+- fix: fastapi/uvicorn moved from `[dashboard]` extra to core deps (dashboard works out of the box)
+- docs: 1449 tests passing, honest ROI dashboard numbers (348K real vs. 1039K inflated)
+
 ## 2026.4.0
 
 Released April 17, 2026.
