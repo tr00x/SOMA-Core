@@ -434,7 +434,14 @@ class ContextualGuidance:
             else:
                 break
 
-        if consecutive < 3:
+        # Personal streak threshold if a calibrated profile is attached;
+        # legacy hardcode otherwise. Profile returns max(typical+1, 3).
+        streak_floor = (
+            self._profile.error_cascade_streak()
+            if (self._profile is not None and not self._profile.is_warmup())
+            else 3
+        )
+        if consecutive < streak_floor:
             return None
 
         # If we have a baseline and this error rate is within normal range, suppress
@@ -565,8 +572,19 @@ class ContextualGuidance:
             return None
 
         entropy = _compute_tool_entropy(action_log)
-        if entropy >= 1.0:
-            return None  # Healthy diversity
+        # Calibrated threshold ceiling: "healthy" entropy for this user's
+        # own tool-usage distribution. Users who naturally stay in a
+        # narrow toolset won't fire on what is, for them, normal.
+        entropy_ceiling = (
+            # The user's healthy-entropy ceiling is their own P75 —
+            # anything above that is "as diverse as you usually get".
+            max(self._profile.entropy_p75, 1.0)
+            if (self._profile is not None and not self._profile.is_warmup()
+                and self._profile.entropy_p75 > 0)
+            else 1.0
+        )
+        if entropy >= entropy_ceiling:
+            return None  # Healthy diversity for this user
 
         # Identify the dominant tool
         from collections import Counter
