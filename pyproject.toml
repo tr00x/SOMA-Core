@@ -63,9 +63,17 @@ ignore = ["E501"]  # line length handled by formatter
 [tool.hatch.build.targets.wheel]
 packages = ["src/soma"]
 
+# Bundle slash-command skills into the installed wheel at
+# `soma/_skills/soma-*/SKILL.md` so `soma setup-claude` finds and
+# copies them for pip-installed users. Without this mapping skills
+# only exist in the dev repo and the installer silently no-ops.
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "src/soma/_skills"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "src/soma",
+    "skills",
     "tests",
     "README.md",
     "LICENSE",
