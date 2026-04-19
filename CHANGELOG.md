@@ -1,5 +1,88 @@
 # Changelog
 
+## 2026.5.0
+
+Released April 20, 2026.
+
+**Major release — Self-Calibration + Strict Mode + Signal Pruning.**
+
+### Self-Calibration Pipeline
+
+SOMA now learns each user's personal baseline instead of shipping
+hardcoded thresholds that fit a statistical average.
+
+- **Warmup phase (0-99 actions)** — guidance stays silent while SOMA
+  collects personal distributions (error bursts, drift percentiles,
+  tool entropy). Statusline shows `learning N/100` so the user knows
+  SOMA is working, not dead.
+- **Calibrated phase (100-499)** — pattern checks use personal
+  thresholds: `error_cascade_streak = max(typical_burst + 1, 3)`,
+  `entropy_ceiling = max(personal_P75, 1.0)`, etc. Legacy floors
+  guarantee quiet users don't accidentally disable signals.
+- **Adaptive phase (500+)** — every 100 actions SOMA queries
+  analytics for each tracked pattern's precision on this user. If a
+  pattern helps <20% of the time over ≥20 fires, SOMA auto-silences
+  it. If it climbs back above 40%, SOMA re-enables.
+- Profiles share state across session ids: `cc-92331`, `cc-47512`,
+  ... collapse to the `cc` family via regex so short-lived ids don't
+  force a permanent warmup.
+- Profile persistence at `~/.soma/calibration_{family}.json` with
+  atomic writes and corrupt-file tolerance.
+
+### Strict Mode
+
+`[soma] mode = "strict"` in `soma.toml` turns text guidance into a
+hard PreToolUse gate.
+
+- When `retry_storm`, `blind_edit`, `bash_retry`, `error_cascade`, or
+  `cost_spiral` fires, SOMA registers a persistent block against the
+  specific tool.
+- On the next PreToolUse, if a matching block is active, SOMA writes
+  `⛔ SOMA(strict): …` to stderr with unblock instructions and exits
+  with code 2 — the agent physically cannot proceed.
+- `check_followthrough` clears the block on real recovery
+  (Read-before-Edit, tool switch, etc.) so nothing requires manual
+  unblock in the happy path.
+- Strict mode is skipped during warmup, so fresh installs never
+  hard-block while SOMA is still learning.
+- Block state persists at `~/.soma/blocks_{family}.json`.
+- `soma unblock --agent <id>` clears all blocks; `--pattern X`
+  silences one pattern for 30 min; `--all` wipes every family.
+
+### Signal Pruning
+
+- **`_stats` emission dropped** — was 242 firings with 31% helped,
+  the single biggest guidance-fatigue source. Mirror returns None
+  at the two fallback paths that used to emit it, and the key no
+  longer accumulates in `pattern_db` or `REAL_PATTERN_KEYS`.
+- **`context` pattern re-armed** — P1.4 transcript-size proxy
+  (stat-based, O(1) per hook) closes the audit item.
+
+### User Visibility
+
+- **Statusline** shows calibration phase in warmup, a red 🔴 marker
+  with pattern list when strict-mode blocks are active.
+- **End-of-session summary** (Stop hook, stdout) surfaces a
+  `[SOMA session summary]` block that Claude Code reads back to the
+  user in its final reply — interventions count, guidance
+  effectiveness, calibration phase, unresolved blocks.
+
+### Quality
+
+- 107 new tests across `test_calibration.py`,
+  `test_calibration_gate.py`, `test_calibration_thresholds.py`,
+  `test_calibration_silence.py`, `test_blocks.py`,
+  `test_strict_mode.py`, `test_visibility.py`, plus added tests for
+  `_stats` drop.
+- 1555 tests passing.
+- Ruff clean.
+
+### Breaking changes
+
+- None in the public API. `ContextualGuidance(profile=None)` keeps
+  legacy behavior for the `soma.wrap` SDK path and tests that
+  haven't opted into calibration.
+
 ## 2026.4.5
 
 Released April 19, 2026.

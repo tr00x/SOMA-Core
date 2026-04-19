@@ -187,6 +187,56 @@ def main():
                 f"  Duration: {duration_min}min | Grade: {grade} | Peak: {peak:.0%} at #{peak_action}",
             ]
             print("\n".join(parts), file=sys.stderr)
+
+        # v2026.5.0 session summary to stdout so Claude Code surfaces
+        # the report in the model's context — the user sees SOMA work
+        # naturally in the assistant's final reply instead of having to
+        # open a dashboard.
+        try:
+            lines = ["[SOMA session summary]"]
+            intervention_total = blocks + guides + warns
+            if intervention_total:
+                lines.append(
+                    f"- {intervention_total} interventions "
+                    f"({blocks} blocked, {guides} guided, {warns} warned)"
+                )
+            if effectiveness_str:
+                lines.append(f"- guidance effectiveness{effectiveness_str}")
+            # Calibration progress
+            try:
+                from soma.calibration import (
+                    WARMUP_EXIT_ACTIONS, CALIBRATED_EXIT_ACTIONS, load_profile,
+                )
+                prof = load_profile(agent_id)
+                if prof.is_warmup():
+                    lines.append(
+                        f"- calibration: learning "
+                        f"{prof.action_count}/{WARMUP_EXIT_ACTIONS}"
+                    )
+                elif prof.is_calibrated():
+                    lines.append(
+                        f"- calibration: calibrated "
+                        f"({prof.action_count}/{CALIBRATED_EXIT_ACTIONS})"
+                    )
+                else:
+                    silenced = ", ".join(prof.silenced_patterns) or "none"
+                    lines.append(f"- calibration: adaptive, silenced={silenced}")
+            except Exception:
+                pass
+            # Strict-mode blocks held at session end
+            try:
+                from soma.blocks import load_block_state
+                bs = load_block_state(agent_id)
+                if bs.blocks:
+                    pats = ",".join(sorted({b.pattern for b in bs.blocks}))
+                    lines.append(f"- unresolved blocks: {pats}")
+            except Exception:
+                pass
+            # Only print summary if there's something beyond the header.
+            if len(lines) > 1:
+                print("\n".join(lines))
+        except Exception:
+            pass
     except Exception:
         pass  # Never crash Claude Code
 

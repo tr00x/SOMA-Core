@@ -127,6 +127,26 @@ def main():
         emoji, label = MODE_STYLE.get(level, ("?", level.lower()))
         bar = _bar(pressure)
 
+        # Calibration phase overrides everything in warmup — show learning
+        # progress instead of pressure so user knows SOMA isn't dead,
+        # just collecting baseline.
+        try:
+            from soma.calibration import WARMUP_EXIT_ACTIONS, load_profile
+        except ImportError:
+            load_profile = None  # type: ignore[assignment]
+
+        if load_profile is not None:
+            try:
+                profile = load_profile(agent_id)
+                if profile.is_warmup():
+                    print(
+                        f"🧠 SOMA · learning {profile.action_count}/"
+                        f"{WARMUP_EXIT_ACTIONS}"
+                    )
+                    return
+            except Exception:
+                pass
+
         # Build parts
         parts = [f"🧠 SOMA {emoji} {label} {bar} {pressure:>3.0%}"]
 
@@ -143,10 +163,23 @@ def main():
             from soma.hooks.common import get_block_count, get_soma_mode
             bc = get_block_count(agent_id)
             if bc > 0:
-                parts.append(f"{bc} blocked")
+                parts.append(f"⛔{bc}")
             sm = get_soma_mode()
             if sm and sm != "guide":
                 parts.append(sm.upper())
+        except Exception:
+            pass
+
+        # Live strict-mode block indicator — red if any pattern currently
+        # gates a tool. Gives the user (not just the agent) a visible
+        # signal that SOMA is actively enforcing.
+        try:
+            from soma.blocks import load_block_state
+            bs = load_block_state(agent_id)
+            active = [b for b in bs.blocks if not bs.is_silenced(b.pattern)]
+            if active:
+                patterns = ",".join(sorted({b.pattern for b in active}))
+                parts.append(f"🔴 {patterns}")
         except Exception:
             pass
 
