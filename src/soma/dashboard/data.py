@@ -5,6 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from soma.contextual_guidance import REAL_PATTERN_KEYS
 from soma.dashboard.types import (
     ActionEvent,
     AgentSnapshot,
@@ -636,17 +637,10 @@ _AVG_TOKENS_PER_ERROR_ACTION = 800
 
 # Whitelist of pattern_keys produced by real production guidance paths.
 # Anything else in guidance_outcomes is test-fixture pollution and must be
-# excluded from ROI metrics (mirror test patterns, unit-test seeds, etc.).
-_REAL_PATTERN_KEYS = (
-    "bash_retry",
-    "entropy_drop",
-    "blind_edit",
-    "error_cascade",
-    "context",
-    "budget",
-    "cost_spiral",
-    "_stats",
-)
+# excluded from ROI metrics. Sourced from contextual_guidance so adding a
+# new pattern there automatically unblocks it on the dashboard — no
+# second place to update.
+_REAL_PATTERN_KEYS = REAL_PATTERN_KEYS
 _REAL_PATTERN_PLACEHOLDERS = ",".join("?" for _ in _REAL_PATTERN_KEYS)
 
 
