@@ -315,6 +315,52 @@ def _cmd_prune(args: argparse.Namespace) -> None:
           + (f" {failed} failed." if failed else ""))
 
 
+def _cmd_unblock(args: argparse.Namespace) -> None:
+    """Clear strict-mode blocks for an agent family.
+
+    Modes:
+        soma unblock --agent cc-92331               → clear all blocks
+        soma unblock --agent cc-92331 --pattern X   → silence X for 30 min
+        soma unblock --all                          → clear every family's file
+    """
+    from soma import blocks as _blocks
+
+    pattern = getattr(args, "pattern", None)
+    clear_all = bool(getattr(args, "all", False))
+    agent_id = getattr(args, "agent_id", None) or "claude-code"
+
+    if clear_all and not pattern:
+        soma_dir = _blocks.SOMA_DIR
+        removed = 0
+        if soma_dir.exists():
+            for path in soma_dir.glob("blocks_*.json"):
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    continue
+        print(f"  Cleared {removed} family block file(s).")
+        return
+
+    state = _blocks.load_block_state(agent_id)
+
+    if pattern:
+        deadline = state.silence_pattern(pattern)
+        _blocks.save_block_state(state)
+        mins = int((deadline - time_time()) / 60)
+        print(f"  Silenced '{pattern}' for family {state.family} — ~{mins} min.")
+        return
+
+    removed = state.clear_block()
+    _blocks.save_block_state(state)
+    print(f"  Cleared {removed} block(s) for family {state.family}.")
+
+
+def time_time():  # pragma: no cover — trivial indirection for testability
+    import time as _t
+    return _t.time()
+
+
 def _cmd_reset(args: argparse.Namespace) -> None:
     """Reset an agent's baseline directly."""
     agent_id = getattr(args, 'agent_id', None) or "claude-code"
@@ -1103,6 +1149,16 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_parser.add_argument("--all", action="store_true", help="Show all time")
 
     # ---- Agent control ----
+    unblock_parser = subparsers.add_parser(
+        "unblock", help="Clear strict-mode blocks or silence a pattern",
+    )
+    unblock_parser.add_argument("--agent", dest="agent_id", default=None,
+                                help="Agent id (family-derived); defaults to claude-code")
+    unblock_parser.add_argument("--pattern", default=None,
+                                help="Silence a single pattern for 30 min instead of clearing")
+    unblock_parser.add_argument("--all", action="store_true",
+                                help="Remove every family's block file")
+
     prune_parser = subparsers.add_parser(
         "prune", help="Delete old session directories from ~/.soma/sessions"
     )
@@ -1233,6 +1289,7 @@ def main() -> None:
         "status": _cmd_status,
         "agents": _cmd_agents,
         "prune": _cmd_prune,
+        "unblock": _cmd_unblock,
         "reset": _cmd_reset,
         "stop": _cmd_stop,
         "start": _cmd_start,
