@@ -26,6 +26,13 @@ _mirror = None  # Lazy-initialized Mirror instance
 # — they contaminate ROI metrics (missing SOMA_AGENT_ID, test scripts).
 _BLOCKED_AGENT_IDS = frozenset({"claude-code", "test", "nonexistent-agent"})
 
+# Patterns that strict mode converts into hard PreToolUse blocks. Kept
+# narrow on purpose — firing `context` or `entropy_drop` shouldn't gate
+# the next tool call; those remain advisory.
+_STRICT_BLOCK_PATTERNS = frozenset({
+    "retry_storm", "blind_edit", "bash_retry", "error_cascade", "cost_spiral",
+})
+
 
 def _is_real_production_agent(agent_id: str) -> bool:
     if not agent_id or agent_id in _BLOCKED_AGENT_IDS:
@@ -489,6 +496,18 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         followed=bool(followed),
                         pressure_after=pressure,
                     )
+                    # Strict mode: clear the matching block on a real
+                    # recovery so the agent can proceed without manual
+                    # `soma unblock`. Non-recoveries leave the block up.
+                    if followed:
+                        try:
+                            from soma.blocks import load_block_state, save_block_state
+                            bs = load_block_state(agent_id)
+                            removed = bs.clear_block(pattern=pending.get("pattern"))
+                            if removed:
+                                save_block_state(bs)
+                        except Exception:
+                            pass
                     write_guidance_followthrough(None, agent_id)
         except Exception:
             pass  # Never crash for follow-through tracking
@@ -633,6 +652,26 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             if cg_msg:
                 # stdout → appended to tool response (deep injection)
                 print(f"\n{cg_msg.message}")
+                # Strict mode: turn the firing pattern into a persistent
+                # block against this tool so the next PreToolUse gates
+                # the retry. Only registered in strict + non-warmup so
+                # a fresh install never hard-gates.
+                try:
+                    from soma.hooks.common import get_soma_mode
+                    if (
+                        get_soma_mode() == "strict"
+                        and profile is not None and not profile.is_warmup()
+                        and cg_msg.pattern in _STRICT_BLOCK_PATTERNS
+                    ):
+                        from soma.blocks import load_block_state, save_block_state
+                        bs = load_block_state(agent_id)
+                        bs.add_block(
+                            pattern=cg_msg.pattern, tool=tool_name,
+                            reason=cg_msg.suggestion or cg_msg.pattern,
+                        )
+                        save_block_state(bs)
+                except Exception:
+                    pass
                 # Record follow-through for next action evaluation
                 followthrough_data = {
                     "pattern": cg_msg.pattern,
