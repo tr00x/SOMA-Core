@@ -339,6 +339,16 @@ class ContextualGuidance:
         if not file_path:
             return None
 
+        # Write to a non-existing file is a create, not a blind edit — skip.
+        # Audit data shows 0% helped on these because there is nothing to read.
+        if current_tool == "Write":
+            try:
+                import os as _os
+                if not _os.path.exists(file_path):
+                    return None
+            except Exception:
+                pass
+
         # Check if this file was read recently
         read_files: set[str] = set()
         for entry in action_log[-20:]:
