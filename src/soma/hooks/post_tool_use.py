@@ -12,7 +12,11 @@ import os
 import subprocess
 import sys
 
-from soma.hooks.common import get_engine, save_state, read_stdin, append_action_log, get_predictor, save_predictor, append_pressure_trajectory
+from soma.hooks.common import (
+    get_engine, save_state, read_stdin, append_action_log, get_predictor,
+    save_predictor, append_pressure_trajectory,
+    estimate_context_usage_from_transcript,
+)
 
 _prev_level: str | None = None
 _prev_pressure: float = 0.0
@@ -278,6 +282,17 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         from soma.hooks.common import get_hook_config
         hook_config = get_hook_config()
 
+        # Transcript-size proxy for real context fullness. Claude Code's
+        # hook payload carries `transcript_path` → JSONL file that grows
+        # with the live conversation. Internal cumulative_tokens only
+        # tracks tool outputs, so context_usage from engine is lowballed
+        # by 10-20× on long sessions. Stat-based estimate fixes this.
+        transcript_path = data.get("transcript_path") or ""
+        ctx_window = getattr(engine, "_context_window", 200_000) or 200_000
+        transcript_context_usage = estimate_context_usage_from_transcript(
+            transcript_path, context_window=ctx_window,
+        )
+
         append_action_log(tool_name, error=error, file_path=file_path, agent_id=agent_id, output=output if error else "")
 
         # Record lesson when error streak breaks (success after errors)
@@ -375,6 +390,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 from soma.analytics import AnalyticsStore
                 analytics = AnalyticsStore()
                 vitals = result.vitals
+                engine_ctx = getattr(vitals, 'context_usage', 0) or 0
                 analytics.record(
                     agent_id=agent_id,
                     session_id=agent_id,  # use agent_id as session for now
@@ -383,7 +399,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     uncertainty=getattr(vitals, 'uncertainty', 0),
                     drift=getattr(vitals, 'drift', 0),
                     error_rate=getattr(vitals, 'error_rate', 0),
-                    context_usage=getattr(vitals, 'context_usage', 0),
+                    context_usage=max(engine_ctx, transcript_context_usage),
                     token_count=action.token_count,
                     cost=action.cost,
                     mode=result.mode.name,
@@ -550,11 +566,21 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             from soma.hooks.common import read_guidance_cooldowns
             cg._last_fired = read_guidance_cooldowns(agent_id)
             cg_action_log = read_action_log(agent_id)
+            engine_token_usage = (
+                getattr(vitals, "token_usage", 0) or getattr(vitals, "context_usage", 0) or 0
+            )
             cg_vitals = {
                 "uncertainty": vitals.uncertainty,
                 "drift": vitals.drift,
                 "error_rate": vitals.error_rate,
-                "token_usage": getattr(vitals, "token_usage", 0) or getattr(vitals, "context_usage", 0),
+                # Prefer whichever is higher: engine's internal tally or the
+                # transcript-size proxy. Without a configured budget the
+                # engine value is effectively 0; the proxy keeps
+                # context/cost_spiral patterns armed for long sessions.
+                "token_usage": max(engine_token_usage, transcript_context_usage),
+                "context_usage": max(
+                    getattr(vitals, "context_usage", 0) or 0, transcript_context_usage,
+                ),
             }
             budget_health = 1.0
             try:

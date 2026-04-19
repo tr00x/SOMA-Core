@@ -517,6 +517,42 @@ def read_stdin() -> dict:
     return {}
 
 
+# ── Transcript-based context estimation ─────────────────────────────
+
+# Conservative chars/token ratio for Claude Code transcripts. The raw
+# tokenizer is ~4 chars/token for English prose; JSONL wrapping adds
+# overhead (role/type keys) but assistant reasoning text dominates in
+# long sessions, so 4 keeps the estimate honestly conservative.
+_TRANSCRIPT_CHARS_PER_TOKEN = 4
+
+
+def estimate_context_tokens_from_transcript(transcript_path: str | None) -> int:
+    """Return an O(1) byte-size token estimate for a Claude Code transcript.
+
+    Returns 0 on missing/unreadable paths. Safe to call on every hook —
+    only performs a single stat().
+    """
+    if not transcript_path:
+        return 0
+    try:
+        size = Path(transcript_path).stat().st_size
+    except OSError:
+        return 0
+    if size <= 0:
+        return 0
+    return size // _TRANSCRIPT_CHARS_PER_TOKEN
+
+
+def estimate_context_usage_from_transcript(
+    transcript_path: str | None, context_window: int = 200_000,
+) -> float:
+    """Transcript-size proxy for context window fullness, clamped to [0, 1]."""
+    if context_window <= 0:
+        return 0.0
+    tokens = estimate_context_tokens_from_transcript(transcript_path)
+    return max(0.0, min(1.0, tokens / context_window))
+
+
 # ── Reflex helpers ──────────────────────────────────────────────────
 
 BASH_HISTORY_MAX = 10

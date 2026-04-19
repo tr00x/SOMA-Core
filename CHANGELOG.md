@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026.4.5
+
+Released April 19, 2026.
+
+### Fire-rate fix: context / cost_spiral patterns
+- fix: `context_usage` now derived from Claude Code's `transcript_path`
+  (JSONL file size → token estimate at 4 chars/token, clamped to the
+  agent's `context_window`). Internal `engine.cumulative_tokens` only
+  tallied tool outputs, so context_usage stayed near 0% on real sessions
+  and both `context` (needs ≥80%) and `cost_spiral` (needs ≥50% context)
+  patterns never armed. Proxy is O(1) — single `stat()` per hook —
+  and falls back cleanly when `transcript_path` is absent.
+- fix: analytics `context_usage` column now uses `max(engine, transcript_proxy)`
+  so cross-session trend graphs reflect real context growth.
+
+### Quality
+- test: 12 new tests in `test_transcript_context.py` — helper edge cases
+  (missing/empty/oversized files, zero window) + integration assertion
+  that `context` pattern fires at 85% proxy fullness.
+- 1451 tests passing.
+
 ## 2026.4.4
 
 Released April 19, 2026.
