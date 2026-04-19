@@ -569,7 +569,16 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             try:
                 from soma import calibration as _cal
                 profile = _cal.load_profile(agent_id)
+                prev_phase = profile.phase
                 profile.advance(1)
+                # On phase transitions, refresh personal distributions
+                # from recent audit history so the next action evaluates
+                # against the calibrated thresholds, not legacy floors.
+                if profile.phase != prev_phase:
+                    try:
+                        _cal.recompute_from_audit(profile)
+                    except Exception:
+                        pass
                 _cal.save_profile(profile)
             except Exception:
                 pass  # Calibration is additive — never break guidance.

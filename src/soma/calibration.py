@@ -307,6 +307,71 @@ def apply_distributions(
     profile.updated_at = time.time()
 
 
+def load_recent_audit(
+    agent_family: str, limit: int = 500,
+    audit_path: Path | None = None,
+) -> list[dict]:
+    """Read the last ``limit`` audit.jsonl rows for this family.
+
+    Family matching is prefix-based so session-scoped ids (cc-47512)
+    contribute to the "cc" family's distribution. Returns rows
+    chronologically (oldest first). Malformed lines are skipped.
+    """
+    path = audit_path or (SOMA_DIR / "audit.jsonl")
+    if not path.exists():
+        return []
+    # Tail the file — audit.jsonl can be tens of MB after a few weeks.
+    try:
+        lines = path.read_text(errors="ignore").splitlines()
+    except OSError:
+        return []
+    rows: list[dict] = []
+    # Walk backwards, keeping only this family's rows, stopping when we
+    # have `limit`. Then reverse to chronological order for callers.
+    for line in reversed(lines):
+        if len(rows) >= limit:
+            break
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        aid = row.get("agent_id", "")
+        if calibration_family(aid) != agent_family:
+            continue
+        rows.append(row)
+    rows.reverse()
+    return rows
+
+
+def recompute_from_audit(
+    profile: CalibrationProfile, limit: int = 500,
+    audit_path: Path | None = None,
+) -> None:
+    """Read recent audit rows for this profile and refresh distributions.
+
+    Safe no-op when audit.jsonl is missing or empty. Callers should invoke
+    this at phase transitions (action 100 / 500) rather than every hook —
+    percentile math over 500 rows is cheap but not free.
+    """
+    rows = load_recent_audit(profile.family, limit=limit, audit_path=audit_path)
+    if not rows:
+        return
+    signal_pressures = [r.get("signal_pressures", {}) for r in rows]
+    errors = [bool(r.get("error", False)) for r in rows]
+    # Entropy not currently logged per-row; leave as-is until Day 3 loop
+    # runs audit enrichment. Pass empty list so entropy_p* stay defaults.
+    entropy = [float(r.get("entropy", 0.0)) for r in rows if "entropy" in r]
+    dists = compute_distributions(signal_pressures, errors, entropy)
+    # Don't clobber entropy percentiles with zeros when we have no data.
+    if not entropy:
+        dists.pop("entropy_p25", None)
+        dists.pop("entropy_p75", None)
+    apply_distributions(profile, dists)
+
+
 def _percentile(xs: list[float], q: float) -> float:
     """Nearest-rank percentile with safe handling of empty / one-element lists."""
     if not xs:
