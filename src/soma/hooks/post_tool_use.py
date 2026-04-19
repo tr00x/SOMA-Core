@@ -18,6 +18,18 @@ _prev_level: str | None = None
 _prev_pressure: float = 0.0
 _mirror = None  # Lazy-initialized Mirror instance
 
+# Catch-all / fixture agent ids never persisted to analytics from hook layer
+# — they contaminate ROI metrics (missing SOMA_AGENT_ID, test scripts).
+_BLOCKED_AGENT_IDS = frozenset({"claude-code", "test", "nonexistent-agent"})
+
+
+def _is_real_production_agent(agent_id: str) -> bool:
+    if not agent_id or agent_id in _BLOCKED_AGENT_IDS:
+        return False
+    if agent_id.startswith("test-"):
+        return False
+    return True
+
 
 def _record_outcome_if_resolved(
     agent_id: str,
@@ -31,6 +43,8 @@ def _record_outcome_if_resolved(
     Bridges the gap between audit.jsonl firings and the dashboard's
     guidance_outcomes table so ROI metrics reflect real production patterns.
     """
+    if not _is_real_production_agent(agent_id):
+        return
     try:
         from soma.analytics import AnalyticsStore
         store = AnalyticsStore(path=analytics_path) if analytics_path else AnalyticsStore()
@@ -353,28 +367,31 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         except Exception:
             pass  # Never crash for signal persistence
 
-        # Record to analytics SQLite for cross-session trends
-        try:
-            from soma.analytics import AnalyticsStore
-            analytics = AnalyticsStore()
-            vitals = result.vitals
-            analytics.record(
-                agent_id=agent_id,
-                session_id=agent_id,  # use agent_id as session for now
-                tool_name=tool_name,
-                pressure=result.pressure,
-                uncertainty=getattr(vitals, 'uncertainty', 0),
-                drift=getattr(vitals, 'drift', 0),
-                error_rate=getattr(vitals, 'error_rate', 0),
-                context_usage=getattr(vitals, 'context_usage', 0),
-                token_count=action.token_count,
-                cost=action.cost,
-                mode=result.mode.name,
-                error=error,
-                source="hook",
-            )
-        except Exception:
-            pass  # Never crash for analytics
+        # Record to analytics SQLite for cross-session trends.
+        # Skip catch-all agent ids (missing SOMA_AGENT_ID) to keep production
+        # metrics clean.
+        if _is_real_production_agent(agent_id):
+            try:
+                from soma.analytics import AnalyticsStore
+                analytics = AnalyticsStore()
+                vitals = result.vitals
+                analytics.record(
+                    agent_id=agent_id,
+                    session_id=agent_id,  # use agent_id as session for now
+                    tool_name=tool_name,
+                    pressure=result.pressure,
+                    uncertainty=getattr(vitals, 'uncertainty', 0),
+                    drift=getattr(vitals, 'drift', 0),
+                    error_rate=getattr(vitals, 'error_rate', 0),
+                    context_usage=getattr(vitals, 'context_usage', 0),
+                    token_count=action.token_count,
+                    cost=action.cost,
+                    mode=result.mode.name,
+                    error=error,
+                    source="hook",
+                )
+            except Exception:
+                pass  # Never crash for analytics
 
         # Append pressure to per-session trajectory for cross-session intelligence
         append_pressure_trajectory(result.pressure, agent_id)
@@ -568,8 +585,6 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
-                elif cg_msg.pattern == "retry_storm":
-                    followthrough_data["tool"] = tool_name
                 elif cg_msg.pattern in ("entropy_drop", "bash_retry"):
                     followthrough_data["tool"] = tool_name
                 write_guidance_followthrough(followthrough_data, agent_id)

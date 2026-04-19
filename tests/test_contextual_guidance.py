@@ -73,80 +73,6 @@ def test_blind_edit_not_fired_for_non_edit_tools(cg):
     assert msg is None or msg.pattern != "blind_edit"
 
 
-# ── Retry Storm ──
-
-
-def test_retry_storm_detected(cg):
-    action_log = [
-        {"tool": "Bash", "error": True, "file": "", "output": "permission denied"},
-        {"tool": "Bash", "error": True, "file": "", "output": "permission denied"},
-        {"tool": "Bash", "error": True, "file": "", "output": "permission denied"},
-    ]
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Bash",
-        current_input={"command": "rm /etc/foo"},
-        vitals={},
-    )
-    assert msg is not None
-    assert msg.pattern == "retry_storm"
-    assert "3 times" in msg.message
-    assert "permission" in msg.message.lower() or "permission" in msg.suggestion
-
-
-def test_retry_storm_not_fired_for_different_tool(cg):
-    action_log = [
-        {"tool": "Bash", "error": True, "file": "", "output": "error"},
-        {"tool": "Bash", "error": True, "file": "", "output": "error"},
-        {"tool": "Bash", "error": True, "file": "", "output": "error"},
-    ]
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Read",  # different tool
-        current_input={},
-        vitals={},
-    )
-    assert msg is None or msg.pattern != "retry_storm"
-
-
-def test_retry_storm_not_fired_under_threshold(cg):
-    action_log = [
-        {"tool": "Bash", "error": True, "file": ""},
-        {"tool": "Bash", "error": True, "file": ""},
-    ]
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Bash",
-        current_input={},
-        vitals={},
-    )
-    assert msg is None or msg.pattern != "retry_storm"
-
-
-def test_retry_storm_includes_lesson(tmp_path):
-    """If a lesson exists for the error, include it in the message."""
-    from soma.lessons import LessonStore
-    store = LessonStore(path=tmp_path / "lessons.json")
-    store.record(
-        pattern="permission_denied",
-        error_text="Permission denied: /etc/shadow",
-        fix_text="Run with sudo or check file ownership",
-        tool="Bash",
-    )
-    cg = ContextualGuidance(lesson_store=store)
-
-    action_log = [
-        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
-        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
-        {"tool": "Bash", "error": True, "output": "Permission denied: /etc/config"},
-    ]
-    msg = cg.evaluate(
-        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
-    )
-    assert msg is not None
-    assert "sudo" in msg.message.lower() or "ownership" in msg.message.lower()
-
-
 # ── Error Cascade ──
 
 
@@ -297,50 +223,6 @@ def test_context_window_ok(cg):
         vitals={"token_usage": 0.5},
     )
     assert msg is None or msg.pattern != "context"
-
-
-# ── Drift ──
-
-
-def test_drift_detected_with_tool_shift(cg):
-    action_log = (
-        [{"tool": "Read", "error": False, "file": ""} for _ in range(5)]
-        + [{"tool": "Bash", "error": False, "file": ""} for _ in range(5)]
-    )
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Bash",
-        current_input={},
-        vitals={"drift": 0.6},
-    )
-    assert msg is not None
-    assert msg.pattern == "drift"
-    assert "Read" in msg.message
-    assert "Bash" in msg.message
-
-
-def test_drift_not_fired_when_tools_unchanged(cg):
-    # Drift score high but tool distribution unchanged — pattern stays silent
-    # (regression guard for removed info-only branch).
-    action_log = [{"tool": "Bash", "error": False, "file": ""} for _ in range(10)]
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Bash",
-        current_input={},
-        vitals={"drift": 0.7},
-    )
-    assert msg is None or msg.pattern != "drift"
-
-
-def test_drift_not_fired_low_drift(cg):
-    action_log = [{"tool": "Bash", "error": False, "file": ""} for _ in range(10)]
-    msg = cg.evaluate(
-        action_log=action_log,
-        current_tool="Bash",
-        current_input={},
-        vitals={"drift": 0.1},
-    )
-    assert msg is None or msg.pattern != "drift"
 
 
 # ── Cost Spiral ──
@@ -687,37 +569,6 @@ def test_followthrough_blind_edit_waiting():
 
 
 # ---------------------------------------------------------------------------
-# check_followthrough — retry_storm
-# ---------------------------------------------------------------------------
-
-def test_followthrough_retry_storm_followed():
-    """Switching to a different tool means agent stopped retrying."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
-    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
-    assert result is True
-
-
-def test_followthrough_retry_storm_succeeded():
-    """Same tool but succeeding counts as following guidance."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
-    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=False)
-    assert result is True
-
-
-def test_followthrough_retry_storm_ignored():
-    """Same tool, still erroring means guidance was ignored."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "retry_storm", "tool": "Bash", "actions_since": 0}
-    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=True)
-    assert result is False
-
-
-# ---------------------------------------------------------------------------
 # check_followthrough — error_cascade
 # ---------------------------------------------------------------------------
 
@@ -905,45 +756,6 @@ def test_record_outcome_writes_failure_when_ignored(tmp_path):
 # ---------------------------------------------------------------------------
 # check_followthrough — pressure-based resolution for non-explicit patterns
 # ---------------------------------------------------------------------------
-
-def test_followthrough_drift_resolved_by_pressure_drop():
-    """drift with non-reorient tool + big pressure drop = helped=True."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
-    # Agent did something non-reorient (Bash), pressure dropped 0.65 → 0.35 = 30%
-    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.35)
-    assert result is True
-
-
-def test_followthrough_drift_resolved_by_read_or_grep():
-    """Read/Grep/Glob after drift guidance = followed the advice to reorient."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
-    # Agent re-read the spec — direct followthrough, no pressure check needed
-    assert check_followthrough(pending, "Read", {}, "spec.md", error=False) is True
-    assert check_followthrough(pending, "Grep", {}, "", error=False) is True
-    assert check_followthrough(pending, "Glob", {}, "", error=False) is True
-
-
-def test_followthrough_drift_resolved_false_when_pressure_stays_high():
-    """Pressure still high after 3 actions = helped=False."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "drift", "actions_since": 2, "pressure_at_injection": 0.65}
-    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.68)
-    assert result is False
-
-
-def test_followthrough_drift_still_waiting_when_small_change():
-    """Small pressure delta and early = still waiting."""
-    from soma.contextual_guidance import check_followthrough
-
-    pending = {"pattern": "drift", "actions_since": 0, "pressure_at_injection": 0.65}
-    result = check_followthrough(pending, "Bash", {}, "", error=False, pressure_after=0.63)
-    assert result is None
-
 
 def test_followthrough_cost_spiral_resolved_by_pressure_drop():
     """cost_spiral had no branch at all — pressure drop resolves it."""

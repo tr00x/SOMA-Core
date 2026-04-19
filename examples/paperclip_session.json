@@ -1,0 +1,1355 @@
+{
+  "version": 1,
+  "actions": [
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.206055,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: d  aehfhbbad ifcejjdaiegc ccbjhifbgeieefjfe ajeiei",
+        "token_count": 157,
+        "cost": 0.00727662311052451,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2061079,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: eibbfa  ahb dejifgiafhbhbhcddeg afjidjfchg e cbdfe",
+        "token_count": 102,
+        "cost": 0.0013607412267018213,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2061481,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: c gb ai iadigag ceaf a  icj iiec d fjfiahdfajacada",
+        "token_count": 127,
+        "cost": 0.0032599141357403435,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.206202,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: jec  acbceejbdjbbe  gfccj gbjghigj af jddjij cbfgi",
+        "token_count": 200,
+        "cost": 0.001005717637223744,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.206254,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: fiicgbfjegcdjfhd a ghfcbedcccdb idbjfjecgbgigfghhb",
+        "token_count": 67,
+        "cost": 0.008791049190447701,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.206293,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ijafibjjbcigcc icjij haigjgdefjd begiaa c ffhaa ci",
+        "token_count": 72,
+        "cost": 0.001617048762838037,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2063591,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: fcdaffghedcgjdgjfchfibgbaihhddhcccjjeggdgjajiihhhi",
+        "token_count": 138,
+        "cost": 0.0021490235216132447,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.206402,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: bhfcacb diffhcbfiadecgjdhhecbagggedbehdajbdfbbhe d",
+        "token_count": 177,
+        "cost": 0.007257641842373878,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.206445,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: hgbcjedha gbjeid caiiegidjagfjddjgcajdfedc fdfbebg",
+        "token_count": 130,
+        "cost": 0.009350088246592118,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2065,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: ib jgajbfjfgc b bec ccdcjdcgjcajgi  dcjaj ceagajhb",
+        "token_count": 132,
+        "cost": 0.007570665387724262,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2065501,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: i adgbhd idaeibfdaijibcgjcebceh g aeacffebihccb aa",
+        "token_count": 78,
+        "cost": 0.004731044293292658,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2065952,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: dghfj cagdaaihgbgbcedbeheegddjafaaadjjgg iicbjeeba",
+        "token_count": 67,
+        "cost": 0.0012069332907748973,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.206665,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: bhhcdefcijbf fjeffadfbaidhgifj   ffchgjah  iebedgi",
+        "token_count": 174,
+        "cost": 0.002995484023614645,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.206733,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email:  iaiaijaa jcehfcfigfafhabdcjibeefcg efjedjc fadi g",
+        "token_count": 136,
+        "cost": 0.00849641999054157,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.206802,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: cebadfaahjggeh hecgcgc jebbjbaighjjf bdjgaaffaeddc",
+        "token_count": 142,
+        "cost": 0.007650424780066242,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.206859,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: i c jeei j cjigdcggddebggbghigdfjcjjb ghcjifhdcc j",
+        "token_count": 59,
+        "cost": 0.007877743211232129,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.206914,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: fbddbiagjgfi h eddc ideh fe  bgahidafbfjedddcbciji",
+        "token_count": 80,
+        "cost": 0.009030698828526057,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.206968,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: cdbfichedififcbadda  bf cjd bfdc i bdjf ejaifaajjc",
+        "token_count": 91,
+        "cost": 0.004398903573332384,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.207027,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: adebcjf afdehcgib jaceebgdcbjheieabcjjedfbbachiecf",
+        "token_count": 89,
+        "cost": 0.008336302662168948,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2070851,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: hfiecfigjaeihdidfcj aiefeac fhjddahgiiadgheghdccie",
+        "token_count": 199,
+        "cost": 0.009269943164176186,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2071412,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: icbh cghjcheicgjdfaaa iahjcdheaba gcd fjdcehdchdej",
+        "token_count": 183,
+        "cost": 0.007068776881562296,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.207202,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: f aabccjcbhechfdaiccjjfjhijajcceadbgj iabddbggb ej",
+        "token_count": 172,
+        "cost": 0.0036494578681553927,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.207263,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: iffdffcgb bb dhgggccbafcjbd gejcg cfhdbcffbaefedif",
+        "token_count": 188,
+        "cost": 0.008240091422110777,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2073221,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ccigde fd hdddgcehjbfjaiccbhjjhaibgigj bicagabhabh",
+        "token_count": 185,
+        "cost": 0.001325482812592413,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.207395,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: e cjhejdedeh fbjhdidbggiajdhjbba c fcdah hbbhjhcd ",
+        "token_count": 111,
+        "cost": 0.006255376834609333,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.207461,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: bffccc aicjijejghcihafjaig cideaefdgbbcgbihebdbfah",
+        "token_count": 174,
+        "cost": 0.00724988684539005,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.207542,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: iadcfcdh edfdgfgdjdffc gaaheahae gbfdc echgfbeaccf",
+        "token_count": 161,
+        "cost": 0.004934595220357388,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.207614,
+      "action": {
+        "tool_name": "search",
+        "output_text": "Normal search: ja fhigfi jajc c eecffb bd hjjfid cjdfgfeegeddigdi",
+        "token_count": 110,
+        "cost": 0.003037077333506631,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.207686,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email:   efgffejebdaiiigeedccci iagjgdaj idgbg cdjcghjg j",
+        "token_count": 134,
+        "cost": 0.004315337005876279,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.207754,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: dj bhfhjjccgggihhghb hihbhgcgebjd gieggiiggcfedaea",
+        "token_count": 106,
+        "cost": 0.005089913905928019,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.207871,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 208,
+        "cost": 0.0361787895862305,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.207964,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: cjjeefeifjahje fidcjafhbbfdbfbiegdjeghcccdcehifage",
+        "token_count": 62,
+        "cost": 0.007824682538259093,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.208034,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ehgd hfedabejjd gjdbidhahciciebfcbefagccdefbejcha ",
+        "token_count": 127,
+        "cost": 0.001576662801851426,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2081668,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 428,
+        "cost": 0.04726407227753617,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.20824,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: eega bhdbgj deajf gfihjjf ijhcfcjihiibgdjcecagacai",
+        "token_count": 149,
+        "cost": 0.004003237140151064,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2083101,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: i cgf feaiddbhfe c ggcegaffaebjefjgfdaj dhdadcgde ",
+        "token_count": 98,
+        "cost": 0.0023615871707056775,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.208452,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 403,
+        "cost": 0.024988815774757193,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.208525,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: ggcighjdcfieaeidgicbadjjagg j hjgddaded  jgfdefd a",
+        "token_count": 189,
+        "cost": 0.007604647740913017,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2085938,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: j jaciacacbijfgha efcjhdgbgcaajjdc hgjffigggiiigfa",
+        "token_count": 177,
+        "cost": 0.004929446761818561,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.208759,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 370,
+        "cost": 0.03601733546588964,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.208847,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: chijehfjfhjhfdhe cb chefabfdghj ebcibbhjdbcbcbdigj",
+        "token_count": 148,
+        "cost": 0.008408454159035541,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.208916,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: jhafjbgaedhcdafjgaiabhafaiejbccfeddjecjcejac dbgdh",
+        "token_count": 110,
+        "cost": 0.007818013367499911,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.209117,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 290,
+        "cost": 0.025003789140027037,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.209193,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: hh dbabfbehadf gieiageegcfefabeaibjfdchijhbcga j j",
+        "token_count": 82,
+        "cost": 0.002007315455715456,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.209269,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: daciai hchaiejhhggi jcjccefjghagebhffgeafd ibfcdfd",
+        "token_count": 82,
+        "cost": 0.006126660508335288,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2094789,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 208,
+        "cost": 0.03962267644372228,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.209557,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email:  ce dehabgicaeecbgagaibghij gcbdhgaajbddecacggdfaf",
+        "token_count": 112,
+        "cost": 0.0083221486537285,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.20963,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: bffb hci bea cbehfhhdcjeedjaciffgf hjijcdhdgegiebi",
+        "token_count": 125,
+        "cost": 0.008233401322303317,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2098932,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 442,
+        "cost": 0.019780434157848033,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.209965,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: aed hc cdihdadajbcggabhf efaigffdgj djjabheb  ibff",
+        "token_count": 136,
+        "cost": 0.0050400540587916855,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2100549,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ehefgefddihjeafdfg hajagadcgj jajdgjajajjeagcd ibh",
+        "token_count": 163,
+        "cost": 0.0068995588747330725,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.210304,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 340,
+        "cost": 0.03152892759632154,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.210377,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: adbbfghfffaebdfagjj  ibgdjiggcjefcjg a ihdh chcgbe",
+        "token_count": 93,
+        "cost": 0.006451682992297615,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.210447,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm:  cgcgbejfcg gdfj ai  ehedgeeidjcfejfd jbhcf higgaa",
+        "token_count": 94,
+        "cost": 0.005743852735121022,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.210724,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 438,
+        "cost": 0.04852554129502481,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.210795,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: hehcihbcja fffcgiaffchdghahbfedceacchfcfigidcbecb ",
+        "token_count": 74,
+        "cost": 0.008931666481291067,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2108648,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: cebgbhajh iijc dfb ibiejgcihjehbcggbhjeigc hffahaa",
+        "token_count": 68,
+        "cost": 0.002267212552966358,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.211159,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 469,
+        "cost": 0.048958798261602675,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.211232,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: hiabjd efib fh dcg ceibbc caejb aajig ichgbiahdefh",
+        "token_count": 148,
+        "cost": 0.009763772607991602,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.211301,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ac  hi cg   dhbebdcffcjefahbegahcccaaf acgiejjadfi",
+        "token_count": 199,
+        "cost": 0.002059308905181018,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.211596,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 286,
+        "cost": 0.03815745747145484,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.211668,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: e bdibcgibjjb igjcbhcfbiijccececaiaceaheffjabfhjbi",
+        "token_count": 55,
+        "cost": 0.007342090985182731,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2117372,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: fciebcecgagecfgjfhgdieejcjhhfehcegbagfecejcfhjbdfi",
+        "token_count": 200,
+        "cost": 0.009318854272290629,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.212013,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 272,
+        "cost": 0.013168601899242707,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2120829,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: ibiiefijbbcdhbfcb ejggff eadb afjijgfiijdgaig figg",
+        "token_count": 138,
+        "cost": 0.005904135083142921,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2121542,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: gfiaada a  cfac ghbheddi cecbeehc ad hdhdggebbbih ",
+        "token_count": 96,
+        "cost": 0.007788835986415427,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.212429,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 251,
+        "cost": 0.012799589522632458,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2124999,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: ee h hfbgjdcieibccjfcea hccjabceeigfhhcccc igcabhi",
+        "token_count": 142,
+        "cost": 0.009292327361388613,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.212568,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ffbcahhebidb hjdfigigfjj hb ddgj ebeedgiai ja f ga",
+        "token_count": 176,
+        "cost": 0.0068851927195437085,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2128482,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 405,
+        "cost": 0.04657518145977289,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.212918,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email:  g adcaaehgehjiiidiejcaeidb  fjaijigfjhi eefciec e",
+        "token_count": 161,
+        "cost": 0.008753146539915196,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2129862,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: bicgfbcdhade dccdggfg aabbgaiea afejh jac jdfh jh ",
+        "token_count": 183,
+        "cost": 0.003265393372483311,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2132852,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 436,
+        "cost": 0.03981281887607591,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2133582,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: f ecfjagahjf bh ajgijddbbhdi cgjdd j abi afbjigeha",
+        "token_count": 131,
+        "cost": 0.009373082694289457,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.213428,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: hfdbbcfc if igjf chdcga bgib jbcigcga bjbee hbeggi",
+        "token_count": 127,
+        "cost": 0.0015986665231692548,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.213703,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 412,
+        "cost": 0.019422139816982417,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.2137752,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: igedcffeacgaciejeecifhjbcaajjaaiadiadjfaeijd eaj d",
+        "token_count": 154,
+        "cost": 0.003389295213551525,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2138612,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: ddhfaih e dhbfba gc bgaigjje i h gcjfgefgace   cci",
+        "token_count": 94,
+        "cost": 0.0015103608923356165,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.214138,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 438,
+        "cost": 0.018384644498961617,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.21421,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: gcgggfibhfbg jhbiagjddcjch dcebehhiabcec hbg  ihgb",
+        "token_count": 118,
+        "cost": 0.0050426956487017215,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.214278,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: jhfcddcbdeicfedcbjfcfahfjdjeiabhedehihahfcbifbcbec",
+        "token_count": 144,
+        "cost": 0.00489162329497902,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.214554,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 346,
+        "cost": 0.03132561495006221,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.214624,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: ifdgdhfiiabffac fedbdd hbafcaiiihbicajdfedghhfac  ",
+        "token_count": 82,
+        "cost": 0.0053442875020421055,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2146938,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm:  ge dcjddfaafihfigehehabe j ejadj ibfdefaibdcee ih",
+        "token_count": 70,
+        "cost": 0.009939648273283863,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.2149692,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 338,
+        "cost": 0.024907389271857153,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.21504,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: cfjdccijjfjcj heiechbjidciidachefgfggcebddjghjiaib",
+        "token_count": 70,
+        "cost": 0.002223920172376671,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.215125,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: adcddbeccdgefdfehhibbjcacccggdbjafdhce dfcjgd f f ",
+        "token_count": 84,
+        "cost": 0.005502019952520046,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "hunter",
+      "timestamp": 1774667296.215415,
+      "action": {
+        "tool_name": "bash",
+        "output_text": "error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error error ",
+        "token_count": 383,
+        "cost": 0.04482183502075583,
+        "error": true,
+        "retried": true,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "sdr",
+      "timestamp": 1774667296.215488,
+      "action": {
+        "tool_name": "email",
+        "output_text": "Normal email: c  icfebgadjhfaeheicgejg fhhbfdfifibebjfigggjgajaa",
+        "token_count": 163,
+        "cost": 0.005596402627687409,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    },
+    {
+      "agent_id": "closer",
+      "timestamp": 1774667296.2155578,
+      "action": {
+        "tool_name": "crm",
+        "output_text": "Normal crm: cceef bfhagcghaieddciciecdjjeg eeadceihdfaagiahjdc",
+        "token_count": 139,
+        "cost": 0.00826611717994787,
+        "error": false,
+        "retried": false,
+        "duration_sec": 0.0,
+        "timestamp": 0.0,
+        "metadata": {}
+      }
+    }
+  ]
+}
