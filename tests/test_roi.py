@@ -36,10 +36,10 @@ def analytics_db(tmp_path):
     # Insert guidance outcomes
     now = time.time()
     outcomes = [
-        (now - 100, "a1", "s1", "retry_storm", 1, 0.6, 0.3),
-        (now - 90, "a1", "s1", "retry_storm", 1, 0.5, 0.2),
+        (now - 100, "a1", "s1", "error_cascade", 1, 0.6, 0.3),
+        (now - 90, "a1", "s1", "error_cascade", 1, 0.5, 0.2),
         (now - 80, "a1", "s1", "bash_retry", 1, 0.7, 0.4),
-        (now - 70, "a1", "s1", "error_cascade", 0, 0.4, 0.5),
+        (now - 70, "a1", "s1", "blind_edit", 0, 0.4, 0.5),
         (now - 60, "a1", "s1", "entropy_drop", 1, 0.3, 0.1),
         (now - 50, "a1", "s1", "entropy_drop", 0, 0.2, 0.3),
     ]
@@ -94,8 +94,8 @@ class TestPatternHitRates:
         with _patch_soma_dir(analytics_db):
             result = data._get_pattern_hit_rates()
         assert len(result) == 4
-        # retry_storm fired most (2)
-        assert result[0]["pattern_key"] == "retry_storm"
+        # error_cascade fired most (2)
+        assert result[0]["pattern_key"] == "error_cascade"
         assert result[0]["fires"] == 2
         assert result[0]["followed"] == 2
         assert result[0]["follow_rate"] == 1.0
@@ -139,11 +139,10 @@ class TestCascadesBroken:
     def test_with_data(self, analytics_db):
         with _patch_soma_dir(analytics_db):
             result = data._get_cascades_broken()
-        # retry_storm: 2 helped, bash_retry: 1 helped, error_cascade: 0 helped
+        # error_cascade: 2 helped, bash_retry: 1 helped
         assert result["total"] == 3
-        assert result["by_pattern"]["retry_storm"] == 2
+        assert result["by_pattern"]["error_cascade"] == 2
         assert result["by_pattern"]["bash_retry"] == 1
-        assert "error_cascade" not in result["by_pattern"]
 
     def test_no_db(self, tmp_path):
         with _patch_soma_dir(tmp_path):

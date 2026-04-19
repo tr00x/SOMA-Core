@@ -639,11 +639,9 @@ _AVG_TOKENS_PER_ERROR_ACTION = 800
 # excluded from ROI metrics (mirror test patterns, unit-test seeds, etc.).
 _REAL_PATTERN_KEYS = (
     "bash_retry",
-    "retry_storm",
     "entropy_drop",
     "blind_edit",
     "error_cascade",
-    "drift",
     "context",
     "budget",
     "cost_spiral",
@@ -801,7 +799,7 @@ def _get_cascades_broken() -> dict:
     if not conn:
         return {"total": 0, "by_pattern": {}}
     try:
-        cascade_patterns = ("retry_storm", "error_cascade", "bash_retry")
+        cascade_patterns = ("error_cascade", "bash_retry")
         placeholders = ",".join("?" for _ in cascade_patterns)
         cursor = conn.execute(
             f"SELECT pattern_key, COUNT(*) as count "

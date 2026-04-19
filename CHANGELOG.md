@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026.4.4
+
+Released April 19, 2026.
+
+### Signal Pruning
+- remove: `retry_storm` pattern dropped — zero firings on real production agents; scenario is covered earlier by `bash_retry` (1st Bash fail) and `error_cascade` (3+ errors any tool). All historical firings originated from the `claude-code` catch-all (missing `SOMA_AGENT_ID`) and were data pollution. Removed from `_PATTERN_PRIORITY`, evaluation, `check_followthrough`, and dashboard whitelist.
+- remove: `drift` pattern dropped from actionable guidance — 0% precision on real agents (9 firings). Drift remains as a vital signal; only guidance emission is removed.
+
+### Data Hygiene
+- fix: hook layer refuses to write `claude-code`, `test`, `nonexistent-agent`, or `test-*` agent ids into analytics.db. Catch-all sessions (missing `SOMA_AGENT_ID`) and fixture runs no longer contaminate ROI metrics.
+- chore: one-shot purge of polluted rows from historical `~/.soma/analytics.db`; clean aggregation requires manual `DELETE` on upgrade.
+
+### Quality
+- test: removed 14 tests tied to dropped patterns (retry_storm evaluate/followthrough, drift evaluate/followthrough).
+- 1437 tests passing.
+
 ## 2026.4.3
 
 Released April 19, 2026.

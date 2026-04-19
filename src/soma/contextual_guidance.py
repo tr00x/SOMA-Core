@@ -29,7 +29,7 @@ class GuidanceMessage:
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
 # Pattern priority within same severity (higher = wins ties)
-_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "retry_storm": 3, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1, "drift": 0}
+_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1}
 
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
@@ -199,17 +199,6 @@ def check_followthrough(
             return False  # Edited again without reading
         return None  # Still waiting
 
-    if pattern == "retry_storm":
-        # Did they stop retrying the same tool?
-        failing_tool = pending.get("tool", "")
-        if tool_name != failing_tool:
-            return True  # Switched to different tool
-        if tool_name == failing_tool and not error:
-            return True  # Same tool but succeeded
-        if tool_name == failing_tool and error:
-            return False  # Still retrying
-        return None
-
     if pattern == "error_cascade":
         if not error:
             return True  # Next action succeeded
@@ -221,12 +210,6 @@ def check_followthrough(
             cmd = tool_input.get("command", "")
             if "compact" in cmd.lower() or "summarize" in cmd.lower():
                 return True
-        return _resolve_via_pressure(pressure_delta, actions_since)
-
-    if pattern == "drift":
-        # Agent reoriented via Read/Grep/Glob = followed the advice
-        if tool_name in ("Read", "Grep", "Glob"):
-            return True
         return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "budget":
@@ -288,7 +271,7 @@ class ContextualGuidance:
         """Check all patterns, return highest-severity message or None."""
         candidates: list[GuidanceMessage] = []
 
-        # Check each pattern (cost_spiral first — subsumes retry_storm/error_cascade)
+        # Check each pattern (cost_spiral first — subsumes error_cascade/bash_retry)
         msg = self._check_cost_spiral(action_log, vitals, budget_health)
         if msg:
             candidates.append(msg)
@@ -301,10 +284,6 @@ class ContextualGuidance:
         if msg:
             candidates.append(msg)
 
-        msg = self._check_retry_storm(action_log, current_tool)
-        if msg:
-            candidates.append(msg)
-
         msg = self._check_error_cascade(action_log)
         if msg:
             candidates.append(msg)
@@ -314,10 +293,6 @@ class ContextualGuidance:
             candidates.append(msg)
 
         msg = self._check_context_window(vitals)
-        if msg:
-            candidates.append(msg)
-
-        msg = self._check_drift(action_log, vitals)
         if msg:
             candidates.append(msg)
 
@@ -401,73 +376,6 @@ class ContextualGuidance:
         )
 
     # ── Pattern 2: Retry Storm ──
-
-    def _check_retry_storm(
-        self, action_log: list[dict], current_tool: str,
-    ) -> GuidanceMessage | None:
-        if not action_log or len(action_log) < 3:
-            return None
-
-        # Look for 3+ consecutive same-tool failures
-        recent = action_log[-10:]
-        streak_tool = None
-        streak_count = 0
-        last_error = ""
-
-        for entry in reversed(recent):
-            if entry.get("error"):
-                t = entry.get("tool", "")
-                if streak_tool is None:
-                    streak_tool = t
-                    streak_count = 1
-                    last_error = entry.get("output", "") or entry.get("test_output", "") or f"{t} failed"
-                elif t == streak_tool:
-                    streak_count += 1
-                else:
-                    break
-            else:
-                break
-
-        if streak_count < 3:
-            return None
-
-        # Cap at 3 — don't spam "failed 4/5/6/7 times"
-        if streak_count > 3:
-            streak_count = 3
-
-        # Is the current tool the same as the failing streak?
-        if current_tool != streak_tool:
-            return None
-
-        error_preview = str(last_error)[:80]
-        error_suggestion = _suggest_for_error(str(last_error))
-        heal = _healing_suggestion(streak_tool)
-        suggestion = f"{error_suggestion}. Healing: {heal}"
-
-        # Check lessons for this error
-        if self._lesson_store:
-            try:
-                lessons = self._lesson_store.query(error_text=str(last_error), tool=streak_tool)
-                if lessons:
-                    lesson_text = lessons[0]["fix"]
-                    suggestion = f"{suggestion}. Past fix: {lesson_text}"
-            except Exception:
-                pass
-
-        return GuidanceMessage(
-            pattern="retry_storm",
-            severity="critical",
-            message=(
-                f"[SOMA] {streak_tool} has failed {streak_count} times in a row. "
-                f'Last error: "{error_preview}". '
-                f"Retrying won't fix this. Try: {suggestion}."
-            ),
-            evidence=tuple(
-                f"{streak_tool} error #{i+1}"
-                for i in range(min(streak_count, 3))
-            ),
-            suggestion=suggestion,
-        )
 
     # ── Pattern 3: Error Cascade ──
 
@@ -574,44 +482,6 @@ class ContextualGuidance:
 
     # ── Pattern 6: Drift Detection ──
 
-    def _check_drift(
-        self, action_log: list[dict], vitals: dict,
-    ) -> GuidanceMessage | None:
-        drift = vitals.get("drift", 0)
-        if drift < 0.5:
-            return None
-
-        if len(action_log) < 10:
-            return None
-
-        # Characterize initial vs current tool pattern
-        early = action_log[:5]
-        recent = action_log[-5:]
-
-        from collections import Counter
-        early_tools = Counter(e.get("tool", "?") for e in early)
-        recent_tools = Counter(e.get("tool", "?") for e in recent)
-
-        initial = early_tools.most_common(1)[0][0] if early_tools else "?"
-        current = recent_tools.most_common(1)[0][0] if recent_tools else "?"
-
-        if initial == current:
-            # Drift signal is high but tool distribution hasn't shifted — source is
-            # within-tool behavior change (args, files, args). Nothing actionable
-            # we can prescribe here; stay silent rather than emit vague advice.
-            return None
-
-        return GuidanceMessage(
-            pattern="drift",
-            severity="warn",
-            message=(
-                f"[SOMA] You started with mostly {initial} but shifted to {current}. "
-                f"Re-read the original task spec or grep for the main keyword to refocus."
-            ),
-            evidence=(f"Tool shift: {initial} → {current}",),
-            suggestion="Read or Grep the original task spec",
-        )
-
     # ── Pattern 7: Cost Spiral ──
 
     def _check_cost_spiral(
@@ -704,19 +574,13 @@ class ContextualGuidance:
         if last.get("tool") != "Bash" or not last.get("error"):
             return None
 
-        # Don't fire if already in retry_storm territory (3+ consecutive Bash fails)
-        # or error_cascade territory (3+ consecutive errors of any tool)
-        consecutive_bash = 0
+        # Don't fire if already in error_cascade territory (3+ consecutive errors)
         consecutive_any = 0
         for entry in reversed(action_log):
             if entry.get("error"):
                 consecutive_any += 1
-                if entry.get("tool") == "Bash":
-                    consecutive_bash += 1
             else:
                 break
-        if consecutive_bash >= 3:
-            return None  # Let retry_storm handle this
         if consecutive_any >= 3:
             return None  # Let error_cascade handle this
 
