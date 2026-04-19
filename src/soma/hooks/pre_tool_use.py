@@ -52,6 +52,44 @@ def main():
     if soma_mode == "observe":
         return
 
+    # Strict mode (v2026.5.0): hard PreToolUse gate backed by the
+    # persistent block state. The agent physically cannot execute a
+    # (tool, pattern) pair it has just failed on until it takes a
+    # recovery action (handled by post_tool_use on the next hook).
+    if soma_mode == "strict":
+        try:
+            from soma.blocks import load_block_state
+            from soma.calibration import load_profile
+            profile = load_profile(agent_id)
+            # Never enforce during the warmup phase — we haven't learned
+            # the user's normal burst yet, so blocks would be arbitrary.
+            if not profile.is_warmup():
+                block_state = load_block_state(agent_id)
+                active = block_state.any_block_for_tool(tool_name)
+                if active is not None and not block_state.is_silenced(active.pattern):
+                    msg = (
+                        f"⛔ SOMA(strict): {active.pattern} blocks {tool_name}"
+                        + (f" — {active.reason}" if active.reason else "")
+                        + f". Run: soma unblock --agent {agent_id}"
+                        + f" --pattern {active.pattern}  (or switch tool / Read first)"
+                    )
+                    print(msg, file=sys.stderr)
+                    try:
+                        from soma.audit import AuditLogger
+                        AuditLogger().append(
+                            agent_id=agent_id, tool_name=tool_name, error=True,
+                            pressure=pressure, mode="strict", type="strict_block",
+                            pattern=active.pattern, detail=active.reason,
+                        )
+                    except Exception:
+                        pass
+                    increment_block_count(agent_id)
+                    sys.exit(2)
+        except SystemExit:
+            raise
+        except Exception:
+            pass  # Strict mode must never crash the hook.
+
     # Reflex mode: check reflexes first (per D-06)
     if soma_mode == "reflex":
         from soma.reflexes import evaluate as reflex_evaluate
