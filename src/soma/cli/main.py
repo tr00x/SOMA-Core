@@ -315,6 +315,19 @@ def _cmd_prune(args: argparse.Namespace) -> None:
           + (f" {failed} failed." if failed else ""))
 
 
+def _cmd_healing(args: argparse.Namespace) -> None:
+    """Re-derive tool-to-tool healing transitions from analytics.db."""
+    from soma.healing_validation import (
+        format_report, measure_transitions, write_markdown_report,
+    )
+    rows = measure_transitions(min_n=max(1, int(getattr(args, "min_n", 20) or 20)))
+    print(format_report(rows, limit=int(getattr(args, "limit", 10) or 10)))
+    out = getattr(args, "out", None)
+    if out:
+        write_markdown_report(Path(out), rows)
+        print(f"\n  Markdown table written → {out}")
+
+
 def _cmd_unblock(args: argparse.Namespace) -> None:
     """Clear strict-mode blocks for an agent family.
 
@@ -1149,6 +1162,16 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_parser.add_argument("--all", action="store_true", help="Show all time")
 
     # ---- Agent control ----
+    healing_parser = subparsers.add_parser(
+        "healing", help="Measure tool-to-tool pressure deltas from analytics.db",
+    )
+    healing_parser.add_argument("--min-n", type=int, default=20, dest="min_n",
+                                help="Minimum observations per transition (default 20)")
+    healing_parser.add_argument("--limit", type=int, default=10,
+                                help="How many transitions to show per side (default 10)")
+    healing_parser.add_argument("--out", default=None,
+                                help="Optional path to write a markdown table")
+
     unblock_parser = subparsers.add_parser(
         "unblock", help="Clear strict-mode blocks or silence a pattern",
     )
@@ -1289,6 +1312,7 @@ def main() -> None:
         "status": _cmd_status,
         "agents": _cmd_agents,
         "prune": _cmd_prune,
+        "healing": _cmd_healing,
         "unblock": _cmd_unblock,
         "reset": _cmd_reset,
         "stop": _cmd_stop,
