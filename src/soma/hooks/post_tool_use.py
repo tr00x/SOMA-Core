@@ -579,6 +579,13 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         _cal.recompute_from_audit(profile)
                     except Exception:
                         pass
+                # Adaptive phase: rotate analytics-driven silence list
+                # every SILENCE_REFRESH_INTERVAL actions so patterns
+                # that stop helping drop out without human intervention.
+                try:
+                    _cal.maybe_refresh_silence(profile)
+                except Exception:
+                    pass
                 _cal.save_profile(profile)
             except Exception:
                 pass  # Calibration is additive — never break guidance.
