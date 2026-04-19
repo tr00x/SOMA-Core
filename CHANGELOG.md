@@ -15,6 +15,18 @@ Released April 19, 2026.
 - fix: analytics `context_usage` column now uses `max(engine, transcript_proxy)`
   so cross-session trend graphs reflect real context growth.
 
+### Setup: slash-command skills ship with the wheel
+- fix: `[tool.hatch.build.targets.wheel.force-include]` now maps
+  `skills/` → `src/soma/_skills/` so `pip install soma-ai` populates
+  the bundled-location path that `_install_skills` already checks.
+  Previously the wheel contained no `_skills` tree, so pip-installed
+  users got an installer that silently no-op'd — `/soma:status`,
+  `/soma:config`, `/soma:control`, and `/soma:help` were effectively
+  dev-only. `soma setup-claude` now works out-of-the-box.
+- test: 3 new tests in `test_setup.py` lock the packaging config,
+  assert the repo `skills/` tree contains the canonical four skills,
+  and exercise `_install_skills` against a simulated pip layout.
+
 ### Dashboard: single source of truth for pattern whitelist
 - refactor: `_REAL_PATTERN_KEYS` in `dashboard/data.py` now imports
   `REAL_PATTERN_KEYS` from `contextual_guidance` (derived from
@@ -39,7 +51,7 @@ Released April 19, 2026.
   dry-run vs `--yes`, missing dirs, and day-count clamping.
 - test: 2 new tests asserting `REAL_PATTERN_KEYS` stays derived from
   `_PATTERN_PRIORITY` and that `dashboard.data` imports the same object.
-- 1463 tests passing.
+- 1466 tests passing.
 
 ## 2026.4.4
 

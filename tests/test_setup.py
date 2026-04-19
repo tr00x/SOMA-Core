@@ -1,10 +1,18 @@
-"""Tests for setup-claude idempotency."""
+"""Tests for setup-claude idempotency and wheel packaging."""
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
-from soma.cli.setup_claude import _install_hooks
+from soma.cli.setup_claude import _install_hooks, _install_skills
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestIdempotentSetup:
@@ -72,3 +80,65 @@ class TestIdempotentSetup:
         assert any("soma" in c for c in commands)
 
         path.unlink()
+
+
+class TestSkillsPackaging:
+    """P2.10 — slash-command skills must ship inside the wheel."""
+
+    def test_pyproject_force_includes_skills(self):
+        """pyproject.toml must map skills/ into src/soma/_skills in the wheel.
+
+        Without this mapping `pip install soma-ai` leaves /soma:* slash
+        commands uninstallable — `_install_skills` silently no-ops on the
+        bundled-location check and the dev-repo fallback never matches.
+        """
+        data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+        fi = (
+            data.get("tool", {})
+            .get("hatch", {})
+            .get("build", {})
+            .get("targets", {})
+            .get("wheel", {})
+            .get("force-include", {})
+        )
+        assert fi.get("skills") == "src/soma/_skills", (
+            "wheel build must force-include skills/ into src/soma/_skills — "
+            "otherwise pip users have no slash commands"
+        )
+
+    def test_repo_skills_tree_has_expected_skills(self):
+        """Repo skills/ dir must contain the canonical four skills so the
+        force-include mapping actually ships something."""
+        skills_root = REPO_ROOT / "skills"
+        assert skills_root.is_dir()
+        names = {
+            p.name for p in skills_root.iterdir()
+            if p.is_dir() and p.name.startswith("soma-")
+        }
+        expected = {"soma-status", "soma-config", "soma-control", "soma-help"}
+        missing = expected - names
+        assert not missing, f"missing skill dirs: {sorted(missing)}"
+
+    def test_install_skills_copies_bundled_layout(self, tmp_path, monkeypatch):
+        """Simulate the pip-install layout (`<soma_pkg>/_skills/soma-*`) and
+        verify _install_skills writes SKILL.md into ~/.claude/skills."""
+        # Fake soma package location with skills bundled alongside it.
+        fake_pkg = tmp_path / "soma_pkg"
+        fake_pkg.mkdir()
+        (fake_pkg / "__init__.py").write_text("")
+        skill_src = fake_pkg / "_skills" / "soma-status"
+        skill_src.mkdir(parents=True)
+        (skill_src / "SKILL.md").write_text("---\nname: soma:status\n---\nbody")
+
+        # Monkeypatch Path.home so skills_target lands in tmp, and point
+        # soma.__file__ at the fake layout so the bundled-check wins.
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        import soma as soma_mod
+        monkeypatch.setattr(
+            soma_mod, "__file__", str(fake_pkg / "__init__.py"), raising=True,
+        )
+
+        assert _install_skills() is True
+        installed = tmp_path / "home" / ".claude" / "skills" / "soma-status" / "SKILL.md"
+        assert installed.exists()
+        assert "soma:status" in installed.read_text()
