@@ -258,12 +258,23 @@ class ContextualGuidance:
     Tracks cooldowns per pattern to avoid spamming.
     """
 
-    def __init__(self, cooldown_actions: int = 5, lesson_store=None, baseline=None):
+    def __init__(
+        self,
+        cooldown_actions: int = 5,
+        lesson_store=None,
+        baseline=None,
+        profile=None,
+    ):
         self._cooldown_actions = cooldown_actions
         # pattern → last action_number when this pattern fired
         self._last_fired: dict[str, int] = {}
         self._lesson_store = lesson_store
         self._baseline = baseline
+        # Optional CalibrationProfile — gates guidance in warmup, filters
+        # auto-silenced patterns in adaptive. None = behave like the
+        # legacy always-armed evaluator (used by test fixtures and the
+        # soma.wrap SDK path that hasn't opted into calibration yet).
+        self._profile = profile
 
     def evaluate(
         self,
@@ -275,6 +286,13 @@ class ContextualGuidance:
         action_number: int = 0,
     ) -> GuidanceMessage | None:
         """Check all patterns, return highest-severity message or None."""
+        # Warmup gate — no guidance fires until personal distribution
+        # has accumulated. The engine still records the action; we just
+        # withhold injection so a fresh install doesn't bombard the user
+        # with globally-calibrated noise.
+        if self._profile is not None and self._profile.is_warmup():
+            return None
+
         candidates: list[GuidanceMessage] = []
 
         # Check each pattern (cost_spiral first — subsumes error_cascade/bash_retry)
@@ -314,6 +332,11 @@ class ContextualGuidance:
             c for c in candidates
             if not self._in_cooldown(c.pattern, action_number)
         ]
+        # Adaptive-phase auto-silence — patterns with <20% helped over
+        # their last 20+ fires drop out for this family until precision
+        # climbs back above 40%.
+        if self._profile is not None:
+            active = [c for c in active if not self._profile.should_silence(c.pattern)]
         if not active:
             return None
 

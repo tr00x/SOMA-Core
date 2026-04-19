@@ -561,7 +561,22 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 baseline = engine.get_baseline(agent_id)
             except Exception:
                 pass
-            cg = ContextualGuidance(lesson_store=lesson_store, baseline=baseline)
+            # Self-calibration: load (or create) the family profile so
+            # warmup silences guidance and adaptive phase can auto-silence
+            # noisy patterns. Advance counter per action so phase
+            # transitions happen at 100/500.
+            profile = None
+            try:
+                from soma import calibration as _cal
+                profile = _cal.load_profile(agent_id)
+                profile.advance(1)
+                _cal.save_profile(profile)
+            except Exception:
+                pass  # Calibration is additive — never break guidance.
+
+            cg = ContextualGuidance(
+                lesson_store=lesson_store, baseline=baseline, profile=profile,
+            )
             # Restore cooldown state from disk so patterns don't spam
             from soma.hooks.common import read_guidance_cooldowns
             cg._last_fired = read_guidance_cooldowns(agent_id)
