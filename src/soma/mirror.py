@@ -165,9 +165,12 @@ class Mirror:
                 pattern_key, pattern_desc = detected
                 self.track_injection(agent_id, pattern_key, pattern_desc, pressure)
                 return self._wrap(pattern_desc)
-            stats_text = self._format_stats(agent_id, action)
-            self.track_injection(agent_id, "_stats", stats_text, pressure)
-            return self._wrap(stats_text)
+            # v2026.5.0: drop `_stats` user-facing emission. It fatigued
+            # users (31% helped on 242 firings — largest noise source) and
+            # reference data shows mirror raw stats don't change agent
+            # behavior. Keep internal tracking off too so analytics stop
+            # receiving a row that nobody acts on.
+            return None
 
         # High pressure (>= semantic_threshold): check if semantic is warranted
         needs_semantic = self._needs_semantic(agent_id, detected)
@@ -194,9 +197,10 @@ class Mirror:
             self.track_injection(agent_id, pattern_key, context_text, pressure)
             return self._wrap(context_text)
 
-        stats_text = self._format_stats(agent_id, action)
-        self.track_injection(agent_id, "_stats", stats_text, pressure)
-        return self._wrap(stats_text)
+        # v2026.5.0: same drop at the high-pressure fallback path. No
+        # pattern matched, no semantic override available — prefer
+        # silence over emitting a generic stats block.
+        return None
 
     # ------------------------------------------------------------------
     # Semantic mode

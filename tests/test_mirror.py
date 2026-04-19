@@ -378,3 +378,50 @@ class TestIntegration:
             result = mirror.generate(aid, _action(), "")
             assert result is not None
             assert "--- session context ---" in result
+
+
+# ------------------------------------------------------------------
+# _stats pattern dropped in v2026.5.0
+# ------------------------------------------------------------------
+
+class TestStatsDropped:
+    """Plan Day 6: no more user-facing `_stats` emission. Mirror returns
+    None when the only thing it has is aggregate stats — silence beats
+    31%-helped fatigue noise."""
+
+    def test_no_stats_emission_at_medium_pressure_no_pattern(self):
+        engine = _make_engine()
+        aid = _register(engine)
+        # Push pressure into the medium band with a mix of low-signal
+        # actions and no structural pattern (single Read then write).
+        for _ in range(3):
+            _record(engine, aid, _action("Bash", "x", error=True))
+        mirror = Mirror(engine)
+        # Trigger a generate call — we want to confirm no _stats output
+        # returns, regardless of pressure bucket.
+        result = mirror.generate(aid, _action("Bash", ""), "")
+        # Either a real pattern fired (that's fine) or we got None.
+        # The one thing we must never see is the literal stats output.
+        assert result is None or "session context" in result
+
+    def test_generate_never_grows_stats_record(self):
+        """Subsequent generate() calls must not increment a _stats
+        PatternRecord (pattern_db may already contain a stale one from
+        disk; we only assert generate() stops adding to it)."""
+        engine = _make_engine()
+        aid = _register(engine)
+        for _ in range(5):
+            _record(engine, aid, _action("Bash", "x", error=True))
+        mirror = Mirror(engine)
+        before = None
+        rec = mirror.pattern_db.get("_stats")
+        if rec is not None:
+            before = (rec.success_count, rec.fail_count, rec.total)
+        mirror.generate(aid, _action("Bash", ""), "")
+        mirror.generate(aid, _action("Bash", ""), "")
+        rec2 = mirror.pattern_db.get("_stats")
+        if before is None:
+            assert rec2 is None or (rec2.success_count + rec2.fail_count) == 0
+        else:
+            after = (rec2.success_count, rec2.fail_count, rec2.total)
+            assert after == before, "_stats must not accumulate new fires"
