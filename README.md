@@ -44,11 +44,26 @@ SOMA catches them in real-time and tells the agent exactly what to do instead.
 
 ## Install
 
-```
+Pick whichever matches your setup:
+
+```bash
+# uv (recommended — isolated tool env, auto-PATH)
+uv tool install soma-ai
+
+# pip (if you already have a Python on PATH)
 pip install soma-ai
+
+# pipx (same idea as uv tool)
+pipx install soma-ai
 ```
 
 Python 3.11+. No external service dependencies.
+
+Upgrade:
+
+```bash
+uv tool upgrade soma-ai     # or: pip install --upgrade soma-ai
+```
 
 ---
 
