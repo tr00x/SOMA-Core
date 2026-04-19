@@ -745,7 +745,7 @@ def _cmd_doctor(_args: argparse.Namespace) -> None:
     if soma_hook:
         ok.append(f"soma-hook found: {soma_hook}")
     else:
-        issues.append("soma-hook not in PATH — run: pip install soma-ai")
+        issues.append("soma-hook not in PATH — run: uv tool install soma-ai  (or pip install soma-ai)")
 
     # 2. Check settings.json hooks
     settings_path = Path.home() / ".claude" / "settings.json"

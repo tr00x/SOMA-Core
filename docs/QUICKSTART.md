@@ -7,7 +7,11 @@ Three integration paths. Pick the one that fits.
 ## Path 1: Claude Code Hooks (zero-code)
 
 ```bash
-pip install soma-ai
+# Install (pick one)
+uv tool install soma-ai       # recommended
+# pip install soma-ai         # if pip is on PATH
+# pipx install soma-ai        # equivalent
+
 soma install
 ```
 
