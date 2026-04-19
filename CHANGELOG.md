@@ -12,9 +12,13 @@ Released April 19, 2026.
 - fix: hook layer refuses to write `claude-code`, `test`, `nonexistent-agent`, or `test-*` agent ids into analytics.db. Catch-all sessions (missing `SOMA_AGENT_ID`) and fixture runs no longer contaminate ROI metrics.
 - chore: one-shot purge of polluted rows from historical `~/.soma/analytics.db`; clean aggregation requires manual `DELETE` on upgrade.
 
+### Precision Fixes
+- fix: `blind_edit` no longer fires on `Write` to a non-existing file — previously 0% precision on real agents (20/0) because the pattern fired during legitimate file creation where there is nothing to read. Edit/Write on existing files still fires as before.
+
 ### Quality
 - test: removed 14 tests tied to dropped patterns (retry_storm evaluate/followthrough, drift evaluate/followthrough).
-- 1437 tests passing.
+- test: added 2 tests for blind_edit create-vs-edit distinction.
+- 1439 tests passing.
 
 ## 2026.4.3
 

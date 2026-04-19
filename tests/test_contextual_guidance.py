@@ -73,6 +73,35 @@ def test_blind_edit_not_fired_for_non_edit_tools(cg):
     assert msg is None or msg.pattern != "blind_edit"
 
 
+def test_blind_edit_not_fired_on_write_to_nonexistent_file(cg, tmp_path):
+    """Write to a non-existing path is a create — nothing to read — skip."""
+    missing = tmp_path / "brand_new_file.py"
+    assert not missing.exists()
+    action_log = [{"tool": "Bash", "error": False, "file": ""}]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Write",
+        current_input={"file_path": str(missing), "content": "x"},
+        vitals={},
+    )
+    assert msg is None or msg.pattern != "blind_edit"
+
+
+def test_blind_edit_fires_on_write_to_existing_file(cg, tmp_path):
+    """Write to an existing file without Read is still a blind edit."""
+    existing = tmp_path / "already_there.py"
+    existing.write_text("original\n")
+    action_log = [{"tool": "Bash", "error": False, "file": ""}]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Write",
+        current_input={"file_path": str(existing), "content": "x"},
+        vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "blind_edit"
+
+
 # ── Error Cascade ──
 
 
