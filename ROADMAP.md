@@ -1,6 +1,6 @@
 # Roadmap
 
-## Current: v2026.4.2
+## Current: v2026.4.3
 
 9 guidance patterns | 1451 tests | Python 3.11+ | MIT
 

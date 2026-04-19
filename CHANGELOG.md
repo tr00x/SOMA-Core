@@ -1,17 +1,20 @@
 # Changelog
 
-## 2026.4.2
+## 2026.4.3
 
-Released April 18, 2026.
+Released April 19, 2026.
 
-### Precision Fixes
-- fix: drift pattern — fire targeting tightened to tool-shift cases, Read/Grep/Glob recognized as explicit followthrough, threshold raised 0.3→0.5 to reduce low-signal firings, vague "refocus" message replaced with concrete "Re-read the original task spec or grep for the main keyword". Prior analytics showed 0% precision (19 firings, 0 helped) — all firings landed in low-pressure contexts where the pressure-drop fallback was mathematically unreachable.
+### Precision Fixes (carried from 2026.4.2)
+- fix: drift pattern — fire targeting tightened to tool-shift cases, Read/Grep/Glob recognized as explicit followthrough, threshold raised 0.3→0.5 to reduce low-signal firings, vague "refocus" message replaced with concrete "Re-read the original task spec or grep for the main keyword". Prior analytics showed 0% precision (19 firings, 0 helped).
 
-### Known Issues (deferred to 2026.4.3)
-- retry_storm: audit revealed all 28 firings in analytics came from a single broken hook dispatcher session (claude-code agent_id, 384 consecutive Bash errors). Lowering detection threshold would amplify the artifact, not fix it. Fix requires session-type filtering in analytics aggregation — tracked for next release.
+### Repository Hygiene
+- chore: TypeScript SDK source published — `packages/soma-ai/` (v0.1.0 alpha): engine, track, wrap, types + vitest suite
+- chore: ROADMAP corrected — OpenTelemetry exporter and TypeScript SDK moved from Future to Shipped (both already implemented, mislabeled)
+- chore: `.gitignore` hardened — `*_PLAN.md`, `benchmarks/`, `packages/*/dist/`, `graphify-out/` always ignored
+- chore: 2026.4.2 yanked + replaced — internal planning file accidentally shipped in 2026.4.2; this release is the clean equivalent
 
-### Docs
-- docs: PRODUCTION_PLAN.md — honest per-pattern precision metrics + P0/P1/P2 roadmap
+### Known Issues (deferred)
+- retry_storm: audit revealed all 28 production firings came from a single broken hook dispatcher session (claude-code agent_id, 384 consecutive Bash errors). Lowering detection threshold would amplify the artifact, not fix it. Fix requires session-type filtering in analytics aggregation — tracked for v2026.5.0.
 
 ## 2026.4.1
 
