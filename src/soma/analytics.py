@@ -164,6 +164,29 @@ class AnalyticsStore:
             "effectiveness_rate": helped / total if total > 0 else 0.0,
         }
 
+    def get_pattern_stats(
+        self, agent_family: str, pattern: str, last_n: int = 50,
+    ) -> dict[str, int]:
+        """Return (fires, helped) for the last N outcomes of ``pattern``.
+
+        Matches agent_ids by family prefix (``agent_id LIKE 'cc-%'`` or
+        exact ``cc`` match) so short-lived session ids contribute to the
+        same user's precision cache.
+        """
+        cursor = self._conn.execute(
+            """
+            SELECT helped FROM guidance_outcomes
+            WHERE pattern_key = ?
+              AND (agent_id = ? OR agent_id LIKE ?)
+            ORDER BY timestamp DESC LIMIT ?
+            """,
+            (pattern, agent_family, f"{agent_family}-%", last_n),
+        )
+        rows = cursor.fetchall()
+        fires = len(rows)
+        helped = sum(1 for r in rows if r[0])
+        return {"fires": fires, "helped": helped}
+
     def get_tool_stats(self, agent_id: str) -> dict[str, int]:
         """Return tool usage counts for an agent across all sessions."""
         cursor = self._conn.execute(

@@ -36,6 +36,17 @@ CALIBRATED_EXIT_ACTIONS = 500
 SILENCE_MIN_FIRES = 20
 SILENCE_HELPED_RATE = 0.20
 UNSILENCE_HELPED_RATE = 0.40
+# How often (in actions) to re-query analytics and refresh the silence
+# list during the adaptive phase. Query is indexed by pattern so it's
+# cheap, but we still only pay it once per N actions.
+SILENCE_REFRESH_INTERVAL = 100
+
+# Patterns we track for auto-silence. Keep in sync with _PATTERN_PRIORITY
+# in contextual_guidance — hardcoded here to avoid a circular import.
+_SILENCE_TRACKED_PATTERNS = (
+    "cost_spiral", "budget", "bash_retry", "error_cascade",
+    "entropy_drop", "blind_edit", "context",
+)
 
 # Legacy fallback values — personal thresholds clamp to these floors so
 # a user with extremely quiet sessions can't accidentally disable signals
@@ -305,6 +316,40 @@ def apply_distributions(
         if hasattr(profile, k):
             setattr(profile, k, v)
     profile.updated_at = time.time()
+
+
+def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> bool:
+    """Refresh silence list from analytics every N adaptive-phase actions.
+
+    Returns True if analytics was actually queried (for test hooks /
+    metrics). No-op outside the adaptive phase, or when the refresh
+    interval hasn't elapsed since the last check.
+    """
+    if not profile.is_adaptive():
+        return False
+    delta = profile.action_count - profile.last_silence_check_action
+    if delta < SILENCE_REFRESH_INTERVAL:
+        return False
+
+    # Lazy-import to keep analytics optional.
+    store = analytics_store
+    if store is None:
+        try:
+            from soma.analytics import AnalyticsStore
+            store = AnalyticsStore()
+        except Exception:
+            return False
+
+    try:
+        for pattern in _SILENCE_TRACKED_PATTERNS:
+            stats = store.get_pattern_stats(profile.family, pattern, last_n=50)
+            profile.update_silence(pattern, stats["fires"], stats["helped"])
+    except Exception:
+        return False
+
+    profile.last_silence_check_action = profile.action_count
+    profile.updated_at = time.time()
+    return True
 
 
 def load_recent_audit(
