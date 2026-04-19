@@ -231,6 +231,90 @@ def _cmd_agents(_args: argparse.Namespace) -> None:
         print(f"  {agent_id:<20} {level:<12} p={pressure:.2f}  actions={action_count}")
 
 
+def _find_stale_sessions(sessions_dir: Path, cutoff_ts: float) -> list[Path]:
+    """Return session subdirectories whose mtime is older than `cutoff_ts`.
+
+    Missing directory → empty list. Non-directory entries skipped.
+    """
+    if not sessions_dir.exists():
+        return []
+    stale: list[Path] = []
+    for entry in sessions_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff_ts:
+                stale.append(entry)
+        except OSError:
+            continue
+    return stale
+
+
+def _dir_size_bytes(path: Path) -> int:
+    """Recursive size in bytes; unreachable entries ignored."""
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            try:
+                if p.is_file():
+                    total += p.stat().st_size
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return total
+
+
+def _cmd_prune(args: argparse.Namespace) -> None:
+    """Delete session directories older than --older-than days.
+
+    Dry-run by default. Pass --yes to actually remove them.
+    """
+    import shutil
+    import time
+
+    raw_days = getattr(args, "older_than", 30)
+    if raw_days is None:
+        raw_days = 30
+    days = max(1, int(raw_days))
+    sessions_dir = Path.home() / ".soma" / "sessions"
+    cutoff_ts = time.time() - (days * 86_400)
+
+    stale = _find_stale_sessions(sessions_dir, cutoff_ts)
+    if not stale:
+        print(f"  No sessions older than {days}d in {sessions_dir}.")
+        return
+
+    total_bytes = sum(_dir_size_bytes(p) for p in stale)
+    mb = total_bytes / (1024 * 1024)
+
+    apply = bool(getattr(args, "yes", False))
+    verb = "Would remove" if not apply else "Removing"
+    print(f"  {verb} {len(stale)} session(s) older than {days}d "
+          f"(~{mb:.1f} MB) from {sessions_dir}.")
+
+    if not apply:
+        preview = stale[:5]
+        for p in preview:
+            print(f"    - {p.name}")
+        if len(stale) > len(preview):
+            print(f"    ... and {len(stale) - len(preview)} more")
+        print("  Re-run with --yes to actually delete.")
+        return
+
+    removed = 0
+    failed = 0
+    for p in stale:
+        try:
+            shutil.rmtree(p)
+            removed += 1
+        except OSError as e:
+            print(f"  ! failed to remove {p.name}: {e}")
+            failed += 1
+    print(f"  Removed {removed} session(s)."
+          + (f" {failed} failed." if failed else ""))
+
+
 def _cmd_reset(args: argparse.Namespace) -> None:
     """Reset an agent's baseline directly."""
     agent_id = getattr(args, 'agent_id', None) or "claude-code"
@@ -1019,6 +1103,18 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_parser.add_argument("--all", action="store_true", help="Show all time")
 
     # ---- Agent control ----
+    prune_parser = subparsers.add_parser(
+        "prune", help="Delete old session directories from ~/.soma/sessions"
+    )
+    prune_parser.add_argument(
+        "--older-than", type=int, default=30, metavar="DAYS",
+        help="Remove sessions whose last-modified time is older than DAYS (default: 30)",
+    )
+    prune_parser.add_argument(
+        "--yes", action="store_true",
+        help="Actually delete (default is dry-run, preview only)",
+    )
+
     rst = subparsers.add_parser("reset", help="Reset an agent's pressure baseline")
     rst.add_argument("agent_id", metavar="agent-id", nargs="?", default="claude-code",
                      help="Agent ID to reset (default: claude-code)")
@@ -1136,6 +1232,7 @@ def main() -> None:
         "stats": _cmd_stats,
         "status": _cmd_status,
         "agents": _cmd_agents,
+        "prune": _cmd_prune,
         "reset": _cmd_reset,
         "stop": _cmd_stop,
         "start": _cmd_start,

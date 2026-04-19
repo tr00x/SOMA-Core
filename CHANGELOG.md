@@ -15,11 +15,21 @@ Released April 19, 2026.
 - fix: analytics `context_usage` column now uses `max(engine, transcript_proxy)`
   so cross-session trend graphs reflect real context growth.
 
+### CLI: soma prune
+- add: `soma prune [--older-than DAYS] [--yes]` removes stale session
+  directories from `~/.soma/sessions/`. Dry-run by default (prints a
+  preview + total size); `--yes` performs deletion. Default cutoff is
+  30 days; value clamped to a minimum of 1 day. Real installs accumulate
+  thousands of `cc-*` dirs from long-running hooks — this gives a clean
+  way to reclaim disk without a manual `rm -rf`.
+
 ### Quality
 - test: 12 new tests in `test_transcript_context.py` — helper edge cases
   (missing/empty/oversized files, zero window) + integration assertion
   that `context` pattern fires at 85% proxy fullness.
-- 1451 tests passing.
+- test: 10 new tests in `test_prune_cli.py` covering stale detection,
+  dry-run vs `--yes`, missing dirs, and day-count clamping.
+- 1461 tests passing.
 
 ## 2026.4.4
 
