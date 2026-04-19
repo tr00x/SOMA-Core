@@ -31,6 +31,12 @@ _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 # Pattern priority within same severity (higher = wins ties)
 _PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1}
 
+# Canonical list of pattern keys that real production guidance paths emit.
+# Dashboard ROI whitelisting and any future analytics filter should import
+# this tuple rather than re-declare the set — single source of truth.
+# `_stats` is the aggregate row written by the analytics recorder.
+REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys()) + ("_stats",)
+
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
     (["permission denied", "access denied"], "check file permissions or run with appropriate access"),

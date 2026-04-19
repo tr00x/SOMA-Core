@@ -15,6 +15,14 @@ Released April 19, 2026.
 - fix: analytics `context_usage` column now uses `max(engine, transcript_proxy)`
   so cross-session trend graphs reflect real context growth.
 
+### Dashboard: single source of truth for pattern whitelist
+- refactor: `_REAL_PATTERN_KEYS` in `dashboard/data.py` now imports
+  `REAL_PATTERN_KEYS` from `contextual_guidance` (derived from
+  `_PATTERN_PRIORITY` + `"_stats"`). Adding a new pattern to the
+  priority map automatically unblocks it on the ROI dashboard — no
+  second place to update and no way for the whitelist to drift apart
+  from the evaluator.
+
 ### CLI: soma prune
 - add: `soma prune [--older-than DAYS] [--yes]` removes stale session
   directories from `~/.soma/sessions/`. Dry-run by default (prints a
@@ -29,7 +37,9 @@ Released April 19, 2026.
   that `context` pattern fires at 85% proxy fullness.
 - test: 10 new tests in `test_prune_cli.py` covering stale detection,
   dry-run vs `--yes`, missing dirs, and day-count clamping.
-- 1461 tests passing.
+- test: 2 new tests asserting `REAL_PATTERN_KEYS` stays derived from
+  `_PATTERN_PRIORITY` and that `dashboard.data` imports the same object.
+- 1463 tests passing.
 
 ## 2026.4.4
 

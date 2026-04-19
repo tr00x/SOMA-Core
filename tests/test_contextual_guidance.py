@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from soma.contextual_guidance import ContextualGuidance, GuidanceMessage, _suggest_for_error
+from soma.contextual_guidance import (
+    ContextualGuidance,
+    GuidanceMessage,
+    REAL_PATTERN_KEYS,
+    _PATTERN_PRIORITY,
+    _suggest_for_error,
+)
 
 
 @pytest.fixture
@@ -812,3 +818,20 @@ def test_followthrough_pressure_signal_ignored_when_absent():
     pending = {"pattern": "drift", "actions_since": 0}
     result = check_followthrough(pending, "Bash", {}, "", error=False)
     assert result is None
+
+
+# ── Whitelist single-source-of-truth (P1.7) ──
+
+def test_real_pattern_keys_is_priority_plus_stats():
+    """REAL_PATTERN_KEYS must stay derived from _PATTERN_PRIORITY so
+    the dashboard whitelist and the live guidance evaluator never drift
+    apart. Adding a pattern to priority should automatically whitelist it.
+    """
+    expected = tuple(_PATTERN_PRIORITY.keys()) + ("_stats",)
+    assert REAL_PATTERN_KEYS == expected
+
+
+def test_dashboard_imports_same_whitelist():
+    """dashboard.data must import the canonical whitelist, not redeclare it."""
+    from soma.dashboard.data import _REAL_PATTERN_KEYS
+    assert _REAL_PATTERN_KEYS is REAL_PATTERN_KEYS
