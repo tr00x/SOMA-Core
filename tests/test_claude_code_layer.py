@@ -35,6 +35,15 @@ def soma_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("soma.hooks.common.SOMA_DIR", fake_soma)
     monkeypatch.setattr("soma.hooks.common.ENGINE_STATE_PATH", fake_soma / "engine_state.json")
     monkeypatch.setattr("soma.hooks.common.STATE_PATH", fake_soma / "state.json")
+    # Also redirect calibration + blocks so statusline/strict paths
+    # don't leak into the real ~/.soma across tests.
+    monkeypatch.setattr("soma.calibration.SOMA_DIR", fake_soma)
+    monkeypatch.setattr("soma.blocks.SOMA_DIR", fake_soma)
+    monkeypatch.setattr("soma.state.SOMA_DIR", fake_soma)
+    # Pre-seed a calibrated profile so the statusline doesn't print
+    # the warmup override — tests of the normal line expect real output.
+    from soma.calibration import CalibrationProfile, save_profile
+    save_profile(CalibrationProfile(family="claude-code", action_count=200))
     # Pin agent ID to "claude-code" in tests so all existing tests work
     monkeypatch.setattr("soma.hooks.common._get_session_agent_id", lambda: "claude-code")
     return fake_soma
