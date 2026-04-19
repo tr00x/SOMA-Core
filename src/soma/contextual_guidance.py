@@ -34,8 +34,8 @@ _PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cas
 # Canonical list of pattern keys that real production guidance paths emit.
 # Dashboard ROI whitelisting and any future analytics filter should import
 # this tuple rather than re-declare the set — single source of truth.
-# `_stats` is the aggregate row written by the analytics recorder.
-REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys()) + ("_stats",)
+# `_stats` was dropped in v2026.5.0 (largest fatigue source, 31% helped).
+REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys())
 
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [

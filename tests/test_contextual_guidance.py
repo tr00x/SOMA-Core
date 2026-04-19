@@ -822,13 +822,16 @@ def test_followthrough_pressure_signal_ignored_when_absent():
 
 # ── Whitelist single-source-of-truth (P1.7) ──
 
-def test_real_pattern_keys_is_priority_plus_stats():
+def test_real_pattern_keys_matches_priority():
     """REAL_PATTERN_KEYS must stay derived from _PATTERN_PRIORITY so
     the dashboard whitelist and the live guidance evaluator never drift
     apart. Adding a pattern to priority should automatically whitelist it.
+
+    v2026.5.0: `_stats` was dropped from emission, so it's no longer in
+    the whitelist either — the two must remain identical.
     """
-    expected = tuple(_PATTERN_PRIORITY.keys()) + ("_stats",)
-    assert REAL_PATTERN_KEYS == expected
+    assert REAL_PATTERN_KEYS == tuple(_PATTERN_PRIORITY.keys())
+    assert "_stats" not in REAL_PATTERN_KEYS
 
 
 def test_dashboard_imports_same_whitelist():
