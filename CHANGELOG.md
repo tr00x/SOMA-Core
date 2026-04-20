@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026.5.1
+
+Released April 20, 2026.
+
+Post-release self-audit uncovered 12 real bugs in the 5.0 surface.
+All fixed here. Upgrade strongly recommended — 5.0 shipped with
+the entropy_drop ceiling logic inverted, meaning diverse users
+saw *more* false positives, not fewer.
+
+### Fixes
+- **entropy_drop ceiling inversion** — 5.0 used personal P75 as the
+  healthy-diversity ceiling, which made the pattern more aggressive
+  for diverse users (opposite of intent). Now uses P25 clamped to
+  [0.5, 1.0] so a focused user's own low baseline is the floor and
+  diverse users see legacy behavior.
+- **calibration action-count integrity** — `profile.advance()` could
+  double-count or lose actions if `save_profile` raised after the
+  advance. Save now runs first; distribution refresh is a
+  self-healing retry when defaults remain after a phase transition.
+- **stop summary missed strict blocks** — strict-mode blocks are
+  recorded with `mode="strict"` but the end-of-session counter only
+  checked `"BLOCK"`. Now counts both.
+- **typical_retry_burst duplicated error_burst** — two distinct
+  fields computed identical values. `compute_distributions` accepts
+  an optional `bash_retry_history` to decouple them.
+- **SQLite FD leak** — `maybe_refresh_silence` opened an
+  `AnalyticsStore` every `SILENCE_REFRESH_INTERVAL` actions and
+  never closed it. Now closes connections it owns.
+- **bell marker ordering** — pre_tool_use wrote the bell character
+  before creating the once-only marker, so a partial filesystem
+  failure could cause the bell to re-fire on every block.
+- **mirror semantic path still emitted _stats** — CHANGELOG said
+  "`_stats` no longer emits", but the semantic branch still
+  prepended a stats one-liner. Now honestly no stats output on any
+  branch.
+- **`soma unblock --all --pattern X`** — silently dropped the
+  pattern before. Now exits with an error when both are passed.
+- **corrupt profile wipes** — `load_profile` on corrupt JSON
+  silently started fresh; user lost accumulated calibration with
+  no way to inspect. Now renames to `.corrupt` first.
+- **statusline hot-path cost** — warmup probe now does a cheap
+  mtime check before parsing JSON so Claude Code's frequent polling
+  doesn't pay the JSON parse on every render.
+- **`__version__` hardcoded** — was stuck at "2026.4.0" in
+  `soma/__init__.py`. Now derives from `importlib.metadata` so
+  `pyproject.toml` is the single source of truth.
+- **CLI --help epilog missing** — `soma prune`, `soma unblock`,
+  `soma healing` were missing from the top-level help listing.
+
+### Quality
+- 8 new regression tests in `test_audit_regressions.py` pin each
+  bug so it cannot silently come back.
+- 1569 tests passing.
+
 ## 2026.5.0
 
 Released April 20, 2026.
