@@ -333,7 +333,7 @@ def test_healing_suggestion_prefers_analytics_when_available(monkeypatch):
     monkeypatch.setattr(
         "soma.contextual_guidance._load_healing_from_analytics",
         lambda: {
-            "Bash": ("Write", f"Bash→Write reduces pressure by 4.4% (n=95)"),
+            "Bash": ("Write", "Bash→Write reduces pressure by 4.4% (n=95)"),
         },
     )
     cg_mod._reset_healing_cache()
