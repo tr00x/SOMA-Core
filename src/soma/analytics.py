@@ -56,6 +56,25 @@ class AnalyticsStore:
                 pressure_after REAL
             )
         """)
+        # A/B-controlled outcomes — v2026.5.3. Each firing is assigned to
+        # 'treatment' or 'control'; for control we suppress the guidance
+        # message but still record pressure_before/after so we can later
+        # run a paired-sample test against treatment deltas.
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS ab_outcomes (
+                timestamp REAL NOT NULL,
+                agent_family TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                arm TEXT NOT NULL CHECK(arm IN ('treatment', 'control')),
+                pressure_before REAL,
+                pressure_after REAL,
+                followed INTEGER DEFAULT 0
+            )
+        """)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ab_outcomes_pat_fam "
+            "ON ab_outcomes(pattern, agent_family, timestamp)"
+        )
         # Migrate existing DBs: add source/soma_version columns if missing
         try:
             self._conn.execute("SELECT source FROM actions LIMIT 0")
@@ -186,6 +205,87 @@ class AnalyticsStore:
         fires = len(rows)
         helped = sum(1 for r in rows if r[0])
         return {"fires": fires, "helped": helped}
+
+    def record_ab_outcome(
+        self,
+        *,
+        agent_family: str,
+        pattern: str,
+        arm: str,
+        pressure_before: float,
+        pressure_after: float | None,
+        followed: bool = False,
+    ) -> None:
+        """Insert a row into ``ab_outcomes``.
+
+        ``pressure_after`` is nullable because the hook records
+        ``pressure_before`` at firing time and updates the row later when
+        the next action's pressure is known. In practice we insert both
+        at once with the pressure at the time of the *next* tool-use
+        event; this method is the single write-path used by the A/B
+        controller.
+        """
+        if arm not in ("treatment", "control"):
+            raise ValueError(f"arm must be 'treatment' or 'control', got {arm!r}")
+        self._conn.execute(
+            "INSERT INTO ab_outcomes "
+            "(timestamp, agent_family, pattern, arm, pressure_before, pressure_after, followed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), agent_family, pattern, arm,
+             pressure_before, pressure_after, int(followed)),
+        )
+        self._conn.commit()
+
+    def get_ab_outcomes(
+        self, pattern: str, agent_family: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch A/B outcomes for a pattern, newest first.
+
+        ``agent_family=None`` aggregates across families — used by the
+        ``soma validate-patterns`` CLI in global mode. Rows with
+        ``pressure_after IS NULL`` are excluded; they're incomplete
+        recordings (next action never arrived, e.g. session ended).
+        """
+        if agent_family is None:
+            cursor = self._conn.execute(
+                "SELECT timestamp, agent_family, pattern, arm, "
+                "pressure_before, pressure_after, followed "
+                "FROM ab_outcomes WHERE pattern = ? "
+                "AND pressure_after IS NOT NULL "
+                "ORDER BY timestamp DESC",
+                (pattern,),
+            )
+        else:
+            cursor = self._conn.execute(
+                "SELECT timestamp, agent_family, pattern, arm, "
+                "pressure_before, pressure_after, followed "
+                "FROM ab_outcomes WHERE pattern = ? AND agent_family = ? "
+                "AND pressure_after IS NOT NULL "
+                "ORDER BY timestamp DESC",
+                (pattern, agent_family),
+            )
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def list_ab_patterns(self, agent_family: str | None = None) -> list[str]:
+        """Return unique patterns with at least one ab_outcomes row.
+
+        Used by ``soma validate-patterns`` to auto-enumerate which
+        patterns have enough data to try validation.
+        """
+        if agent_family is None:
+            cursor = self._conn.execute(
+                "SELECT DISTINCT pattern FROM ab_outcomes "
+                "WHERE pressure_after IS NOT NULL ORDER BY pattern"
+            )
+        else:
+            cursor = self._conn.execute(
+                "SELECT DISTINCT pattern FROM ab_outcomes "
+                "WHERE agent_family = ? AND pressure_after IS NOT NULL "
+                "ORDER BY pattern",
+                (agent_family,),
+            )
+        return [row[0] for row in cursor.fetchall()]
 
     def get_tool_stats(self, agent_id: str) -> dict[str, int]:
         """Return tool usage counts for an agent across all sessions."""

@@ -25,7 +25,8 @@ def _isolated_soma(tmp_path, monkeypatch):
 # ── Statusline: warmup shows learning progress ──────────────────────
 
 def test_statusline_warmup_shows_learning_counter(tmp_path, monkeypatch, capsys):
-    _cal.save_profile(CalibrationProfile(family="cc", action_count=47))
+    warmup_count = max(1, WARMUP_EXIT_ACTIONS - 5)
+    _cal.save_profile(CalibrationProfile(family="cc", action_count=warmup_count))
 
     class _FakeSnap(dict):
         pass
@@ -33,7 +34,7 @@ def test_statusline_warmup_shows_learning_counter(tmp_path, monkeypatch, capsys)
         def get_snapshot(self, _):
             return {
                 "level": _Level("GUIDE"), "pressure": 0.2,
-                "action_count": 47, "vitals": {},
+                "action_count": warmup_count, "vitals": {},
             }
     class _Level:
         def __init__(self, name): self.name = name
@@ -43,7 +44,7 @@ def test_statusline_warmup_shows_learning_counter(tmp_path, monkeypatch, capsys)
 
     _sl.main()
     out = capsys.readouterr().out
-    assert f"learning 47/{WARMUP_EXIT_ACTIONS}" in out
+    assert f"learning {warmup_count}/{WARMUP_EXIT_ACTIONS}" in out
 
 
 def test_statusline_calibrated_phase_shows_normal_line(tmp_path, monkeypatch, capsys):
@@ -95,7 +96,10 @@ def test_statusline_shows_red_block_indicator(tmp_path, monkeypatch, capsys):
 def test_stop_hook_prints_summary_with_calibration_phase(
     tmp_path, monkeypatch, capsys,
 ):
-    _cal.save_profile(CalibrationProfile(family="cc", action_count=250))
+    # Land inside the calibrated band, never past CALIBRATED_EXIT_ACTIONS.
+    from soma.calibration import CALIBRATED_EXIT_ACTIONS as _CE
+    calibrated_count = (WARMUP_EXIT_ACTIONS + _CE) // 2
+    _cal.save_profile(CalibrationProfile(family="cc", action_count=calibrated_count))
 
     # Stub engine so stop() has something to work with.
     class _Level:
@@ -103,7 +107,7 @@ def test_stop_hook_prints_summary_with_calibration_phase(
     class _FakeEngine:
         def get_snapshot(self, _):
             return {
-                "action_count": 250, "pressure": 0.18,
+                "action_count": calibrated_count, "pressure": 0.18,
                 "level": _Level("GUIDE"), "vitals": {},
             }
         _agents = {"cc-99": None}

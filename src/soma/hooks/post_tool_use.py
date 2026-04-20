@@ -53,6 +53,10 @@ def _record_outcome_if_resolved(
 
     Bridges the gap between audit.jsonl firings and the dashboard's
     guidance_outcomes table so ROI metrics reflect real production patterns.
+
+    v2026.5.3: also writes to ``ab_outcomes`` when the pending dict
+    carries an ``ab_arm`` field so the ``soma validate-patterns`` CLI
+    can run a proper causal test on treatment vs control Δp.
     """
     if not _is_real_production_agent(agent_id):
         return
@@ -67,6 +71,21 @@ def _record_outcome_if_resolved(
             pressure_at_injection=float(pending.get("pressure_at_injection", 0.0)),
             pressure_after=float(pressure_after),
         )
+        # A/B twin: only record if the firing was tagged with an arm.
+        arm = pending.get("ab_arm")
+        if arm in ("treatment", "control"):
+            try:
+                from soma.calibration import calibration_family
+                store.record_ab_outcome(
+                    agent_family=calibration_family(agent_id),
+                    pattern=pending.get("pattern", ""),
+                    arm=arm,
+                    pressure_before=float(pending.get("pressure_at_injection", 0.0)),
+                    pressure_after=float(pressure_after),
+                    followed=bool(followed),
+                )
+            except Exception:
+                pass
     except Exception:
         pass  # Never crash the hook for analytics
 
@@ -476,9 +495,12 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 _tool_input = data.get("tool_input", {})
                 if not isinstance(_tool_input, dict):
                     _tool_input = {}
+                from soma.hooks.common import read_action_log as _read_al
+                _recent_actions = _read_al(agent_id)[-10:]
                 followed = check_followthrough(
                     pending, tool_name, _tool_input, file_path, error,
                     pressure_after=pressure,
+                    recent_actions=_recent_actions,
                 )
                 if followed is None:
                     pending["actions_since"] = pending.get("actions_since", 0) + 1
@@ -678,16 +700,40 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             from soma.hooks.common import write_guidance_cooldowns
             write_guidance_cooldowns(cg._last_fired, agent_id)
             if cg_msg:
-                # stdout → appended to tool response (deep injection)
-                print(f"\n{cg_msg.message}")
+                # v2026.5.3 A/B gate. Split 50/50 so we can later measure
+                # whether injection actually causes a pressure drop vs
+                # just correlates with agent recovery. Warmup stays in
+                # treatment arm — the gate's there to validate patterns,
+                # not to suppress the first 30 actions' worth of signal.
+                from soma import ab_control
+                arm = "treatment"
+                try:
+                    from soma.calibration import calibration_family
+                    family = calibration_family(agent_id)
+                    # Skip A/B entirely while warming up so the first 30
+                    # actions always see guidance if a pattern fires — it
+                    # keeps the install demo-visible.
+                    if profile is not None and not profile.is_warmup():
+                        arm = ab_control.should_inject(
+                            cg_msg.pattern, family, len(cg_action_log),
+                        )
+                except Exception:
+                    arm = "treatment"
+
+                if arm == "treatment":
+                    # stdout → appended to tool response (deep injection)
+                    print(f"\n{cg_msg.message}")
                 # Strict mode: turn the firing pattern into a persistent
                 # block against this tool so the next PreToolUse gates
                 # the retry. Only registered in strict + non-warmup so
-                # a fresh install never hard-gates.
+                # a fresh install never hard-gates. Control arm skips
+                # the block too — it's part of the "as if not injected"
+                # contract.
                 try:
                     from soma.hooks.common import get_soma_mode
                     if (
-                        get_soma_mode(agent_id) == "strict"
+                        arm == "treatment"
+                        and get_soma_mode(agent_id) == "strict"
                         and profile is not None and not profile.is_warmup()
                         and cg_msg.pattern in _STRICT_BLOCK_PATTERNS
                     ):
@@ -708,19 +754,35 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         save_block_state(bs)
                 except Exception:
                     pass
-                # Record follow-through for next action evaluation
+                # Record follow-through for next action evaluation — for
+                # BOTH arms. We need control's pressure_after to compare
+                # against treatment's.
                 followthrough_data = {
                     "pattern": cg_msg.pattern,
                     "suggestion": cg_msg.suggestion,
                     "actions_since": 0,
                     "pressure_at_injection": pressure,
+                    "ab_arm": arm,
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
                 elif cg_msg.pattern in ("entropy_drop", "bash_retry"):
                     followthrough_data["tool"] = tool_name
+                elif cg_msg.pattern == "error_cascade":
+                    # Track which tools were failing so stricter
+                    # followthrough can demand a tool *switch*.
+                    failing: list[str] = []
+                    for entry in reversed(cg_action_log[-10:]):
+                        if entry.get("error"):
+                            tn = entry.get("tool")
+                            if tn and tn not in failing:
+                                failing.append(tn)
+                        else:
+                            break
+                    followthrough_data["failing_tools"] = failing
                 write_guidance_followthrough(followthrough_data, agent_id)
-                # Audit
+                # Audit — still log both arms (with the arm tag) so
+                # audit.jsonl stays the source of truth.
                 try:
                     from soma.audit import AuditLogger
                     logger = AuditLogger()
@@ -731,7 +793,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         pressure=pressure,
                         mode=cg_msg.severity,
                         type="contextual_guidance",
-                        detail=cg_msg.message,
+                        detail=f"[{arm}] {cg_msg.message}",
                         pattern=cg_msg.pattern,
                     )
                 except Exception:

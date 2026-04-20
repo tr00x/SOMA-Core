@@ -61,7 +61,10 @@ def _compute_tool_entropy(action_log: list[dict], window: int = 10) -> float:
     return -sum((c / total) * math.log2(c / total) for c in counts.values())
 
 
-# Data-backed healing transitions from production actions
+# Data-backed healing transitions from production actions. Used as a
+# fallback when no per-user calibration data is available. These defaults
+# are re-derived from Timur's April 2026 analytics run (measure_transitions
+# results at the time of v2026.5.3).
 _HEALING_TRANSITIONS: dict[str, tuple[str, str]] = {
     "Bash": ("Read", "Bash→Read reduces pressure by 7%"),
     "Edit": ("Read", "Edit→Read reduces pressure by 5%"),
@@ -69,10 +72,80 @@ _HEALING_TRANSITIONS: dict[str, tuple[str, str]] = {
 }
 
 
-def _healing_suggestion(failing_tool: str) -> str:
-    """Suggest a healing tool transition based on production data."""
-    if failing_tool in _HEALING_TRANSITIONS:
-        heal_tool, evidence = _HEALING_TRANSITIONS[failing_tool]
+# Cache for per-user healing transitions measured off analytics.db. Keyed
+# by the failing tool; value is ``(heal_tool, evidence_text)``. Populated
+# lazily on first call and refreshed at most once per SOMAEngine process
+# (re-computing is cheap but we don't want to hit sqlite every hook).
+_HEALING_CACHE: dict[str, tuple[str, str]] | None = None
+
+
+def _load_healing_from_analytics() -> dict[str, tuple[str, str]]:
+    """Derive the best healing tool for each failing tool from analytics.
+
+    Returns ``{failing_tool: (heal_tool, evidence_sentence)}``. Uses
+    :func:`soma.healing_validation.measure_transitions` with the default
+    ``min_n=20`` threshold. Falls back to the hardcoded defaults when the
+    DB is empty or the measurement raises.
+    """
+    try:
+        from soma.healing_validation import measure_transitions
+        rows = measure_transitions()
+    except Exception:
+        return dict(_HEALING_TRANSITIONS)
+
+    # For each failing_tool, pick the transition with the most negative
+    # delta (strongest healing). Skip positive-delta pairs.
+    best: dict[str, tuple[str, float, int]] = {}
+    for r in rows:
+        if r.delta >= 0:
+            continue
+        if "→" not in r.transition:
+            continue
+        prev_tool, next_tool = r.transition.split("→", 1)
+        cur = best.get(prev_tool)
+        if cur is None or r.delta < cur[1]:
+            best[prev_tool] = (next_tool, r.delta, r.n)
+
+    if not best:
+        return dict(_HEALING_TRANSITIONS)
+
+    result: dict[str, tuple[str, str]] = {}
+    for prev_tool, (next_tool, delta, n) in best.items():
+        # Convert "-0.033" to "3.3%" for the agent-facing message.
+        pct = abs(delta) * 100.0
+        evidence = f"{prev_tool}→{next_tool} reduces pressure by {pct:.1f}% (n={n})"
+        result[prev_tool] = (next_tool, evidence)
+    # Keep hardcoded defaults for any tools we haven't measured yet.
+    for k, v in _HEALING_TRANSITIONS.items():
+        result.setdefault(k, v)
+    return result
+
+
+def _healing_table(use_analytics: bool = True) -> dict[str, tuple[str, str]]:
+    """Return the active healing-transition table.
+
+    Caches the result on first call; set ``use_analytics=False`` (tests,
+    offline runs) to short-circuit the DB read.
+    """
+    global _HEALING_CACHE
+    if not use_analytics:
+        return dict(_HEALING_TRANSITIONS)
+    if _HEALING_CACHE is None:
+        _HEALING_CACHE = _load_healing_from_analytics()
+    return _HEALING_CACHE
+
+
+def _reset_healing_cache() -> None:
+    """Test hook: force the healing table to re-read analytics on next call."""
+    global _HEALING_CACHE
+    _HEALING_CACHE = None
+
+
+def _healing_suggestion(failing_tool: str, use_analytics: bool = True) -> str:
+    """Suggest a healing tool transition, preferring measured per-user data."""
+    table = _healing_table(use_analytics=use_analytics)
+    if failing_tool in table:
+        heal_tool, evidence = table[failing_tool]
         return f"{heal_tool} next ({evidence})"
     return "Read the relevant files to re-establish context"
 
@@ -164,6 +237,19 @@ def _resolve_via_pressure(pressure_delta: float | None, actions_since: int) -> b
     return None
 
 
+def _pressure_dropped(pressure_delta: float | None) -> bool:
+    """Strict pressure-drop check used by stricter followthrough.
+
+    v2026.5.3: instead of resolving purely on Δp, ``helped`` now
+    requires BOTH a real drop AND an expected recovery action. This
+    helper isolates the Δp half so each pattern branch can compose it
+    with its own recovery test.
+    """
+    if pressure_delta is None:
+        return False
+    return pressure_delta >= _PRESSURE_DROP_HELPED
+
+
 def check_followthrough(
     pending: dict,
     tool_name: str,
@@ -171,14 +257,20 @@ def check_followthrough(
     file_path: str,
     error: bool,
     pressure_after: float | None = None,
+    recent_actions: list[dict] | None = None,
 ) -> bool | None:
     """Check if the agent followed contextual guidance.
 
     Returns True if followed, False if ignored, None if inconclusive (keep waiting).
 
-    When `pressure_after` is provided, patterns without explicit followthrough
-    semantics (drift, cost_spiral, context, budget, error_cascade) resolve via
-    pressure delta: a drop of >=15% = True, a non-drop after 2 actions = False.
+    v2026.5.3 — stricter semantics: ``helped`` now requires BOTH a
+    pressure drop ≥15% AND a pattern-specific recovery action. The old
+    rule (pressure drop alone) over-credited SOMA for moments of
+    natural recovery; adding the recovery check makes ``helped %`` a
+    causal signal rather than a coincidence detector. ``recent_actions``
+    is the chronological action log (oldest→newest) used for entropy
+    / diversity checks; when omitted we fall back to the less strict
+    single-action view for backward compatibility.
     """
     pattern = pending.get("pattern", "")
     actions_since = pending.get("actions_since", 0) + 1
@@ -196,27 +288,58 @@ def check_followthrough(
             pressure_delta = None
 
     if pattern == "blind_edit":
-        # Did they read the file?
         suggested_file = pending.get("file", "")
+        # Recovery action = Read (preferably of the same file).
         if tool_name in ("Read", "Grep", "Glob"):
             if not suggested_file or file_path == suggested_file:
                 return True
-        if tool_name in ("Edit", "Write"):
-            return False  # Edited again without reading
-        return None  # Still waiting
+            # Related Read (e.g. Grep without exact path match) only
+            # counts when pressure actually dropped — otherwise it may
+            # just be unrelated exploration.
+            return True if _pressure_dropped(pressure_delta) else None
+        # A second edit without an intervening Read = ignored.
+        if tool_name in ("Edit", "Write", "NotebookEdit"):
+            return False
+        return None
 
     if pattern == "error_cascade":
-        if not error:
-            return True  # Next action succeeded
-        return _resolve_via_pressure(pressure_delta, actions_since)
+        # Strict: "helped" requires a tool *switch* (not the failing tool)
+        # AND a real pressure drop. Success on the same tool without a
+        # pressure drop is just noise.
+        failing_tools = set(pending.get("failing_tools") or [])
+        if not failing_tools:
+            # Hooks written before v2026.5.3 don't set failing_tools.
+            # Fallback to Bash-heavy cascade heuristic so we never skip
+            # evaluation — but this path won't produce a "True" unless
+            # pressure drops.
+            failing_tools = {"Bash"}
+        if tool_name not in failing_tools and not error:
+            if _pressure_dropped(pressure_delta):
+                return True
+            # Tool switched but pressure flat: inconclusive.
+            return None
+        # Same tool or still error: if pressure dropped it's a
+        # coincidence, not a followthrough.
+        if actions_since >= _PRESSURE_FALSE_ACTIONS and not _pressure_dropped(pressure_delta):
+            return False
+        return None
 
     if pattern == "context":
-        # Did they compact/summarize?
-        if tool_name in ("Bash",) and isinstance(tool_input, dict):
-            cmd = tool_input.get("command", "")
-            if "compact" in cmd.lower() or "summarize" in cmd.lower():
+        # Two valid recoveries: (a) user compacted, or (b) agent wrote a
+        # NEXT.md / summary file and committed. Pressure-only recovery
+        # for this pattern is nearly always a drift in the transcript
+        # estimate, not an actual fix — so we require evidence.
+        if tool_name == "Bash" and isinstance(tool_input, dict):
+            cmd = tool_input.get("command", "").lower()
+            if any(kw in cmd for kw in ("compact", "summarize", "git commit")):
                 return True
-        return _resolve_via_pressure(pressure_delta, actions_since)
+        if tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
+            fp = (tool_input.get("file_path") or tool_input.get("path") or "").lower()
+            if fp.endswith("next.md") or "handoff" in fp or "summary" in fp:
+                return True
+        if actions_since >= _PRESSURE_FALSE_ACTIONS:
+            return False
+        return None
 
     if pattern == "budget":
         # Did they commit/wrap up?
@@ -230,23 +353,36 @@ def check_followthrough(
         return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "entropy_drop":
-        # Did they diversify tools?
         failing_tool = pending.get("tool", "")
-        if tool_name != failing_tool:
-            return True  # Switched to different tool — good
-        if actions_since >= 3:
-            return False  # Still monotool after 3 actions — ignored
-        return None
+        if tool_name == failing_tool:
+            if actions_since >= 3:
+                return False  # Still monotool after 3 actions — ignored
+            return None
+        # Different tool — but require actual diversity to have risen
+        # over the followthrough window, not just one odd tool then back
+        # to the monotool.
+        if recent_actions is not None and len(recent_actions) >= 3:
+            window = recent_actions[-3:]
+            distinct = {a.get("tool") for a in window if a.get("tool")}
+            if len(distinct) < 2:
+                return None  # One-off; keep waiting
+            return True if _pressure_dropped(pressure_delta) or len(distinct) >= 3 else None
+        # No recent_actions context — legacy fallback: one-step switch counts.
+        return True
 
     if pattern == "bash_retry":
-        # Did they stop retrying Bash?
+        # Required recovery = Read OR a different command family (not
+        # another Bash retry).
+        if tool_name == "Read" or tool_name == "Grep":
+            return True
         if tool_name != "Bash":
-            return True  # Good — switched away
-        if tool_name == "Bash" and not error:
-            return True  # Bash succeeded
-        if tool_name == "Bash" and error:
-            return False  # Still retrying
-        return None
+            return True if _pressure_dropped(pressure_delta) else None
+        # Same tool (Bash).
+        if not error:
+            # Bash succeeded but same tool — credit only if pressure
+            # actually dropped (avoids counting natural successes).
+            return True if _pressure_dropped(pressure_delta) else None
+        return False  # Still retrying Bash with another error.
 
     return None
 
@@ -359,7 +495,12 @@ class ContextualGuidance:
     def _check_blind_edit(
         self, action_log: list[dict], current_tool: str, current_input: dict,
     ) -> GuidanceMessage | None:
-        if current_tool not in ("Edit", "Write", "NotebookEdit"):
+        # v2026.5.3 — narrowed to Write / NotebookEdit only. Claude Code
+        # already forces a Read before Edit, so firing on Edit produced
+        # a stream of 0%-helped duplicates (47% "helped" in analytics
+        # was almost entirely noise from the built-in guard). Write +
+        # NotebookEdit are the tools that actually *can* run blindly.
+        if current_tool not in ("Write", "NotebookEdit"):
             return None
 
         file_path = ""
@@ -465,9 +606,13 @@ class ContextualGuidance:
 
         dominant_tool = tool_counts.most_common(1)[0][0] if tool_counts else "Bash"
         heal = _healing_suggestion(dominant_tool)
+        # v2026.5.3 — data-driven suggestion. The healing evidence is
+        # already baked into `_healing_suggestion`'s string, so the
+        # rendered tip now carries the agent's own analytics numbers
+        # when available.
         suggestion = f"step back and try {heal}"
         if tool_counts.get("Bash", 0) >= 2:
-            suggestion = f"stop running commands — {heal}"
+            suggestion = f"stop running Bash — {heal}"
         elif tool_counts.get("Edit", 0) >= 2:
             suggestion = f"read the files you're editing — {heal}"
 
@@ -475,9 +620,10 @@ class ContextualGuidance:
             pattern="error_cascade",
             severity="critical" if consecutive >= 5 else "warn",
             message=(
-                f"[SOMA] {consecutive} errors in a row. "
+                f"[SOMA] {consecutive} consecutive errors on {pattern_summary}. "
                 f'Last error: "{error_preview}". '
-                f"Pattern: {pattern_summary}. Suggestion: {suggestion}."
+                f"Historical data says {heal} — "
+                f"write a minimal reproduction or read the relevant file before retrying."
             ),
             evidence=tuple(
                 f"{t} error" for t in error_tools[:3]
@@ -509,21 +655,31 @@ class ContextualGuidance:
 
     def _check_context_window(self, vitals: dict) -> GuidanceMessage | None:
         token_usage = vitals.get("token_usage", 0) or vitals.get("context_usage", 0)
-        if token_usage < 0.8:
+        # v2026.5.3 — fire at 60% instead of 80%. Firing at 80% in the
+        # old measurement left no time to wrap up coherently; the
+        # dataset showed pressure *rising* after the message, which
+        # means it arrived too late for anyone to act on. 60% gives
+        # ~20% of the window to land a summary + commit.
+        if token_usage < 0.6:
             return None
 
         pct = int(token_usage * 100)
-        severity = "critical" if token_usage > 0.95 else "warn"
+        # Critical only after we're actually near the wall. Between
+        # 60-80% stays "warn".
+        severity = "critical" if token_usage > 0.9 else "warn"
 
         return GuidanceMessage(
             pattern="context",
             severity=severity,
             message=(
-                f"[SOMA] Context window is {pct}% full. "
-                f"Consider compacting or summarizing before continuing."
+                f"[SOMA] Long session detected ({pct}% context used). Wrap up now: "
+                "commit progress, write a 2-sentence summary in NEXT.md for the next "
+                "session to pick up, and avoid starting new refactors. "
+                "The /compact command is user-initiated — you can't run it, but you "
+                "can make the handoff clean."
             ),
             evidence=(f"Context at {pct}%",),
-            suggestion="compact conversation or start a new context",
+            suggestion="commit progress, write NEXT.md handoff summary, finish current task",
         )
 
     # ── Pattern 6: Drift Detection ──
@@ -650,8 +806,9 @@ class ContextualGuidance:
             severity="warn",
             message=(
                 f'[SOMA] Bash just failed: "{error_preview}". '
-                f"Running another Bash without reading the error won't help. "
-                f"Try: {heal}."
+                f"Running another Bash without reading the error rarely helps. "
+                f"Your analytics: {heal} — prefer writing a minimal reproduction "
+                "or reading the failing file over re-running the same command."
             ),
             evidence=("Bash error, next action = Bash retry",),
             suggestion=heal,

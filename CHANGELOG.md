@@ -1,5 +1,70 @@
 # Changelog
 
+## 2026.5.3
+
+Released April 20, 2026.
+
+**The "proof pipeline" release.** Every "X% helped" number SOMA
+reported before this build was a *correlational* claim — pressure
+dropped after the message, so the message worked. It could just as
+easily have been the agent recovering on its own. This release adds
+the missing counterfactual: a 50/50 treatment/control split per
+firing, with Welch's t-test classification after ≥30 pairs per arm.
+The `soma validate-patterns` CLI reports which patterns have earned
+a `validated` / `refuted` / `inconclusive` / `collecting` label.
+
+### New
+- **A/B controller (`soma.ab_control`)** — deterministic
+  `hash(family|pattern|action_number) % 2` split, opt-out via
+  `SOMA_DISABLE_AB=1`. For control arm: guidance message is
+  computed and both arms' `pressure_before` / `pressure_after` are
+  recorded to a new `ab_outcomes` table, but the message is *not*
+  surfaced to the agent. After ≥30 pairs per arm, Welch's t-test
+  (stdlib only, no scipy) + Cohen's d classifies the pattern.
+- **`soma validate-patterns`** — per-pattern table of treatment
+  mean Δp vs control mean Δp vs diff vs p-value vs status. Flags:
+  `--family`, `--min-pairs`, `--json`.
+- **`ab_outcomes` table** — new schema in `analytics.db` with a
+  `(pattern, agent_family, timestamp)` index; `CREATE TABLE IF NOT
+  EXISTS` keeps existing user DBs intact.
+
+### Calibration changes
+- **Warmup threshold 100 → 30, calibrated 500 → 200.** Real-world
+  session length median is ~50 actions; the old 100-action warmup
+  exit left 92% of sessions in warmup forever. 30 samples is still
+  enough for stable P25/P75 percentiles and floors protect degenerate
+  distributions via `LEGACY_FLOORS`.
+
+### Pattern fixes
+- **Stricter `check_followthrough`.** Previously a ≥15% pressure
+  drop alone counted as "helped." The new rule requires BOTH a
+  ≥15% drop AND a pattern-specific recovery action (tool switch for
+  error_cascade; Read/Grep of the same file for blind_edit; Read or
+  command-family switch for bash_retry; real tool-diversity increase
+  for entropy_drop; explicit compact/commit/NEXT.md for context).
+  This collapses previously inflated 100% / 85% / 74% helped rates
+  into honest numbers — fewer "helped", but each one is causal.
+- **`context` fires at 60% instead of 80%** and the suggestion
+  drops `/compact` (a user-only command the agent can't run) in
+  favor of "commit + write NEXT.md handoff."
+- **`blind_edit` narrowed to Write / NotebookEdit only.** Edit is
+  already gated by Claude Code's built-in Read requirement, so the
+  pattern was firing 64× at 47% helped (nearly all noise from
+  duplicating the built-in guard). Write+NotebookEdit are the only
+  tools that can actually run blind.
+- **Data-driven suggestions for `error_cascade` and `bash_retry`.**
+  Healing-transition numbers (`Bash→Write reduces pressure by X%`)
+  are now loaded lazily from `healing_validation.measure_transitions()`
+  so every user's message carries their own measured deltas rather
+  than the frozen April 2026 defaults.
+
+### Quality
+- 33 new tests: `test_ab_control.py` (arm split + stats + SQLite
+  round-trip), `test_validate_patterns_cli.py` (CLI end-to-end), and
+  extended `test_contextual_guidance.py` cases for stricter
+  followthrough, new context threshold, and data-driven suggestions.
+- 1607 tests passing.
+
 ## 2026.5.2
 
 Released April 20, 2026.

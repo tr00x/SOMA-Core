@@ -100,7 +100,7 @@ def test_pre_hook_passes_when_no_matching_block(tmp_path, monkeypatch, capsys):
 
 def test_pre_hook_skips_strict_in_warmup(tmp_path, monkeypatch, capsys):
     _set_strict_mode(monkeypatch)
-    # Warmup profile — action_count < 100.
+    # Warmup profile — action_count below WARMUP_EXIT_ACTIONS.
     prof = _cal.CalibrationProfile(family="cc", action_count=10)
     _cal.save_profile(prof)
 

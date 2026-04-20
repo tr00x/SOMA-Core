@@ -21,15 +21,19 @@ def cg():
 # ── Blind Edit ──
 
 
-def test_blind_edit_detected(cg):
+def test_blind_edit_detected(cg, tmp_path):
+    # v2026.5.3: Edit no longer triggers blind_edit (Claude Code already
+    # gates it). Write to an existing file is the surviving trigger.
+    target = tmp_path / "foo.py"
+    target.write_text("x = 1\n")
     action_log = [
         {"tool": "Bash", "error": False, "file": ""},
         {"tool": "Bash", "error": False, "file": ""},
     ]
     msg = cg.evaluate(
         action_log=action_log,
-        current_tool="Edit",
-        current_input={"file_path": "/src/foo.py"},
+        current_tool="Write",
+        current_input={"file_path": str(target)},
         vitals={},
     )
     assert msg is not None
@@ -38,14 +42,32 @@ def test_blind_edit_detected(cg):
     assert "without reading" in msg.message
 
 
-def test_blind_edit_not_fired_when_file_was_read(cg):
+def test_blind_edit_not_fired_when_file_was_read(cg, tmp_path):
+    target = tmp_path / "foo.py"
+    target.write_text("x = 1\n")
     action_log = [
-        {"tool": "Read", "error": False, "file": "/src/foo.py"},
+        {"tool": "Read", "error": False, "file": str(target)},
     ]
     msg = cg.evaluate(
         action_log=action_log,
+        current_tool="Write",
+        current_input={"file_path": str(target)},
+        vitals={},
+    )
+    assert msg is None or msg.pattern != "blind_edit"
+
+
+def test_blind_edit_not_fired_on_edit_tool(cg, tmp_path):
+    """v2026.5.3: Edit never fires blind_edit — Claude Code's built-in
+    Read requirement handles it. Only Write / NotebookEdit can go blind.
+    """
+    target = tmp_path / "foo.py"
+    target.write_text("x = 1\n")
+    action_log = [{"tool": "Bash", "error": False, "file": ""}]
+    msg = cg.evaluate(
+        action_log=action_log,
         current_tool="Edit",
-        current_input={"file_path": "/src/foo.py"},
+        current_input={"file_path": str(target)},
         vitals={},
     )
     assert msg is None or msg.pattern != "blind_edit"
@@ -58,7 +80,7 @@ def test_blind_edit_includes_file_content(cg, tmp_path):
     action_log = [{"tool": "Bash", "error": False, "file": ""}]
     msg = cg.evaluate(
         action_log=action_log,
-        current_tool="Edit",
+        current_tool="Write",
         current_input={"file_path": str(target)},
         vitals={},
     )
@@ -125,7 +147,7 @@ def test_error_cascade_3_errors(cg):
     )
     assert msg is not None
     assert msg.pattern == "error_cascade"
-    assert "3 errors" in msg.message
+    assert "3 consecutive errors" in msg.message
 
 
 def test_error_cascade_5_is_critical(cg):
@@ -258,6 +280,67 @@ def test_context_window_ok(cg):
         vitals={"token_usage": 0.5},
     )
     assert msg is None or msg.pattern != "context"
+
+
+def test_context_fires_at_60_percent_v2026_5_3(cg):
+    """v2026.5.3 lowered the threshold from 80% → 60% so the wrap-up
+    message arrives while there's still room to commit + hand off."""
+    msg = cg.evaluate(
+        action_log=[],
+        current_tool="Bash",
+        current_input={},
+        vitals={"token_usage": 0.62},
+    )
+    assert msg is not None
+    assert msg.pattern == "context"
+    # New suggestion no longer recommends /compact (user-only).
+    assert "NEXT.md" in msg.message
+    assert "compact" not in msg.suggestion.lower()
+
+
+def test_context_stays_silent_below_60(cg):
+    msg = cg.evaluate(
+        action_log=[],
+        current_tool="Bash",
+        current_input={},
+        vitals={"token_usage": 0.58},
+    )
+    assert msg is None or msg.pattern != "context"
+
+
+# ── Data-driven suggestions (1.7) ──
+
+
+def test_healing_suggestion_uses_hardcoded_fallback_without_analytics():
+    """When analytics is bypassed, suggestion text falls back to
+    the frozen defaults — proves the caller survives a DB-less env."""
+    from soma.contextual_guidance import _healing_suggestion
+    text = _healing_suggestion("Bash", use_analytics=False)
+    assert "Read next" in text
+    assert "Bash→Read" in text
+
+
+def test_healing_suggestion_prefers_analytics_when_available(monkeypatch):
+    """A single strongly-negative measured transition should override
+    the hardcoded table and show up in the suggestion string."""
+    from soma import contextual_guidance as cg_mod
+    from soma.healing_validation import TransitionStat
+
+    fake_rows = [
+        TransitionStat(transition="Bash→Write", n=95, delta=-0.044),
+        TransitionStat(transition="Bash→Read", n=210, delta=-0.012),
+    ]
+    monkeypatch.setattr(
+        "soma.contextual_guidance._load_healing_from_analytics",
+        lambda: {
+            "Bash": ("Write", f"Bash→Write reduces pressure by 4.4% (n=95)"),
+        },
+    )
+    cg_mod._reset_healing_cache()
+    text = cg_mod._healing_suggestion("Bash", use_analytics=True)
+    assert "Write" in text
+    assert "4.4%" in text
+    cg_mod._reset_healing_cache()
 
 
 # ── Cost Spiral ──
@@ -608,11 +691,20 @@ def test_followthrough_blind_edit_waiting():
 # ---------------------------------------------------------------------------
 
 def test_followthrough_error_cascade_followed():
-    """Next action succeeding means agent broke the cascade."""
+    """v2026.5.3: 'helped' = tool switch AWAY from the failing set AND a
+    ≥15% pressure drop. A flat switch is inconclusive.
+    """
     from soma.contextual_guidance import check_followthrough
 
-    pending = {"pattern": "error_cascade", "actions_since": 0}
-    result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
+    pending = {
+        "pattern": "error_cascade", "actions_since": 0,
+        "failing_tools": ["Bash"],
+        "pressure_at_injection": 0.60,
+    }
+    result = check_followthrough(
+        pending, "Read", {}, "/src/foo.py", error=False,
+        pressure_after=0.30,
+    )
     assert result is True
 
 
@@ -684,11 +776,20 @@ def test_followthrough_bash_retry_followed():
 
 
 def test_followthrough_bash_retry_succeeded():
-    """Bash succeeding counts as positive outcome."""
+    """v2026.5.3: a Bash-succeeds-on-same-tool case only counts when the
+    pressure actually drops ≥15%. Otherwise it's natural recovery, not
+    guidance following.
+    """
     from soma.contextual_guidance import check_followthrough
 
-    pending = {"pattern": "bash_retry", "tool": "Bash", "actions_since": 0}
-    result = check_followthrough(pending, "Bash", {"command": "make test"}, "", error=False)
+    pending = {
+        "pattern": "bash_retry", "tool": "Bash", "actions_since": 0,
+        "pressure_at_injection": 0.60,
+    }
+    result = check_followthrough(
+        pending, "Bash", {"command": "make test"}, "", error=False,
+        pressure_after=0.35,
+    )
     assert result is True
 
 
@@ -801,13 +902,34 @@ def test_followthrough_cost_spiral_resolved_by_pressure_drop():
     assert result is True
 
 
-def test_followthrough_context_resolved_by_pressure_drop():
-    """context pattern also resolves via pressure drop if no explicit compact."""
+def test_followthrough_context_requires_explicit_recovery():
+    """v2026.5.3: context pattern no longer accepts a bare pressure drop
+    as 'helped' — transcript-size proxy is too noisy to be causal. The
+    agent must run compact, commit, or write a handoff file.
+    """
     from soma.contextual_guidance import check_followthrough
 
+    # No NEXT.md, no git commit, no compact — resolves False after 2 actions.
     pending = {"pattern": "context", "actions_since": 1, "pressure_at_injection": 0.60}
     result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.28)
-    assert result is True
+    assert result is False
+
+    # With NEXT.md handoff → True.
+    pending2 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
+    result2 = check_followthrough(
+        pending2, "Write",
+        {"file_path": "/repo/NEXT.md", "content": "handoff"},
+        "/repo/NEXT.md", error=False, pressure_after=0.50,
+    )
+    assert result2 is True
+
+    # With explicit compact command → True.
+    pending3 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
+    result3 = check_followthrough(
+        pending3, "Bash", {"command": "git commit -am 'wip'"},
+        "", error=False, pressure_after=0.55,
+    )
+    assert result3 is True
 
 
 def test_followthrough_pressure_signal_ignored_when_absent():
@@ -817,6 +939,102 @@ def test_followthrough_pressure_signal_ignored_when_absent():
     # drift with no pressure data = keep waiting (None) until timeout
     pending = {"pattern": "drift", "actions_since": 0}
     result = check_followthrough(pending, "Bash", {}, "", error=False)
+    assert result is None
+
+
+# ── Stricter followthrough (1.5) ──
+
+
+def test_followthrough_error_cascade_flat_switch_is_inconclusive():
+    """v2026.5.3: a tool switch WITHOUT a pressure drop no longer counts
+    as 'helped' — prevents crediting SOMA for natural recovery."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {
+        "pattern": "error_cascade", "actions_since": 0,
+        "failing_tools": ["Bash"],
+        "pressure_at_injection": 0.40,
+    }
+    result = check_followthrough(
+        pending, "Read", {}, "", error=False,
+        pressure_after=0.39,  # nearly flat
+    )
+    assert result is None
+
+
+def test_followthrough_blind_edit_requires_related_read_or_pressure():
+    """v2026.5.3: Grep on an unrelated file only counts when pressure
+    actually drops. Prevents 'went to check the tests' false positives."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {
+        "pattern": "blind_edit", "file": "/src/foo.py",
+        "actions_since": 0, "pressure_at_injection": 0.50,
+    }
+    # Different file, flat pressure → inconclusive.
+    unrelated = check_followthrough(
+        pending, "Grep", {}, "/src/unrelated.py", error=False,
+        pressure_after=0.49,
+    )
+    assert unrelated is None
+    # Different file, big drop → trust the drop.
+    helpful = check_followthrough(
+        pending, "Grep", {}, "/src/unrelated.py", error=False,
+        pressure_after=0.25,
+    )
+    assert helpful is True
+
+
+def test_followthrough_entropy_drop_requires_real_diversity():
+    """Agent switched once then back — recent_actions shows one-off."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {
+        "pattern": "entropy_drop", "tool": "Bash", "actions_since": 0,
+        "pressure_at_injection": 0.40,
+    }
+    # Recent actions: Bash, Read, Bash, Bash → distinct=2, flat pressure.
+    recent = [
+        {"tool": "Bash"}, {"tool": "Read"},
+        {"tool": "Bash"}, {"tool": "Bash"},
+    ]
+    result = check_followthrough(
+        pending, "Read", {}, "", error=False,
+        pressure_after=0.39, recent_actions=recent,
+    )
+    # Not enough diversity signal without a real pressure drop.
+    assert result is None
+
+
+def test_followthrough_entropy_drop_credit_on_real_diversity():
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {
+        "pattern": "entropy_drop", "tool": "Bash", "actions_since": 0,
+        "pressure_at_injection": 0.40,
+    }
+    recent = [{"tool": "Read"}, {"tool": "Grep"}, {"tool": "Edit"}]
+    result = check_followthrough(
+        pending, "Read", {}, "", error=False,
+        pressure_after=0.39, recent_actions=recent,
+    )
+    # 3 distinct tools in the window → genuine diversification.
+    assert result is True
+
+
+def test_followthrough_bash_retry_flat_succeed_no_credit():
+    """v2026.5.3: Bash eventually succeeds but pressure stays flat —
+    natural recovery, not guidance followthrough."""
+    from soma.contextual_guidance import check_followthrough
+
+    pending = {
+        "pattern": "bash_retry", "tool": "Bash", "actions_since": 0,
+        "pressure_at_injection": 0.40,
+    }
+    result = check_followthrough(
+        pending, "Bash", {"command": "make test"}, "", error=False,
+        pressure_after=0.39,
+    )
     assert result is None
 
 
