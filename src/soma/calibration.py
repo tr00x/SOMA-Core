@@ -2,14 +2,18 @@
 
 Three-phase lifecycle:
 
-    warmup (0-99 actions)     → guidance silent, learn personal distribution
-    calibrated (100-499)      → personal thresholds replace hardcoded constants
-    adaptive (500+)           → per-pattern auto-silence based on precision
+    warmup (0-29 actions)     → guidance silent, learn personal distribution
+    calibrated (30-199)       → personal thresholds replace hardcoded constants
+    adaptive (200+)           → per-pattern auto-silence based on precision
 
 Profiles persist at ``~/.soma/calibration_{family}.json`` with atomic
 writes. Profile "family" collapses the numeric tail of an agent id so
 short-lived ``cc-92331`` → ``cc-47512`` sessions share one learning state
 and don't warm-up forever.
+
+v2026.5.3: boundaries lowered from 100/500 to 30/200 — median session is
+~50 actions, so 30 is the smallest threshold that still yields stable
+P25/P75 percentiles while letting >40% of sessions exit warmup.
 """
 
 from __future__ import annotations
@@ -28,9 +32,10 @@ from soma.state import SOMA_DIR
 Phase = Literal["warmup", "calibrated", "adaptive"]
 
 # Phase boundaries. Exposed as module constants so tests and dashboard
-# can reference the same source of truth.
-WARMUP_EXIT_ACTIONS = 100
-CALIBRATED_EXIT_ACTIONS = 500
+# can reference the same source of truth. Lowered in v2026.5.3 to match
+# real-world session-length distribution (median ~50 actions).
+WARMUP_EXIT_ACTIONS = 30
+CALIBRATED_EXIT_ACTIONS = 200
 
 # Auto-silence gate (adaptive phase).
 SILENCE_MIN_FIRES = 20

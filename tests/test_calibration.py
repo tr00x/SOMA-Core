@@ -67,12 +67,15 @@ def test_phase_for_boundaries():
 
 def test_advance_updates_phase_and_counter():
     p = CalibrationProfile(family="cc")
-    p.advance(50)
-    assert p.action_count == 50
+    # Stay inside warmup.
+    p.advance(WARMUP_EXIT_ACTIONS - 5)
+    assert p.action_count == WARMUP_EXIT_ACTIONS - 5
     assert p.phase == "warmup"
-    p.advance(60)
+    # Cross into calibrated.
+    p.advance(10)
     assert p.phase == "calibrated"
-    p.advance(400)
+    # Cross into adaptive.
+    p.advance(CALIBRATED_EXIT_ACTIONS)
     assert p.phase == "adaptive"
 
 
@@ -230,13 +233,14 @@ def test_load_missing_returns_fresh_profile(tmp_path):
 
 
 def test_save_then_load_roundtrip(tmp_path):
-    p = CalibrationProfile(family="cc", action_count=250, drift_p75=0.41)
+    action_count = (WARMUP_EXIT_ACTIONS + CALIBRATED_EXIT_ACTIONS) // 2
+    p = CalibrationProfile(family="cc", action_count=action_count, drift_p75=0.41)
     p.phase = _phase_for(p.action_count)
     save_profile(p)
 
     reloaded = load_profile("cc-99999")
     assert reloaded.family == "cc"
-    assert reloaded.action_count == 250
+    assert reloaded.action_count == action_count
     assert reloaded.phase == "calibrated"
     assert reloaded.drift_p75 == pytest.approx(0.41)
 
@@ -259,12 +263,13 @@ def test_load_corrupt_returns_fresh(tmp_path):
 
 def test_load_ignores_unknown_fields_for_forward_compat(tmp_path):
     path = tmp_path / "calibration_cc.json"
+    action_count = (WARMUP_EXIT_ACTIONS + CALIBRATED_EXIT_ACTIONS) // 2
     path.write_text(json.dumps({
-        "family": "cc", "action_count": 150,
+        "family": "cc", "action_count": action_count,
         "future_field_v2": "hello",
     }))
     p = load_profile("cc-1")
-    assert p.action_count == 150
+    assert p.action_count == action_count
     assert p.phase == "calibrated"
 
 

@@ -332,6 +332,116 @@ def _cmd_healing(args: argparse.Namespace) -> None:
             sys.exit(1)
 
 
+def _cmd_validate_patterns(args: argparse.Namespace) -> None:
+    """Run the A/B validation report for contextual-guidance patterns.
+
+    v2026.5.3+. Reads from the ``ab_outcomes`` table and prints a
+    per-pattern classification (treatment Δp / control Δp / p-value /
+    effect size / status). Intended for the 15-20 day validation window
+    between 2026.5.3 and 2026.6.0.
+    """
+    import json as _json
+    from soma import ab_control
+    from soma.analytics import AnalyticsStore
+
+    family = getattr(args, "family", None)
+    min_pairs = int(getattr(args, "min_pairs", ab_control.DEFAULT_MIN_PAIRS) or ab_control.DEFAULT_MIN_PAIRS)
+    want_json = bool(getattr(args, "json", False))
+
+    store = AnalyticsStore()
+    try:
+        patterns = store.list_ab_patterns(agent_family=family)
+    except Exception as exc:
+        print(f"  Error reading ab_outcomes table: {exc}")
+        sys.exit(1)
+
+    rows: list[ab_control.ValidationResult] = []
+    for pattern in patterns:
+        outcomes = store.get_ab_outcomes(pattern=pattern, agent_family=family)
+        rows.append(
+            ab_control.validate(
+                outcomes,
+                pattern=pattern,
+                agent_family=family,
+                min_pairs=min_pairs,
+            )
+        )
+
+    if want_json:
+        payload = []
+        for r in rows:
+            payload.append({
+                "pattern": r.pattern,
+                "agent_family": r.agent_family,
+                "fires_treatment": r.fires_treatment,
+                "fires_control": r.fires_control,
+                "mean_treatment_delta": r.mean_treatment_delta,
+                "mean_control_delta": r.mean_control_delta,
+                "delta_difference": r.delta_difference,
+                "p_value": r.p_value,
+                "effect_size": r.effect_size,
+                "status": r.status,
+            })
+        print(_json.dumps(payload, indent=2))
+        return
+
+    if not rows:
+        scope = f"family={family}" if family else "global"
+        print(
+            f"  No A/B outcomes recorded yet ({scope}). "
+            f"After install v2026.5.3, let SOMA observe ~30 firings per pattern,\n"
+            "  then re-run this command for a classification report."
+        )
+        return
+
+    # Human-readable table.
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        table = Table(title=f"SOMA pattern validation ({'family=' + family if family else 'all families'})")
+        table.add_column("Pattern", style="bold")
+        table.add_column("T n", justify="right")
+        table.add_column("C n", justify="right")
+        table.add_column("mean Δp (T)", justify="right")
+        table.add_column("mean Δp (C)", justify="right")
+        table.add_column("diff", justify="right")
+        table.add_column("p", justify="right")
+        table.add_column("d", justify="right")
+        table.add_column("status", style="bold")
+        status_color = {
+            "validated": "green",
+            "refuted": "red",
+            "inconclusive": "yellow",
+            "collecting": "cyan",
+        }
+        for r in rows:
+            color = status_color.get(r.status, "white")
+            table.add_row(
+                r.pattern,
+                str(r.fires_treatment),
+                str(r.fires_control),
+                f"{r.mean_treatment_delta:+.3f}",
+                f"{r.mean_control_delta:+.3f}",
+                f"{r.delta_difference:+.3f}",
+                "—" if r.p_value is None else f"{r.p_value:.4f}",
+                "—" if r.effect_size is None else f"{r.effect_size:+.2f}",
+                f"[{color}]{r.status}[/{color}]",
+            )
+        Console().print(table)
+    except Exception:
+        # rich is a hard dep but if something goes sideways we still
+        # want a plain fallback so the CLI never crashes.
+        print(f"{'pattern':<18} T  C   ΔpT      ΔpC      diff    p        d     status")
+        for r in rows:
+            p = "—" if r.p_value is None else f"{r.p_value:.4f}"
+            d = "—" if r.effect_size is None else f"{r.effect_size:+.2f}"
+            print(
+                f"{r.pattern:<18} {r.fires_treatment:>3} {r.fires_control:>3} "
+                f"{r.mean_treatment_delta:+.3f}  {r.mean_control_delta:+.3f}  "
+                f"{r.delta_difference:+.3f}  {p:<7} {d:<5} {r.status}"
+            )
+
+
 def _cmd_unblock(args: argparse.Namespace) -> None:
     """Clear strict-mode blocks for an agent family.
 
@@ -1185,6 +1295,23 @@ def _build_parser() -> argparse.ArgumentParser:
     healing_parser.add_argument("--out", default=None,
                                 help="Optional path to write a markdown table")
 
+    validate_parser = subparsers.add_parser(
+        "validate-patterns",
+        help="A/B validation report for contextual-guidance patterns",
+    )
+    validate_parser.add_argument(
+        "--family", default=None,
+        help="Filter to a single agent family (e.g. 'cc'); default: all",
+    )
+    validate_parser.add_argument(
+        "--min-pairs", type=int, default=30, dest="min_pairs",
+        help="Minimum firings per arm before classifying (default: 30)",
+    )
+    validate_parser.add_argument(
+        "--json", action="store_true",
+        help="Emit JSON instead of the human-readable table",
+    )
+
     unblock_parser = subparsers.add_parser(
         "unblock", help="Clear strict-mode blocks or silence a pattern",
     )
@@ -1326,6 +1453,7 @@ def main() -> None:
         "agents": _cmd_agents,
         "prune": _cmd_prune,
         "healing": _cmd_healing,
+        "validate-patterns": _cmd_validate_patterns,
         "unblock": _cmd_unblock,
         "reset": _cmd_reset,
         "stop": _cmd_stop,

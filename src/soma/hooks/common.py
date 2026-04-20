@@ -561,8 +561,8 @@ BASH_HISTORY_MAX = 10
 def get_soma_mode(agent_id: str | None = None) -> str:
     """Return the effective SOMA mode for this agent.
 
-    During the calibration warmup phase (action_count < 100) the mode
-    is forced to ``observe`` regardless of ``soma.toml`` — this is the
+    During the calibration warmup phase (action_count < WARMUP_EXIT_ACTIONS)
+    the mode is forced to ``observe`` regardless of ``soma.toml`` — this is the
     plan's "no enforcement while learning" guarantee: guidance must not
     bias the baseline SOMA is collecting.
 

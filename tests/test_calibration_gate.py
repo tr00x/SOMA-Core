@@ -15,10 +15,23 @@ from soma.calibration import (
 from soma.contextual_guidance import ContextualGuidance
 
 
-def _blind_edit_setup() -> tuple[list[dict], dict]:
-    """Minimal inputs that normally fire the blind_edit pattern."""
+def _blind_edit_setup(tmp_path=None) -> tuple[list[dict], dict]:
+    """Minimal inputs that normally fire the blind_edit pattern.
+
+    v2026.5.3: blind_edit now requires Write on an *existing* file
+    (Edit is gated by Claude Code itself). We create a temp file so
+    the pattern actually fires end-to-end.
+    """
+    import os
+    import tempfile
+    # Best-effort: create a real file so the pattern's existence check
+    # passes. Tests that don't care about content can still pass a
+    # file_path that exists.
+    fd, path = tempfile.mkstemp(suffix=".py")
+    os.write(fd, b"x = 1\n")
+    os.close(fd)
     action_log = [{"tool": "Grep"}, {"tool": "Read"}]
-    current_input = {"file_path": "/tmp/never-read.py"}
+    current_input = {"file_path": path}
     return action_log, current_input
 
 
@@ -36,7 +49,7 @@ def test_warmup_profile_silences_all_patterns():
     cg = ContextualGuidance(profile=profile)
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )
@@ -48,7 +61,7 @@ def test_warmup_last_action_still_silenced():
     cg = ContextualGuidance(profile=profile)
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )
@@ -62,7 +75,7 @@ def test_calibrated_phase_fires_normally():
     cg = ContextualGuidance(profile=profile)
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )
@@ -75,7 +88,7 @@ def test_legacy_no_profile_behavior_unchanged():
     cg = ContextualGuidance()  # no profile passed
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )
@@ -94,7 +107,7 @@ def test_adaptive_silence_drops_target_pattern():
     cg = ContextualGuidance(profile=profile)
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )
@@ -110,7 +123,7 @@ def test_adaptive_does_not_silence_unlisted_patterns():
     cg = ContextualGuidance(profile=profile)
     action_log, current_input = _blind_edit_setup()
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Edit",
+        action_log=action_log, current_tool="Write",
         current_input=current_input, vitals=_vitals(),
         budget_health=1.0, action_number=2,
     )

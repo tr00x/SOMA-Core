@@ -5,6 +5,7 @@ from __future__ import annotations
 from soma.analytics import AnalyticsStore
 from soma.calibration import (
     CALIBRATED_EXIT_ACTIONS,
+    WARMUP_EXIT_ACTIONS,
     CalibrationProfile,
     SILENCE_MIN_FIRES,
     SILENCE_REFRESH_INTERVAL,
@@ -73,7 +74,9 @@ def test_pattern_stats_empty_for_unseen_pattern(tmp_path):
 def test_refresh_noop_outside_adaptive(tmp_path):
     store = AnalyticsStore(path=tmp_path / "a.db")
     _seed_outcomes(store, "blind_edit", helped_count=0, total=30)
-    p = CalibrationProfile(family="cc", action_count=200)  # calibrated
+    # Explicitly inside the calibrated band — one step above warmup, not adaptive.
+    p = CalibrationProfile(family="cc", action_count=WARMUP_EXIT_ACTIONS + 1)
+    assert p.is_calibrated()
     assert maybe_refresh_silence(p, analytics_store=store) is False
     assert p.silenced_patterns == []
 
