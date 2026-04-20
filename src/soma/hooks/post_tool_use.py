@@ -590,22 +590,39 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 profile = _cal.load_profile(agent_id)
                 prev_phase = profile.phase
                 profile.advance(1)
+                # Save FIRST so counter increments survive even if the
+                # distribution refresh below raises. Without this, a
+                # failed save after an advance would silently double-count
+                # or lose actions on the next hook.
+                try:
+                    _cal.save_profile(profile)
+                except Exception:
+                    pass
                 # On phase transitions, refresh personal distributions
-                # from recent audit history so the next action evaluates
-                # against the calibrated thresholds, not legacy floors.
-                if profile.phase != prev_phase:
+                # from recent audit history. If distributions are still
+                # at defaults when we enter calibrated/adaptive, retry
+                # every hook until audit actually has rows — otherwise
+                # a single failed refresh locks the user on legacy
+                # thresholds forever.
+                needs_refresh = (
+                    profile.phase != prev_phase
+                    or (not profile.is_warmup()
+                        and profile.drift_p75 == 0.0
+                        and profile.typical_success_rate == 0.0)
+                )
+                if needs_refresh:
                     try:
                         _cal.recompute_from_audit(profile)
+                        _cal.save_profile(profile)
                     except Exception:
                         pass
                 # Adaptive phase: rotate analytics-driven silence list
-                # every SILENCE_REFRESH_INTERVAL actions so patterns
-                # that stop helping drop out without human intervention.
+                # every SILENCE_REFRESH_INTERVAL actions.
                 try:
-                    _cal.maybe_refresh_silence(profile)
+                    if _cal.maybe_refresh_silence(profile):
+                        _cal.save_profile(profile)
                 except Exception:
                     pass
-                _cal.save_profile(profile)
             except Exception:
                 pass  # Calibration is additive — never break guidance.
 

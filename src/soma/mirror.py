@@ -180,11 +180,12 @@ class Mirror:
                 agent_id, action, task_description
             )
             if semantic_text is not None:
-                # Prepend stats line for context
-                stats_line = self._format_stats_oneliner(agent_id)
-                full_text = f"{stats_line}\n{semantic_text}"
-                self.track_injection(agent_id, "_semantic", full_text, pressure)
-                return self._wrap(full_text)
+                # v2026.5.0: drop the aggregate `_stats` prefix here too.
+                # Semantic output stands on its own; the stats one-liner
+                # was part of the same fatigue surface we already pruned
+                # from the medium-pressure branch.
+                self.track_injection(agent_id, "_semantic", semantic_text, pressure)
+                return self._wrap(semantic_text)
 
         # Fallback: PATTERN if available, else STATS
         if detected is not None:

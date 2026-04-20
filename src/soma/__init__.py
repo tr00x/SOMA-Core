@@ -1,6 +1,13 @@
 """SOMA Core — Behavioral monitoring and directive control for AI agents."""
 
-__version__ = "2026.4.0"
+# Derive from installed package metadata so the pyproject version is
+# the single source of truth — no second place to bump every release.
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    __version__ = _pkg_version("soma-ai")
+except (PackageNotFoundError, ImportError):
+    # Source checkout without install — report an honest placeholder.
+    __version__ = "0.0.0+local"
 
 from soma.types import (
     Action, ResponseMode, AutonomyMode, DriftMode,

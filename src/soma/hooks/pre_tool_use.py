@@ -75,14 +75,15 @@ def main():
                     )
                     # Terminal bell on the first block event of this
                     # session so the user (not just the agent) knows
-                    # SOMA intervened. Marker file makes it once-only.
+                    # SOMA intervened. Write the marker BEFORE the bell
+                    # so a partial failure can't re-fire it forever.
                     try:
-                        from soma.hooks.common import SOMA_DIR
-                        bell_flag = SOMA_DIR / "sessions" / agent_id / ".bell_fired"
+                        from soma.state import SOMA_DIR as _SOMA_DIR
+                        bell_flag = _SOMA_DIR / "sessions" / agent_id / ".bell_fired"
                         if not bell_flag.exists():
-                            print("\a", end="", file=sys.stderr, flush=True)
                             bell_flag.parent.mkdir(parents=True, exist_ok=True)
                             bell_flag.touch()
+                            print("\a", end="", file=sys.stderr, flush=True)
                     except Exception:
                         pass
                     print(msg, file=sys.stderr)
