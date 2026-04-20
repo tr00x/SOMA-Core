@@ -45,7 +45,7 @@ def main():
         except Exception:
             pass  # Never crash pre_tool_use for subagent injection
 
-    soma_mode = get_soma_mode()
+    soma_mode = get_soma_mode(agent_id)
     action_log = read_action_log(agent_id)
 
     # Observe mode: no guidance, no reflexes (per D-01)

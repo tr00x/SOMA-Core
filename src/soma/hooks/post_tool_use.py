@@ -371,7 +371,16 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             duration_sec=duration,
         )
 
-        result = engine.record_action(agent_id, action)
+        # record_action + save_state must be treated as atomic from the
+        # hook's point of view — action_log was already appended upstream,
+        # so if record_action raises we must *still* persist whatever
+        # engine state survived. Without this, action_log.json drifts
+        # ahead of engine_state.json and cross-session vitals lose sync.
+        try:
+            result = engine.record_action(agent_id, action)
+        except Exception:
+            save_state(engine)
+            raise
         save_state(engine)
 
         # Persist signal pressures for pre_tool_use guidance
@@ -587,42 +596,44 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             profile = None
             try:
                 from soma import calibration as _cal
-                profile = _cal.load_profile(agent_id)
-                prev_phase = profile.phase
-                profile.advance(1)
-                # Save FIRST so counter increments survive even if the
-                # distribution refresh below raises. Without this, a
-                # failed save after an advance would silently double-count
-                # or lose actions on the next hook.
-                try:
-                    _cal.save_profile(profile)
-                except Exception:
-                    pass
-                # On phase transitions, refresh personal distributions
-                # from recent audit history. If distributions are still
-                # at defaults when we enter calibrated/adaptive, retry
-                # every hook until audit actually has rows — otherwise
-                # a single failed refresh locks the user on legacy
-                # thresholds forever.
-                needs_refresh = (
-                    profile.phase != prev_phase
-                    or (not profile.is_warmup()
-                        and profile.drift_p75 == 0.0
-                        and profile.typical_success_rate == 0.0)
-                )
-                if needs_refresh:
+                # Serialize the read-modify-write so parallel hooks
+                # (e.g. Claude Code subagents) don't both load the same
+                # count and overwrite each other's increments.
+                family = _cal.calibration_family(agent_id)
+                with _cal.profile_lock(family):
+                    profile = _cal.load_profile(agent_id)
+                    prev_phase = profile.phase
+                    profile.advance(1)
                     try:
-                        _cal.recompute_from_audit(profile)
                         _cal.save_profile(profile)
                     except Exception:
                         pass
-                # Adaptive phase: rotate analytics-driven silence list
-                # every SILENCE_REFRESH_INTERVAL actions.
-                try:
-                    if _cal.maybe_refresh_silence(profile):
-                        _cal.save_profile(profile)
-                except Exception:
-                    pass
+                    # On phase transitions, refresh personal distributions.
+                    # Retry every hook only while audit is actually populated
+                    # so we don't infinite-loop an empty-audit install; the
+                    # refresh_attempted_at field paces the retry.
+                    needs_refresh = (
+                        profile.phase != prev_phase
+                        or (not profile.is_warmup()
+                            and profile.drift_p75 == 0.0
+                            and profile.typical_success_rate == 0.0
+                            and (profile.action_count
+                                 - getattr(profile, "_last_refresh_try", 0)) >= 10)
+                    )
+                    if needs_refresh:
+                        try:
+                            _cal.recompute_from_audit(profile)
+                            profile._last_refresh_try = profile.action_count  # type: ignore[attr-defined]
+                            _cal.save_profile(profile)
+                        except Exception:
+                            pass
+                    # Adaptive phase: rotate analytics-driven silence list
+                    # every SILENCE_REFRESH_INTERVAL actions.
+                    try:
+                        if _cal.maybe_refresh_silence(profile):
+                            _cal.save_profile(profile)
+                    except Exception:
+                        pass
             except Exception:
                 pass  # Calibration is additive — never break guidance.
 
@@ -676,16 +687,24 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 try:
                     from soma.hooks.common import get_soma_mode
                     if (
-                        get_soma_mode() == "strict"
+                        get_soma_mode(agent_id) == "strict"
                         and profile is not None and not profile.is_warmup()
                         and cg_msg.pattern in _STRICT_BLOCK_PATTERNS
                     ):
                         from soma.blocks import load_block_state, save_block_state
                         bs = load_block_state(agent_id)
-                        bs.add_block(
-                            pattern=cg_msg.pattern, tool=tool_name,
-                            reason=cg_msg.suggestion or cg_msg.pattern,
-                        )
+                        # blind_edit is about writing code without reading;
+                        # block the whole family of edit-class tools or the
+                        # agent just switches Write→Edit→NotebookEdit and
+                        # bypasses the gate.
+                        tools_to_block = [tool_name]
+                        if cg_msg.pattern == "blind_edit":
+                            tools_to_block = ["Write", "Edit", "NotebookEdit"]
+                        for t in tools_to_block:
+                            bs.add_block(
+                                pattern=cg_msg.pattern, tool=t,
+                                reason=cg_msg.suggestion or cg_msg.pattern,
+                            )
                         save_block_state(bs)
                 except Exception:
                     pass

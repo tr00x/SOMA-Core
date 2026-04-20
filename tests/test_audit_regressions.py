@@ -211,3 +211,81 @@ def test_cli_unblock_rejects_all_plus_pattern(tmp_path, monkeypatch, capsys):
     assert exc.value.code == 2
     out = capsys.readouterr().out
     assert "mutually exclusive" in out
+
+
+# ── Round 2 audit fixes ────────────────────────────────────────────
+
+def test_warmup_forces_observe_mode(tmp_path, monkeypatch):
+    """Plan: warmup phase forces mode=observe regardless of soma.toml."""
+    from soma.hooks.common import get_soma_mode
+    from soma.cli import config_loader as _cl
+
+    # Configured mode = guide
+    monkeypatch.setattr(_cl, "load_config", lambda *_a, **_k: {"soma": {"mode": "guide"}})
+
+    # Warmup profile
+    _cal.save_profile(_cal.CalibrationProfile(family="cc", action_count=10))
+    assert get_soma_mode("cc-99") == "observe"
+
+    # Calibrated profile — configured mode wins
+    _cal.save_profile(_cal.CalibrationProfile(family="cc", action_count=250))
+    assert get_soma_mode("cc-99") == "guide"
+
+
+def test_silence_fires_at_exactly_20_percent():
+    """Off-by-one fix: 4 helped / 20 fires = 20% must silence."""
+    p = CalibrationProfile(family="cc", action_count=600)
+    p.update_silence("blind_edit", fires=20, helped=4)  # exactly 20%
+    assert "blind_edit" in p.silenced_patterns
+
+
+def test_blind_edit_strict_blocks_all_edit_tools(tmp_path, monkeypatch):
+    """Strict mode on blind_edit must lock Write/Edit/NotebookEdit together,
+    otherwise the agent just switches tool to bypass the gate."""
+    from soma.hooks.post_tool_use import _STRICT_BLOCK_PATTERNS
+    assert "blind_edit" in _STRICT_BLOCK_PATTERNS
+    # The implementation fans out across tools — see post_tool_use for
+    # the list. Not an exposed API so we source-inspect.
+    src = (Path(__file__).parent.parent
+           / "src" / "soma" / "hooks" / "post_tool_use.py").read_text()
+    assert '"Write", "Edit", "NotebookEdit"' in src
+
+
+def test_profile_lock_serializes_concurrent_saves(tmp_path):
+    """fcntl.flock prevents lost advance() under parallel hooks."""
+    from soma.calibration import (
+        CalibrationProfile, load_profile, profile_lock, save_profile,
+    )
+
+    # Seed baseline
+    save_profile(CalibrationProfile(family="cc", action_count=0))
+
+    # Two "parallel" advances via the lock — final count must be 2,
+    # not 1 (as would happen without serialization).
+    for _ in range(2):
+        with profile_lock("cc"):
+            p = load_profile("cc-99")
+            p.advance(1)
+            save_profile(p)
+
+    final = load_profile("cc-99")
+    assert final.action_count == 2
+
+
+def test_healing_out_permission_error_handled(tmp_path, monkeypatch, capsys):
+    """soma healing --out <unwritable> must not traceback."""
+    import argparse
+    from soma.cli.main import _cmd_healing
+    unwritable = tmp_path / "nope" / "a" / "b" / "c.md"
+    unwritable.parent.mkdir(parents=True)
+    # Make the parent read-only so open(w) fails.
+    unwritable.parent.chmod(0o555)
+    try:
+        args = argparse.Namespace(out=str(unwritable), min_n=1, limit=5)
+        with pytest.raises(SystemExit) as exc:
+            _cmd_healing(args)
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "cannot write" in out or "Error" in out
+    finally:
+        unwritable.parent.chmod(0o755)

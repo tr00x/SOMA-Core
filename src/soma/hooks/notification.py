@@ -53,7 +53,7 @@ def main():
 
         # ── Agent awareness prompt + capacity data — first action only ──
         if len(action_log) == 0:
-            soma_mode = get_soma_mode()
+            soma_mode = get_soma_mode(agent_id)
             awareness = AGENT_AWARENESS_PROMPT.format(mode=soma_mode)
 
             # Inject session capacity data
@@ -161,7 +161,7 @@ def main():
 
         # ── Signal reflex injections (guide + reflex modes, per D-17) ──
         try:
-            soma_mode = get_soma_mode()
+            soma_mode = get_soma_mode(agent_id)
             if soma_mode in ("guide", "reflex") and actions >= 3:
                 from soma.signal_reflexes import evaluate_all_signals
 
@@ -265,7 +265,7 @@ def main():
 
         # ── Advanced reflex injections (Phase 16) ──────────────────────
         try:
-            soma_mode = get_soma_mode()
+            soma_mode = get_soma_mode(agent_id)
             if soma_mode in ("guide", "reflex") and actions >= 3:
                 # 1. Circuit breaker
                 try:
