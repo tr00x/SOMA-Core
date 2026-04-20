@@ -558,17 +558,31 @@ def estimate_context_usage_from_transcript(
 BASH_HISTORY_MAX = 10
 
 
-def get_soma_mode() -> str:
-    """Return the configured SOMA mode ('observe', 'guide', or 'reflex').
+def get_soma_mode(agent_id: str | None = None) -> str:
+    """Return the effective SOMA mode for this agent.
+
+    During the calibration warmup phase (action_count < 100) the mode
+    is forced to ``observe`` regardless of ``soma.toml`` — this is the
+    plan's "no enforcement while learning" guarantee: guidance must not
+    bias the baseline SOMA is collecting.
 
     Defaults to 'guide' if config is missing or unreadable.
     """
     try:
         from soma.cli.config_loader import load_config
-        config = load_config()
-        return config.get("soma", {}).get("mode", "guide")
+        configured = load_config().get("soma", {}).get("mode", "guide")
     except Exception:
-        return "guide"
+        configured = "guide"
+
+    # Warmup override — cheap O(1) stat + file read.
+    if agent_id:
+        try:
+            from soma.calibration import load_profile
+            if load_profile(agent_id).is_warmup():
+                return "observe"
+        except Exception:
+            pass
+    return configured
 
 
 def get_reflex_config() -> dict:

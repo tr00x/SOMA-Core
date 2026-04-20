@@ -324,8 +324,12 @@ def _cmd_healing(args: argparse.Namespace) -> None:
     print(format_report(rows, limit=int(getattr(args, "limit", 10) or 10)))
     out = getattr(args, "out", None)
     if out:
-        write_markdown_report(Path(out), rows)
-        print(f"\n  Markdown table written → {out}")
+        try:
+            write_markdown_report(Path(out), rows)
+            print(f"\n  Markdown table written → {out}")
+        except OSError as e:
+            print(f"\n  Error: cannot write to {out}: {e}")
+            sys.exit(1)
 
 
 def _cmd_unblock(args: argparse.Namespace) -> None:

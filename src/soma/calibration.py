@@ -54,8 +54,11 @@ _SILENCE_TRACKED_PATTERNS = (
 LEGACY_FLOORS: dict[str, float | int] = {
     "drift_threshold": 0.3,
     "entropy_threshold": 0.5,
-    "retry_storm_streak": 2,
     "error_cascade_streak": 3,
+    # retry_storm_streak retained for backward-compat profile roundtrip
+    # even though the pattern was dropped in v2026.4.4 and no evaluator
+    # reads it. Removing would break legacy calibration_*.json files.
+    "retry_storm_streak": 2,
 }
 
 # Regex strips the trailing numeric part of a session-style agent id so
@@ -191,7 +194,11 @@ class CalibrationProfile:
             return
         rate = helped / fires if fires else 0.0
         self.pattern_precision_cache[pattern] = rate
-        if rate < SILENCE_HELPED_RATE:
+        # Inclusive boundary: exactly 20% helped triggers silence,
+        # exactly 40% helped triggers re-enable. Plan wording is
+        # "<20% helped" — use <= so the documented 20-fire / 4-helped
+        # corner case actually silences the pattern.
+        if rate <= SILENCE_HELPED_RATE:
             if pattern not in self.silenced_patterns:
                 self.silenced_patterns.append(pattern)
         elif rate >= UNSILENCE_HELPED_RATE:
@@ -249,7 +256,15 @@ def load_profile(agent_id: str) -> CalibrationProfile:
 
 
 def save_profile(profile: CalibrationProfile) -> None:
-    """Persist profile atomically: tmp file → fsync → rename."""
+    """Persist profile atomically: tmp file → fsync → rename.
+
+    Concurrent hooks (parallel subagents) can race on the same family
+    profile. The advance→save sequence needs a lock around the read-
+    modify-write performed by callers, but save itself is best-effort
+    atomic: we use a lock file so that if a caller sets up
+    ``with profile_lock(family):`` around load+advance+save, the
+    sequence is serialized.
+    """
     path = _profile_path(profile.family)
     path.parent.mkdir(parents=True, exist_ok=True)
     # tempfile guarantees unique name, same-filesystem for atomic replace.
@@ -271,6 +286,56 @@ def save_profile(profile: CalibrationProfile) -> None:
         except OSError:
             pass
         raise
+
+
+class profile_lock:
+    """POSIX fcntl advisory lock around a family's calibration file.
+
+    Use to serialize ``load → advance → save`` across concurrent hooks::
+
+        with profile_lock(family):
+            p = load_profile(agent_id)
+            p.advance(1)
+            save_profile(p)
+
+    Non-POSIX (Windows) falls through without locking — better than
+    crashing the hook, and action counters drift by at most 1 per
+    simultaneous invocation.
+    """
+
+    def __init__(self, family: str):
+        self.family = family
+        self._fh = None
+
+    def __enter__(self):
+        try:
+            import fcntl
+            lock_path = SOMA_DIR / f"calibration_{self.family}.lock"
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            self._fh = open(lock_path, "w")
+            fcntl.flock(self._fh, fcntl.LOCK_EX)
+        except Exception:
+            if self._fh is not None:
+                try:
+                    self._fh.close()
+                except OSError:
+                    pass
+                self._fh = None
+        return self
+
+    def __exit__(self, *_exc):
+        if self._fh is not None:
+            try:
+                import fcntl
+                fcntl.flock(self._fh, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                self._fh.close()
+            except OSError:
+                pass
+            self._fh = None
+        return False
 
 
 def reset_profile(agent_id: str) -> bool:

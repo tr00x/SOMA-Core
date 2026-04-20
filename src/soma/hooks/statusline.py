@@ -167,7 +167,7 @@ def main():
             bc = get_block_count(agent_id)
             if bc > 0:
                 parts.append(f"⛔{bc}")
-            sm = get_soma_mode()
+            sm = get_soma_mode(agent_id)
             if sm and sm != "guide":
                 parts.append(sm.upper())
         except Exception:

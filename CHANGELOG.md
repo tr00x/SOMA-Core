@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026.5.2
+
+Released April 20, 2026.
+
+Second self-audit round. Five more production-reality bugs found and
+fixed. These are subtle — they hide under "working" code paths that
+unit tests don't exercise realistically.
+
+### Fixes
+- **Warmup did not force observe mode** — the plan guarantees "no
+  enforcement while learning" so reflex + Smart Guidance output
+  can't bias the baseline SOMA is collecting. Added agent-aware
+  override in `get_soma_mode(agent_id)`: warmup profile returns
+  `"observe"` regardless of `soma.toml`.
+- **Lost action counts under parallel hooks** — Claude Code
+  subagents can run PostToolUse hooks concurrently against the same
+  family profile. Two hooks both read `count=42`, both write 43,
+  and one advance is lost. New `profile_lock` context manager wraps
+  the read-modify-write with `fcntl.flock` on a sibling `.lock`
+  file. Phase transitions at 100/500 now land reliably.
+- **blind_edit strict-mode bypass** — strict mode blocked the exact
+  tool that fired the pattern. On `blind_edit` from `Write`, the
+  block only covered Write, so the agent silently switched to Edit
+  or NotebookEdit. Now all three edit-class tools lock together.
+- **Silence off-by-one at exactly 20%** — implementation used
+  strict `<0.20`, so 4 helped over 20 fires (exactly 20%) never
+  silenced. Changed to `<=` to match the plan wording and cover
+  the boundary case.
+- **Empty-audit infinite refresh** — on a fresh install with no
+  audit rows, `recompute_from_audit` was retried every hook
+  indefinitely because distributions stayed at zero. Added 10-
+  action back-off so empty-audit installs stop spinning.
+- **record_action/save_state atomicity** — if `engine.record_action`
+  raised, `save_state` never ran and `action_log.json` drifted
+  ahead of `engine_state.json`. Now `save_state` is in a
+  try-raise-finally so engine snapshot is always persisted.
+- **healing --out permission errors** — `soma healing --out /root/x.md`
+  used to traceback on unwritable paths. Now prints a graceful
+  error and exits with code 1.
+
+### Quality
+- 5 new regression tests in `test_audit_regressions.py` pin each
+  round-2 finding — 13 total regression tests in that file now.
+- 1574 tests passing.
+
 ## 2026.5.1
 
 Released April 20, 2026.

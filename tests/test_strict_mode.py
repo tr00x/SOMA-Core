@@ -27,7 +27,7 @@ def _isolated_soma(tmp_path, monkeypatch):
 
 def _set_strict_mode(monkeypatch, mode: str = "strict"):
     from soma.hooks import common as _common
-    monkeypatch.setattr(_common, "get_soma_mode", lambda: mode)
+    monkeypatch.setattr(_common, "get_soma_mode", lambda _agent_id=None: mode)
 
 
 def _calibrated_profile(tmp_path, family: str = "cc") -> None:
