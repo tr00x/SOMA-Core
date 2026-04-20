@@ -261,15 +261,30 @@ def check_followthrough(
 ) -> bool | None:
     """Check if the agent followed contextual guidance.
 
-    Returns True if followed, False if ignored, None if inconclusive (keep waiting).
+    Returns True if followed, False if ignored, None if inconclusive
+    (keep waiting).
 
-    v2026.5.3 — stricter semantics: ``helped`` now requires BOTH a
-    pressure drop ≥15% AND a pattern-specific recovery action. The old
-    rule (pressure drop alone) over-credited SOMA for moments of
-    natural recovery; adding the recovery check makes ``helped %`` a
-    causal signal rather than a coincidence detector. ``recent_actions``
-    is the chronological action log (oldest→newest) used for entropy
-    / diversity checks; when omitted we fall back to the less strict
+    v2026.5.3 tightened the semantics: each pattern has a list of
+    *strong* recovery signals (e.g. Read of the exact suggested file
+    for ``blind_edit``, explicit git-commit / handoff-file write for
+    ``context``, Read/Grep for ``bash_retry``, ≥3 distinct tools in a
+    3-action window for ``entropy_drop``) that count as "helped" on
+    their own — these are explicit behavioral markers that the agent
+    clearly acted on the message. *Weak* signals (tool switch alone,
+    related-but-different Read, Bash-succeeds-on-same-tool) only count
+    when pressure actually drops ≥15%, so passive recovery can't
+    credit SOMA. The old rule ("pressure drop alone = helped") over-
+    credited natural recovery; this design separates "the agent did
+    the thing" from "pressure went down."
+
+    Note: this is the *dashboard-facing* semantic. The A/B proof
+    layer (v2026.5.4+) uses a simpler pressure-only rule because
+    control-arm agents never saw the message and so can never perform
+    the strong recovery signal by definition — the strict semantic
+    would systematically under-count the control arm's "recoveries."
+
+    ``recent_actions`` is the chronological action log (oldest→newest)
+    used for tool-diversity checks; when omitted we fall back to the
     single-action view for backward compatibility.
     """
     pattern = pending.get("pattern", "")

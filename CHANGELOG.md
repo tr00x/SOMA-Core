@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026.5.4
+
+Released April 20, 2026.
+
+Same-day follow-up to 2026.5.3 after a 4-round self-review caught
+two critical bugs in the A/B proof layer. **Upgrade before any data
+collection** — v2026.5.3's "validated" labels would have been biased
+out of the box.
+
+### Fixes
+
+- **C1 — systematic pressure_after timing bias.** v2026.5.3 wrote
+  the ab_outcomes row only when `check_followthrough` resolved.
+  Treatment arms resolve fast (agent sees the message and does the
+  recovery action → +1 action), control arms nearly always hit the
+  5-action timeout fallback. Pressure decays passively over time, so
+  control looked artificially better than treatment at an equal
+  horizon. Now `ab_outcomes` is written at a fixed `actions_since=2`
+  horizon for both arms, decoupled from strict resolution. pending
+  state carries `ab_recorded` and `strict_resolved` flags
+  independently and only clears when both are done.
+
+- **Control-arm contamination of `guidance_outcomes`.** The dashboard
+  ROI view reads `guidance_outcomes` and aggregates `helped`. On
+  timeout, control arms were writing synthetic `followed=False` rows
+  that would depress the aggregate. `_record_guidance_outcome` now
+  skips control firings entirely — the A/B table captures control
+  data, the ROI view stays treatment-only.
+
+- **M3 — `_beta_cf` non-convergence guard.** The continued-fraction
+  algorithm in `ab_control` now returns NaN on non-convergence and
+  the caller degrades to p=1.0 ("no effect") instead of silently
+  propagating a possibly-wrong value.
+
+- **C2 — misleading docstring in `check_followthrough`.** v2026.5.3
+  docstring claimed every "helped" return required BOTH a pressure
+  drop AND a recovery action. The code actually (correctly) uses
+  strong explicit recovery signals as sufficient on their own —
+  docstring rewritten to match reality, with an explicit note that
+  the A/B layer uses a separate simpler pressure-only rule.
+
+- **Healing-cache leak between tests.** `_HEALING_CACHE` was a
+  process-level global that tests could pollute. Added an autouse
+  `conftest.py` fixture that resets it before and after every test.
+
+### Quality
+
+- 9 new tests (`test_ab_control.py`): horizon enforcement, self-
+  marking idempotency, non-convergence guard, control-arm skip.
+- 1615 tests passing.
+
 ## 2026.5.3
 
 Released April 20, 2026.

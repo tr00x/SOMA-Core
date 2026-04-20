@@ -832,7 +832,7 @@ def test_followthrough_unknown_pattern():
 def test_record_outcome_writes_to_analytics_when_followed(tmp_path):
     """When followthrough is detected, outcome must be persisted to
     analytics.db.guidance_outcomes so dashboard ROI page can see it."""
-    from soma.hooks.post_tool_use import _record_outcome_if_resolved
+    from soma.hooks.post_tool_use import _record_guidance_outcome
     from soma.analytics import AnalyticsStore
 
     db_path = tmp_path / "analytics.db"
@@ -844,7 +844,7 @@ def test_record_outcome_writes_to_analytics_when_followed(tmp_path):
         "pressure_at_injection": 0.7,
     }
 
-    _record_outcome_if_resolved(
+    _record_guidance_outcome(
         agent_id="cc-test",
         pending=pending,
         followed=True,
@@ -864,7 +864,7 @@ def test_record_outcome_writes_to_analytics_when_followed(tmp_path):
 
 def test_record_outcome_writes_failure_when_ignored(tmp_path):
     """Ignored guidance must be recorded as helped=0."""
-    from soma.hooks.post_tool_use import _record_outcome_if_resolved
+    from soma.hooks.post_tool_use import _record_guidance_outcome
     from soma.analytics import AnalyticsStore
 
     db_path = tmp_path / "analytics.db"
@@ -874,7 +874,7 @@ def test_record_outcome_writes_failure_when_ignored(tmp_path):
         "pressure_at_injection": 0.55,
     }
 
-    _record_outcome_if_resolved(
+    _record_guidance_outcome(
         agent_id="cc-ignored",
         pending=pending,
         followed=False,

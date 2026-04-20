@@ -4,6 +4,28 @@ import pytest
 from soma.types import Action
 
 
+@pytest.fixture(autouse=True)
+def _reset_healing_cache_between_tests():
+    """Ensure the lazily-loaded analytics-driven healing table is empty
+    at the start of every test.
+
+    ``contextual_guidance._HEALING_CACHE`` is a process-level global
+    populated on first call to ``_healing_table(use_analytics=True)``.
+    Without this autouse reset, a test that monkeypatches the loader
+    and triggers caching leaks its stub value into any later test that
+    imports ``contextual_guidance``, silently changing `_healing_suggestion`
+    output between parallel test files.
+    """
+    try:
+        from soma import contextual_guidance as _cg
+        _cg._reset_healing_cache()
+        yield
+        _cg._reset_healing_cache()
+    except Exception:
+        # Import cycle during collection shouldn't crash the fixture.
+        yield
+
+
 @pytest.fixture
 def normal_actions():
     """10 normal, non-error actions with varied tools."""
