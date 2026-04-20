@@ -271,7 +271,10 @@ def _regularized_incomplete_beta(x: float, a: float, b: float) -> float:
 
     Direct port of Numerical Recipes' ``betai`` — chosen because it
     sidesteps numpy/scipy and converges in ~20 iterations for the
-    t-distribution parameters we care about.
+    t-distribution parameters we care about. On non-convergence
+    (``_beta_cf`` returns NaN) we degrade gracefully to a p-value of
+    1.0 so the validator reports "collecting" instead of crashing
+    the hook pipeline on a malformed t-stat.
     """
     if x <= 0.0:
         return 0.0
@@ -288,12 +291,23 @@ def _regularized_incomplete_beta(x: float, a: float, b: float) -> float:
     # Symmetry: the continued fraction converges faster when x is on
     # the "right side" of (a+1)/(a+b+2). Swap if we're past it.
     if x < (a + 1.0) / (a + b + 2.0):
-        return front * _beta_cf(x, a, b) / a
-    return 1.0 - front * _beta_cf(1.0 - x, b, a) / b
+        cf = _beta_cf(x, a, b)
+        if not math.isfinite(cf):
+            return 1.0
+        return front * cf / a
+    cf = _beta_cf(1.0 - x, b, a)
+    if not math.isfinite(cf):
+        return 1.0
+    return 1.0 - front * cf / b
 
 
 def _beta_cf(x: float, a: float, b: float, max_iter: int = 200, eps: float = 3e-7) -> float:
-    """Lentz's algorithm for the continued fraction of I_x(a, b)."""
+    """Lentz's algorithm for the continued fraction of I_x(a, b).
+
+    Returns ``math.nan`` on non-convergence rather than a silent value
+    so callers can fall back to a safe default. For df ∈ [2, 1e6] and
+    typical two-sample t-stats this converges in under 50 iterations.
+    """
     qab = a + b
     qap = a + 1.0
     qam = a - 1.0
@@ -326,9 +340,12 @@ def _beta_cf(x: float, a: float, b: float, max_iter: int = 200, eps: float = 3e-
         d = 1.0 / d
         delta = d * c
         h *= delta
+        if not math.isfinite(h):
+            return math.nan
         if abs(delta - 1.0) < eps:
             return h
-    return h
+    # Exhausted iterations without convergence — signal to caller.
+    return math.nan
 
 
 def _cohens_d(a: list[float], b: list[float]) -> float:

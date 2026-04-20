@@ -204,6 +204,196 @@ def test_get_ab_outcomes_excludes_null_after(tmp_path):
     assert rows[0]["arm"] == "control"
 
 
+def test_non_convergence_returns_safe_p_value():
+    """_beta_cf returning NaN must degrade to p=1.0 (no false 'validated').
+
+    We force non-convergence by pushing ``max_iter`` to 1 and then call
+    _two_sided_p — if the degradation path isn't wired, this would
+    either crash or emit a bogus tiny p-value and pass through as
+    ``validated``. Both are unacceptable.
+    """
+    import math
+    from soma.ab_control import _beta_cf, _two_sided_p
+
+    # Direct probe: non-convergence must surface as NaN.
+    nan = _beta_cf(0.5, 10.0, 10.0, max_iter=1, eps=0.0)
+    assert math.isnan(nan)
+
+    # _two_sided_p / _regularized_incomplete_beta should swallow NaN
+    # and return a safe p-value. With plausible real inputs it converges
+    # easily, so we can only verify the guard by patching _beta_cf to
+    # always fail:
+    import soma.ab_control as abm
+    original = abm._beta_cf
+    try:
+        abm._beta_cf = lambda *a, **k: float("nan")
+        p = _two_sided_p(1.5, df=10)
+        # Safe default is 1.0 (pattern reported as "no effect detected").
+        assert p == 1.0
+    finally:
+        abm._beta_cf = original
+
+
+def test_ab_horizon_constant_matches_plan():
+    """A/B pressure_after measurement horizon must be a small fixed
+    number — if this drifts the treatment/control windows fall out of
+    sync and the proof layer becomes biased again.
+    """
+    from soma.hooks.post_tool_use import _AB_MEASUREMENT_HORIZON
+    assert _AB_MEASUREMENT_HORIZON == 2
+
+
+def test_guidance_outcome_skips_control_arm(tmp_path):
+    """Control arm never saw the guidance → ``guidance_outcomes`` row
+    would be meaningless. The A/B table captures the control-arm
+    data; the dashboard ROI view stays uncontaminated.
+    """
+    from soma.analytics import AnalyticsStore
+    from soma.hooks.post_tool_use import _record_guidance_outcome
+
+    db = tmp_path / "a.db"
+    pending = {
+        "pattern": "bash_retry", "ab_arm": "control",
+        "pressure_at_injection": 0.6,
+    }
+    _record_guidance_outcome(
+        agent_id="cc-ctl", pending=pending,
+        followed=False, pressure_after=0.55,
+        analytics_path=db,
+    )
+    rows = AnalyticsStore(path=db)._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes WHERE agent_id = 'cc-ctl'"
+    ).fetchone()
+    assert rows[0] == 0
+
+    # Treatment arm still writes.
+    pending["ab_arm"] = "treatment"
+    _record_guidance_outcome(
+        agent_id="cc-ctl", pending=pending,
+        followed=True, pressure_after=0.2,
+        analytics_path=db,
+    )
+    rows = AnalyticsStore(path=db)._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes WHERE agent_id = 'cc-ctl'"
+    ).fetchone()
+    assert rows[0] == 1
+
+
+def test_record_ab_outcome_self_marks_pending(tmp_path):
+    """After a successful write, ``pending`` must carry ab_recorded=True
+    so the next call in the same hook can short-circuit without hitting
+    SQLite again. Round-2 fix: the function now self-marks instead of
+    relying on the caller to remember."""
+    from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+    pending = {
+        "pattern": "bash_retry", "actions_since": 2,
+        "ab_arm": "treatment", "pressure_at_injection": 0.7,
+    }
+    ok = _record_ab_outcome_at_horizon(
+        agent_id="cc-mark",
+        pending=pending,
+        pressure_after=0.3,
+        analytics_path=tmp_path / "ab.db",
+    )
+    assert ok is True
+    assert pending["ab_recorded"] is True
+
+    # Second call on the same pending is a no-op even though the
+    # conditions are otherwise satisfied.
+    again = _record_ab_outcome_at_horizon(
+        agent_id="cc-mark",
+        pending=pending,
+        pressure_after=0.2,
+        analytics_path=tmp_path / "ab.db",
+    )
+    assert again is False
+
+
+def test_record_ab_outcome_skips_if_already_recorded(tmp_path):
+    """The horizon recorder must be idempotent — reading the same
+    pending twice must not write two rows."""
+    from soma.analytics import AnalyticsStore
+    from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+    pending = {
+        "pattern": "bash_retry", "actions_since": 2,
+        "ab_arm": "treatment", "pressure_at_injection": 0.7,
+        "ab_recorded": True,
+    }
+    wrote = _record_ab_outcome_at_horizon(
+        agent_id="cc-idem",
+        pending=pending,
+        pressure_after=0.3,
+        analytics_path=tmp_path / "a.db",
+    )
+    assert wrote is False
+
+
+def test_record_ab_outcome_waits_until_horizon(tmp_path):
+    """Below the horizon the recorder is a no-op — treatment and
+    control must land at the same ``actions_since``."""
+    from soma.analytics import AnalyticsStore
+    from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+    pending = {
+        "pattern": "bash_retry", "actions_since": 1,
+        "ab_arm": "treatment", "pressure_at_injection": 0.7,
+    }
+    wrote = _record_ab_outcome_at_horizon(
+        agent_id="cc-early",
+        pending=pending,
+        pressure_after=0.3,
+        analytics_path=tmp_path / "a.db",
+    )
+    assert wrote is False
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    assert store.list_ab_patterns() == []
+
+
+def test_record_ab_outcome_at_horizon_writes_once(tmp_path):
+    """At horizon the row is written with ``followed`` from pressure delta."""
+    from soma.analytics import AnalyticsStore
+    from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+    pending = {
+        "pattern": "bash_retry", "actions_since": 2,
+        "ab_arm": "treatment", "pressure_at_injection": 0.7,
+    }
+    ok = _record_ab_outcome_at_horizon(
+        agent_id="cc-horizon",
+        pending=pending,
+        pressure_after=0.4,  # delta 0.3 ≥ 0.15
+        analytics_path=tmp_path / "ab.db",
+    )
+    assert ok is True
+    rows = AnalyticsStore(path=tmp_path / "ab.db").get_ab_outcomes(
+        pattern="bash_retry",
+    )
+    assert len(rows) == 1
+    assert rows[0]["followed"] == 1
+    assert rows[0]["pressure_before"] == 0.7
+    assert rows[0]["pressure_after"] == 0.4
+
+
+def test_record_ab_outcome_at_horizon_marks_not_followed_when_pressure_flat(tmp_path):
+    from soma.analytics import AnalyticsStore
+    from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+    pending = {
+        "pattern": "context", "actions_since": 2,
+        "ab_arm": "control", "pressure_at_injection": 0.6,
+    }
+    _record_ab_outcome_at_horizon(
+        agent_id="cc-flat",
+        pending=pending,
+        pressure_after=0.58,  # delta 0.02 < 0.15
+        analytics_path=tmp_path / "ab.db",
+    )
+    rows = AnalyticsStore(path=tmp_path / "ab.db").get_ab_outcomes(pattern="context")
+    assert rows[0]["followed"] == 0
+
+
 def test_get_ab_outcomes_no_family_filter(tmp_path):
     store = AnalyticsStore(path=tmp_path / "nofam.db")
     store.record_ab_outcome(
