@@ -130,13 +130,16 @@ def main():
         # Calibration phase overrides everything in warmup — show learning
         # progress instead of pressure so user knows SOMA isn't dead,
         # just collecting baseline.
+        # Cheap mtime-based warmup probe — avoids parsing JSON on every
+        # statusline render (Claude Code polls this on a hot path).
         try:
-            from soma.calibration import WARMUP_EXIT_ACTIONS, load_profile
-        except ImportError:
-            load_profile = None  # type: ignore[assignment]
-
-        if load_profile is not None:
-            try:
+            from soma.calibration import (
+                WARMUP_EXIT_ACTIONS, calibration_family, load_profile,
+            )
+            from soma.state import SOMA_DIR as _SD
+            fam = calibration_family(agent_id)
+            prof_path = _SD / f"calibration_{fam}.json"
+            if prof_path.exists():
                 profile = load_profile(agent_id)
                 if profile.is_warmup():
                     print(
@@ -144,8 +147,8 @@ def main():
                         f"{WARMUP_EXIT_ACTIONS}"
                     )
                     return
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         # Build parts
         parts = [f"🧠 SOMA {emoji} {label} {bar} {pressure:>3.0%}"]

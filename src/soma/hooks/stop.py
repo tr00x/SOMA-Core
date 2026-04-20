@@ -105,7 +105,9 @@ def main():
         log = read_action_log(agent_id)
         errors = sum(1 for e in log if e.get("error"))
 
-        # Count interventions from analytics
+        # Count interventions from analytics. Strict-mode PreToolUse
+        # blocks are stored with mode="strict" (not "BLOCK"), so we
+        # count both here.
         blocks = 0
         guides = 0
         warns = 0
@@ -117,8 +119,8 @@ def main():
                 (agent_id,),
             )
             for mode, cnt in cursor.fetchall():
-                if mode == "BLOCK":
-                    blocks = cnt
+                if mode in ("BLOCK", "strict"):
+                    blocks += cnt
                 elif mode == "GUIDE":
                     guides = cnt
                 elif mode == "WARN":

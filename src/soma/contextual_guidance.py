@@ -572,17 +572,17 @@ class ContextualGuidance:
             return None
 
         entropy = _compute_tool_entropy(action_log)
-        # Calibrated threshold ceiling: "healthy" entropy for this user's
-        # own tool-usage distribution. Users who naturally stay in a
-        # narrow toolset won't fire on what is, for them, normal.
-        entropy_ceiling = (
-            # The user's healthy-entropy ceiling is their own P75 —
-            # anything above that is "as diverse as you usually get".
-            max(self._profile.entropy_p75, 1.0)
-            if (self._profile is not None and not self._profile.is_warmup()
-                and self._profile.entropy_p75 > 0)
-            else 1.0
-        )
+        # Personal floor: the pattern should only fire when entropy drops
+        # *below this user's normal low* — we use the user's P25 (their
+        # own baseline of low-diversity behavior) clamped into [0.5, 1.0].
+        # Clamp upper bound to the legacy 1.0 so diverse users can't make
+        # the pattern more aggressive; clamp lower bound to 0.5 so users
+        # with extremely focused workflows never silence it entirely.
+        if (self._profile is not None and not self._profile.is_warmup()
+                and self._profile.entropy_p25 > 0):
+            entropy_ceiling = max(0.5, min(self._profile.entropy_p25, 1.0))
+        else:
+            entropy_ceiling = 1.0
         if entropy >= entropy_ceiling:
             return None  # Healthy diversity for this user
 

@@ -227,7 +227,12 @@ def _phase_for(action_count: int) -> Phase:
 # ── Persistence ────────────────────────────────────────────────────
 
 def load_profile(agent_id: str) -> CalibrationProfile:
-    """Load the calibration profile for the agent's family; empty new one on miss."""
+    """Load the calibration profile for the agent's family; empty new one on miss.
+
+    On corrupt JSON we rename the broken file to ``.corrupt`` before
+    starting over so the user can inspect (or restore) their
+    accumulated calibration rather than lose it silently.
+    """
     family = calibration_family(agent_id)
     path = _profile_path(family)
     if path.exists():
@@ -235,8 +240,11 @@ def load_profile(agent_id: str) -> CalibrationProfile:
             data = json.loads(path.read_text())
             return CalibrationProfile.from_dict(data)
         except (json.JSONDecodeError, OSError):
-            # Corrupt profile → start fresh rather than crash the hook.
-            pass
+            try:
+                backup = path.with_suffix(path.suffix + ".corrupt")
+                path.rename(backup)
+            except OSError:
+                pass
     return CalibrationProfile(family=family)
 
 
@@ -284,22 +292,32 @@ def compute_distributions(
     signal_pressures_history: list[dict[str, float]],
     errors_history: list[bool],
     entropy_history: list[float],
+    bash_retry_history: list[bool] | None = None,
 ) -> dict[str, float | int]:
     """Derive personal distribution stats from recent action history.
 
     Inputs are parallel lists in chronological order — one entry per
-    recorded action. Missing data for any signal yields the legacy floor.
-    Returns a dict shaped like the fields a profile consumes.
+    recorded action. ``bash_retry_history`` is an optional list marking
+    rows where the same Bash command retried; when omitted, retry
+    burst equals the generic error burst (no Bash-specific signal).
+    Missing data for any signal yields the legacy floor. Returns a dict
+    shaped like the fields a profile consumes.
     """
     drifts = [p.get("drift", 0.0) for p in signal_pressures_history if isinstance(p, dict)]
+
+    error_burst = _typical_burst(errors_history, truthy=True)
+    retry_burst = (
+        _typical_burst(bash_retry_history, truthy=True)
+        if bash_retry_history else error_burst
+    )
 
     result: dict[str, float | int] = {
         "drift_p25": _percentile(drifts, 25),
         "drift_p75": _percentile(drifts, 75),
         "entropy_p25": _percentile(entropy_history, 25),
         "entropy_p75": _percentile(entropy_history, 75),
-        "typical_error_burst": _typical_burst(errors_history, truthy=True),
-        "typical_retry_burst": _typical_burst(errors_history, truthy=True),
+        "typical_error_burst": error_burst,
+        "typical_retry_burst": retry_burst,
         "typical_success_rate": (
             1.0 - sum(1 for e in errors_history if e) / len(errors_history)
             if errors_history else 0.0
@@ -331,12 +349,16 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
     if delta < SILENCE_REFRESH_INTERVAL:
         return False
 
-    # Lazy-import to keep analytics optional.
+    # Lazy-import to keep analytics optional. We own the connection
+    # only when we opened it ourselves, so we must close it — otherwise
+    # each hook invocation leaks a SQLite FD.
+    owned_store = False
     store = analytics_store
     if store is None:
         try:
             from soma.analytics import AnalyticsStore
             store = AnalyticsStore()
+            owned_store = True
         except Exception:
             return False
 
@@ -346,6 +368,12 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
             profile.update_silence(pattern, stats["fires"], stats["helped"])
     except Exception:
         return False
+    finally:
+        if owned_store:
+            try:
+                store.close()
+            except Exception:
+                pass
 
     profile.last_silence_check_action = profile.action_count
     profile.updated_at = time.time()

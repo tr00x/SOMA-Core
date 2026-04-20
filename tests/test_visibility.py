@@ -108,7 +108,9 @@ def test_stop_hook_prints_summary_with_calibration_phase(
             }
         _agents = {"cc-99": None}
 
-    from soma.hooks import common as _common, stop as _stop
+    from soma.hooks import stop as _stop, common as _common
+    monkeypatch.setattr(_stop, "get_engine", lambda: (_FakeEngine(), "cc-99"))
+    monkeypatch.setattr(_stop, "save_state", lambda *_a, **_k: None)
     monkeypatch.setattr(_common, "get_engine", lambda: (_FakeEngine(), "cc-99"))
     monkeypatch.setattr(_common, "save_state", lambda *_a, **_k: None)
     monkeypatch.setattr(_common, "read_action_log", lambda *_a, **_k: [
@@ -143,7 +145,9 @@ def test_stop_hook_surfaces_unresolved_blocks(tmp_path, monkeypatch, capsys):
             }
         _agents = {"cc-99": None}
 
-    from soma.hooks import common as _common, stop as _stop
+    from soma.hooks import stop as _stop, common as _common
+    monkeypatch.setattr(_stop, "get_engine", lambda: (_FakeEngine(), "cc-99"))
+    monkeypatch.setattr(_stop, "save_state", lambda *_a, **_k: None)
     monkeypatch.setattr(_common, "get_engine", lambda: (_FakeEngine(), "cc-99"))
     monkeypatch.setattr(_common, "save_state", lambda *_a, **_k: None)
     monkeypatch.setattr(_common, "read_action_log", lambda *_a, **_k: [

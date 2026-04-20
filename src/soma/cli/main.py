@@ -342,7 +342,13 @@ def _cmd_unblock(args: argparse.Namespace) -> None:
     clear_all = bool(getattr(args, "all", False))
     agent_id = getattr(args, "agent_id", None) or "claude-code"
 
-    if clear_all and not pattern:
+    if clear_all and pattern:
+        print("  Error: --all and --pattern are mutually exclusive. "
+              "Use --all (clears every family) or --pattern X "
+              "(silences X for the given --agent family).")
+        sys.exit(2)
+
+    if clear_all:
         soma_dir = _blocks.SOMA_DIR
         removed = 0
         if soma_dir.exists():
@@ -1096,6 +1102,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "\n"
             "Agent control:\n"
             "  soma reset [agent-id]           Reset agent baseline (default: claude-code)\n"
+            "  soma unblock [--agent id]       Clear strict-mode blocks (v2026.5.0)\n"
             "  soma stop                       Disable SOMA hooks in Claude Code\n"
             "  soma start                      Re-enable SOMA hooks in Claude Code\n"
             "\n"
@@ -1108,9 +1115,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "Reports:\n"
             "  soma report [agent-id]          Generate session report\n"
             "  soma analytics [agent-id]       Show historical analytics\n"
+            "  soma healing                    Measure tool-to-tool pressure deltas\n"
             "\n"
             "Session:\n"
             "  soma replay <file>              Replay a recorded session file\n"
+            "  soma prune [--older-than N]     Remove stale ~/.soma/sessions entries\n"
             "\n"
             "System:\n"
             "  soma setup-claude               Set up SOMA for Claude Code projects\n"
