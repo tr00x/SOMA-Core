@@ -292,3 +292,140 @@ def test_reset_profile_removes_file(tmp_path):
 
 def test_reset_profile_missing_returns_false(tmp_path):
     assert reset_profile("cc-17") is False
+
+
+# ── Auto-retire (P1.1) ───────────────────────────────────────────────
+
+def test_refuted_defaults_empty():
+    p = CalibrationProfile(family="cc")
+    assert p.refuted_patterns == []
+    assert not p.is_refuted("bash_retry")
+
+
+def test_mark_refuted_adds_pattern():
+    p = CalibrationProfile(family="cc")
+    p.mark_refuted("bash_retry")
+    assert "bash_retry" in p.refuted_patterns
+    assert p.is_refuted("bash_retry")
+
+
+def test_mark_refuted_is_idempotent():
+    p = CalibrationProfile(family="cc")
+    p.mark_refuted("bash_retry")
+    p.mark_refuted("bash_retry")
+    assert p.refuted_patterns.count("bash_retry") == 1
+
+
+def test_unmark_refuted_removes_pattern():
+    p = CalibrationProfile(family="cc", refuted_patterns=["bash_retry"])
+    p.unmark_refuted("bash_retry")
+    assert "bash_retry" not in p.refuted_patterns
+    assert not p.is_refuted("bash_retry")
+
+
+def test_unmark_refuted_missing_is_noop():
+    p = CalibrationProfile(family="cc")
+    p.unmark_refuted("bash_retry")  # does not raise
+    assert p.refuted_patterns == []
+
+
+def test_is_refuted_ignores_phase():
+    """Refuted is strictly stronger than silence; fires in every phase."""
+    p = CalibrationProfile(
+        family="cc", action_count=5, refuted_patterns=["bash_retry"],
+    )
+    assert p.is_refuted("bash_retry")  # warmup
+    p.action_count = 100
+    p.phase = "calibrated"
+    assert p.is_refuted("bash_retry")
+    p.action_count = 600
+    p.phase = "adaptive"
+    assert p.is_refuted("bash_retry")
+
+
+def test_refuted_roundtrips_through_save_load(tmp_path):
+    p = CalibrationProfile(family="cc", action_count=50)
+    p.mark_refuted("bash_retry")
+    p.mark_refuted("budget")
+    save_profile(p)
+    q = load_profile("cc-1")
+    assert set(q.refuted_patterns) == {"bash_retry", "budget"}
+
+
+def test_maybe_refresh_refuted_marks_refuted_from_validate(monkeypatch):
+    """Validate returns refuted → profile records it."""
+    p = CalibrationProfile(family="cc", action_count=600)
+
+    class FakeStore:
+        def get_ab_outcomes(self, pattern, agent_family=None):
+            return []
+        def close(self):
+            pass
+
+    def fake_validate(outcomes, *, pattern, agent_family=None, min_pairs=30):
+        from soma.ab_control import ValidationResult
+        status = "refuted" if pattern == "bash_retry" else "validated"
+        return ValidationResult(
+            pattern=pattern, agent_family=agent_family,
+            fires_treatment=30, fires_control=30,
+            mean_treatment_delta=0.0, mean_control_delta=0.0,
+            delta_difference=0.0, p_value=0.01, effect_size=0.3,
+            status=status,
+        )
+
+    import soma.ab_control as ab
+    monkeypatch.setattr(ab, "validate", fake_validate)
+
+    changed = cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
+    assert changed is True
+    assert "bash_retry" in p.refuted_patterns
+    assert "cost_spiral" not in p.refuted_patterns
+
+
+def test_maybe_refresh_refuted_unmarks_on_recovery(monkeypatch):
+    """A previously refuted pattern whose status flips back drops off the list."""
+    p = CalibrationProfile(
+        family="cc", action_count=600, refuted_patterns=["bash_retry"],
+    )
+
+    class FakeStore:
+        def get_ab_outcomes(self, pattern, agent_family=None):
+            return []
+        def close(self):
+            pass
+
+    def fake_validate(outcomes, *, pattern, agent_family=None, min_pairs=30):
+        from soma.ab_control import ValidationResult
+        return ValidationResult(
+            pattern=pattern, agent_family=agent_family,
+            fires_treatment=30, fires_control=30,
+            mean_treatment_delta=0.0, mean_control_delta=0.0,
+            delta_difference=0.0, p_value=0.01, effect_size=0.3,
+            status="validated",
+        )
+
+    import soma.ab_control as ab
+    monkeypatch.setattr(ab, "validate", fake_validate)
+
+    changed = cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
+    assert changed is True
+    assert "bash_retry" not in p.refuted_patterns
+
+
+def test_maybe_refresh_refuted_respects_interval(monkeypatch):
+    """Second call within REFRESH_INTERVAL is a no-op."""
+    p = CalibrationProfile(family="cc", action_count=600)
+    p.last_refuted_check_action = 600
+
+    called = {"n": 0}
+
+    class FakeStore:
+        def get_ab_outcomes(self, pattern, agent_family=None):
+            called["n"] += 1
+            return []
+        def close(self):
+            pass
+
+    changed = cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
+    assert changed is False
+    assert called["n"] == 0
