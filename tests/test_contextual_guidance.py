@@ -1056,3 +1056,74 @@ def test_dashboard_imports_same_whitelist():
     """dashboard.data must import the canonical whitelist, not redeclare it."""
     from soma.dashboard.data import _REAL_PATTERN_KEYS
     assert _REAL_PATTERN_KEYS is REAL_PATTERN_KEYS
+
+
+# ── Auto-retire gate (P1.1) ─────────────────────────────────────────
+
+def _bash_retry_log():
+    return [
+        {"tool": "Read", "error": False, "file": "/src/a.py"},
+        {"tool": "Bash", "error": True, "file": "", "output": "Error: test failed"},
+    ]
+
+
+def test_refuted_pattern_is_silenced(monkeypatch):
+    from soma.calibration import CalibrationProfile
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(
+        family="cc", action_count=600, refuted_patterns=["bash_retry"],
+    )
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_retry"
+
+
+def test_force_pattern_env_overrides_refuted(monkeypatch):
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_FORCE_PATTERN", "bash_retry")
+    profile = CalibrationProfile(
+        family="cc", action_count=600, refuted_patterns=["bash_retry"],
+    )
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+def test_force_pattern_all_sentinel(monkeypatch):
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_FORCE_PATTERN", "all")
+    profile = CalibrationProfile(
+        family="cc", action_count=600, refuted_patterns=["bash_retry"],
+    )
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+def test_refuted_gate_applies_in_every_phase(monkeypatch):
+    """Unlike silence, refute fires even when calibrated (non-adaptive)."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(
+        family="cc", action_count=50, refuted_patterns=["bash_retry"],
+    )
+    # action_count=50 → calibrated phase; silence doesn't fire but
+    # refute must.
+    assert profile.phase == "calibrated"
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_retry"

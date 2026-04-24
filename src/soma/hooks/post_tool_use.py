@@ -782,6 +782,14 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                             _cal.save_profile(profile)
                     except Exception:
                         pass
+                    # Auto-retire (P1.1): rerun A/B validation every
+                    # REFUTED_REFRESH_INTERVAL actions and persist any
+                    # verdict changes. Fires in every phase.
+                    try:
+                        if _cal.maybe_refresh_refuted(profile):
+                            _cal.save_profile(profile)
+                    except Exception:
+                        pass
             except Exception:
                 pass  # Calibration is additive — never break guidance.
 

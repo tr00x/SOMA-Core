@@ -11,6 +11,7 @@ Every message contains:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
@@ -43,6 +44,24 @@ _PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cas
 #                retired.
 RETIRED_PATTERN_KEYS: frozenset[str] = frozenset({"_stats", "drift"})
 REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys())
+
+
+def _forced_patterns() -> frozenset[str]:
+    """Parse ``SOMA_FORCE_PATTERN`` into a set of pattern names.
+
+    Accepts comma-separated names (``bash_retry,drift``). The sentinel
+    values ``all`` / ``ALL`` / ``*`` force every known pattern back on,
+    which is useful for debugging why guidance stopped firing after an
+    auto-retire. Returns an empty set when the env var is unset/empty
+    so the common path short-circuits with no string work.
+    """
+    raw = os.environ.get("SOMA_FORCE_PATTERN", "").strip()
+    if not raw:
+        return frozenset()
+    if raw.lower() in ("all", "*"):
+        return frozenset(REAL_PATTERN_KEYS)
+    parts = {p.strip() for p in raw.split(",") if p.strip()}
+    return frozenset(parts)
 
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
@@ -494,7 +513,18 @@ class ContextualGuidance:
         # their last 20+ fires drop out for this family until precision
         # climbs back above 40%.
         if self._profile is not None:
-            active = [c for c in active if not self._profile.should_silence(c.pattern)]
+            forced = _forced_patterns()
+            active = [
+                c for c in active
+                if c.pattern in forced or not self._profile.should_silence(c.pattern)
+            ]
+            # Auto-retire (P1.1): a pattern refuted by A/B validation
+            # stays silenced in every phase unless SOMA_FORCE_PATTERN
+            # opts it back in for debugging/override.
+            active = [
+                c for c in active
+                if c.pattern in forced or not self._profile.is_refuted(c.pattern)
+            ]
         if not active:
             return None
 

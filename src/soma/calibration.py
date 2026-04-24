@@ -46,6 +46,11 @@ UNSILENCE_HELPED_RATE = 0.40
 # cheap, but we still only pay it once per N actions.
 SILENCE_REFRESH_INTERVAL = 100
 
+# How often to re-run A/B validation and refresh the refuted-pattern
+# list. Decoupled from silence refresh because validation is heavier
+# (Welch's t-test over all outcome rows per pattern).
+REFUTED_REFRESH_INTERVAL = 100
+
 # Patterns we track for auto-silence. Keep in sync with _PATTERN_PRIORITY
 # in contextual_guidance — hardcoded here to avoid a circular import.
 _SILENCE_TRACKED_PATTERNS = (
@@ -119,6 +124,14 @@ class CalibrationProfile:
     last_silence_check_action: int = 0
     pattern_precision_cache: dict[str, float] = field(default_factory=dict)
 
+    # Auto-retire state (P1.1). Patterns whose A/B validation returned
+    # ``refuted`` are silenced unconditionally — independent of phase
+    # and of precision-based auto-silence. Populated by
+    # :func:`maybe_refresh_refuted` and cleared if a later validation
+    # flips the verdict.
+    refuted_patterns: list[str] = field(default_factory=list)
+    last_refuted_check_action: int = 0
+
     # Metadata.
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -188,6 +201,29 @@ class CalibrationProfile:
         and calibrated fires unconditionally.
         """
         return self.phase == "adaptive" and pattern in self.silenced_patterns
+
+    # ── Auto-retire (P1.1) ─────────────────────────────────────────
+
+    def is_refuted(self, pattern: str) -> bool:
+        """Return True iff A/B validation has refuted this pattern.
+
+        Unlike :meth:`should_silence`, auto-retire fires in every phase
+        — if we have enough data to say the pattern is harmful, the
+        warmup/calibrated/adaptive distinction doesn't matter.
+        """
+        return pattern in self.refuted_patterns
+
+    def mark_refuted(self, pattern: str) -> None:
+        """Record a refuted verdict from :func:`ab_control.validate`."""
+        if pattern not in self.refuted_patterns:
+            self.refuted_patterns.append(pattern)
+            self.updated_at = time.time()
+
+    def unmark_refuted(self, pattern: str) -> None:
+        """Drop a refuted verdict; called when newer data recovers it."""
+        if pattern in self.refuted_patterns:
+            self.refuted_patterns.remove(pattern)
+            self.updated_at = time.time()
 
     def update_silence(self, pattern: str, fires: int, helped: int) -> None:
         """Apply the 20/40 hysteresis based on latest analytics snapshot.
@@ -446,6 +482,65 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
                 pass
 
     profile.last_silence_check_action = profile.action_count
+    profile.updated_at = time.time()
+    return True
+
+
+def maybe_refresh_refuted(
+    profile: CalibrationProfile, analytics_store=None,
+) -> bool:
+    """Refresh the refuted-pattern list from A/B outcomes.
+
+    For each tracked pattern, query its outcomes and run
+    :func:`ab_control.validate`. A ``refuted`` status is recorded
+    permanently on the profile; a later call that flips the verdict
+    back to validated/collecting/inconclusive drops the pattern.
+
+    Returns True iff the refuted list was mutated or analytics was
+    actually queried. Fires in every phase — unlike silence, we want
+    to retire bad patterns even for warmup users who still rely on
+    defaults.
+    """
+    delta = profile.action_count - profile.last_refuted_check_action
+    if delta < REFUTED_REFRESH_INTERVAL and profile.last_refuted_check_action > 0:
+        return False
+
+    owned_store = False
+    store = analytics_store
+    if store is None:
+        try:
+            from soma.analytics import AnalyticsStore
+            store = AnalyticsStore()
+            owned_store = True
+        except Exception:
+            return False
+
+    try:
+        from soma import ab_control
+        for pattern in _SILENCE_TRACKED_PATTERNS:
+            try:
+                outcomes = store.get_ab_outcomes(pattern, agent_family=profile.family)
+            except Exception:
+                continue
+            result = ab_control.validate(
+                outcomes, pattern=pattern, agent_family=profile.family,
+            )
+            is_refuted = result.status == "refuted"
+            was_refuted = pattern in profile.refuted_patterns
+            if is_refuted and not was_refuted:
+                profile.mark_refuted(pattern)
+            elif not is_refuted and was_refuted:
+                profile.unmark_refuted(pattern)
+    except Exception:
+        return False
+    finally:
+        if owned_store:
+            try:
+                store.close()
+            except Exception:
+                pass
+
+    profile.last_refuted_check_action = profile.action_count
     profile.updated_at = time.time()
     return True
 
