@@ -22,6 +22,14 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Verify A/B coverage snapshot (P2.2 gate)
+        # Blocks PyPI publish if the committed coverage snapshot shows
+        # that any of the top-5 guidance patterns lack 30 treatment and
+        # 30 control rows since the last ab_reset. Maintainer regenerates
+        # the snapshot via `python .github/scripts/ab_coverage_gate.py
+        # snapshot ab_coverage_snapshot.json` before tagging the release.
+        run: python .github/scripts/ab_coverage_gate.py verify ab_coverage_snapshot.json
+
       - name: Build package
         run: python -m build
 
