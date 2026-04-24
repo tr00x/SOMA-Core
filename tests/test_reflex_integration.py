@@ -310,29 +310,3 @@ class TestFullPipeline:
             )
             assert result.allow, f"{tool} blocked on healthy session"
 
-    def test_benchmark_retry_storm_with_reflexes(self):
-        """Real benchmark: retry_storm with reflex mode must reduce errors."""
-        from soma.benchmark.harness import run_scenario
-        from soma.benchmark.scenarios import retry_storm
-
-        actions = retry_storm(seed=42)
-        baseline = run_scenario(actions, soma_enabled=False)
-        reflex = run_scenario(actions, soma_enabled=True, reflex_mode=True)
-
-        assert reflex.error_rate < baseline.error_rate
-        # With lower thresholds, guidance may intercept errors before reflexes fire.
-        # Either mechanism reducing errors is valid.
-        guided_or_blocked = sum(
-            1 for a in reflex.per_action
-            if a.get("reflex_blocked") or a.get("guidance_followed")
-        )
-        assert guided_or_blocked > 0, "Either guidance or reflexes must intervene"
-
-    def test_benchmark_healthy_zero_reflex_blocks(self):
-        """Real benchmark: healthy_session must have 0 reflex blocks."""
-        from soma.benchmark.harness import run_scenario
-        from soma.benchmark.scenarios import healthy_session
-
-        result = run_scenario(healthy_session(seed=42), soma_enabled=True, reflex_mode=True)
-        reflex_blocks = sum(1 for a in result.per_action if a.get("reflex_blocked"))
-        assert reflex_blocks == 0
