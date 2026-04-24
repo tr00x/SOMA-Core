@@ -30,7 +30,7 @@ class GuidanceMessage:
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
 # Pattern priority within same severity (higher = wins ties)
-_PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1}
+_PATTERN_PRIORITY = {"cost_spiral": 10, "bash_error_streak": 6, "budget": 5, "bash_retry": 4, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1}
 
 # Canonical list of pattern keys that real production guidance paths emit.
 # Dashboard ROI whitelisting and any future analytics filter should import
@@ -491,6 +491,10 @@ class ContextualGuidance:
         if msg:
             candidates.append(msg)
 
+        msg = self._check_bash_error_streak(action_log, current_tool)
+        if msg:
+            candidates.append(msg)
+
         msg = self._check_bash_retry(action_log, current_tool)
         if msg:
             candidates.append(msg)
@@ -844,6 +848,54 @@ class ContextualGuidance:
         )
 
     # ── Pattern 9: Bash Retry Intercept ──
+
+    def _check_bash_error_streak(
+        self, action_log: list[dict], current_tool: str,
+    ) -> GuidanceMessage | None:
+        """P2.1: intercept a 3rd Bash when the last two Bash calls both errored.
+
+        Grounded in 1,566 production cases where the Bash→Bash→Bash
+        sequence failed 100% of the time. Shipped at severity=warn
+        (OBSERVE mode) until its own 30/30 A/B pairs validate the
+        effect — then promoted to strict-block via _STRICT_BLOCK_PATTERNS.
+        """
+        if current_tool != "Bash":
+            return None
+        if len(action_log) < 2:
+            return None
+        last = action_log[-1]
+        prev = action_log[-2]
+        if last.get("tool") != "Bash" or not last.get("error"):
+            return None
+        if prev.get("tool") != "Bash" or not prev.get("error"):
+            return None
+
+        # Yield to error_cascade once the streak crosses into runaway
+        # territory — that pattern has its own escalation copy.
+        consecutive_any = 0
+        for entry in reversed(action_log):
+            if entry.get("error"):
+                consecutive_any += 1
+            else:
+                break
+        if consecutive_any >= 3:
+            return None
+
+        return GuidanceMessage(
+            pattern="bash_error_streak",
+            severity="warn",
+            message=(
+                "[SOMA] 2 consecutive Bash failures. Production data shows "
+                "a 3rd Bash fails 100% of the time (n=1566). Read the error "
+                "or inspect the failing file before retrying."
+            ),
+            evidence=(
+                "prev-2 tool=Bash error=True",
+                "prev-1 tool=Bash error=True",
+                "historical fail rate 100% over 1566 cases",
+            ),
+            suggestion="Read the file that's failing, or check error output line-by-line",
+        )
 
     def _check_bash_retry(
         self, action_log: list[dict], current_tool: str,
