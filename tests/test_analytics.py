@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from soma.analytics import AnalyticsStore
@@ -318,6 +319,81 @@ def test_retired_pattern_rows_dropped(tmp_path: Path):
     }
     assert keys == {"bash_retry", "error_cascade"}
     store.close()
+
+
+def test_clear_stale_silence_cache_migration_runs_on_open(tmp_path: Path, monkeypatch):
+    """The silence triad must be zeroed when the AnalyticsStore opens.
+
+    Without this migration the v2026.5.5 A/B reset leaves half the
+    patterns silenced forever, which is what made the post-reset
+    ab_outcomes table stay empty in production.
+    """
+    from soma import ab_control, calibration
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    monkeypatch.setattr(calibration, "SOMA_DIR", tmp_path)
+
+    profile = tmp_path / "calibration_cc.json"
+    profile.write_text(json.dumps({
+        "family": "cc", "action_count": 4000, "phase": "adaptive",
+        "drift_p25": 0.0, "drift_p75": 0.0,
+        "entropy_p25": 0.0, "entropy_p75": 0.0,
+        "typical_error_burst": 0, "typical_retry_burst": 0,
+        "typical_success_rate": 0.0,
+        "silenced_patterns": ["blind_edit", "context"],
+        "last_silence_check_action": 3500,
+        "pattern_precision_cache": {"blind_edit": 0.05},
+        "refuted_patterns": [], "last_refuted_check_action": 0,
+        "validated_patterns": [],
+        "created_at": 1.0, "updated_at": 1.0, "schema_version": 1,
+    }))
+
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    store.close()
+
+    data = json.loads(profile.read_text())
+    assert data["silenced_patterns"] == []
+    assert data["pattern_precision_cache"] == {}
+    assert data["last_silence_check_action"] == 0
+
+
+def test_clear_stale_silence_cache_migration_idempotent(tmp_path: Path, monkeypatch):
+    """Second AnalyticsStore open on the same DB must not re-clear.
+
+    We prove idempotency by writing fresh silenced_patterns *after* the
+    first open and verifying the second open leaves them untouched —
+    the migration flag in schema_migrations short-circuits the sweep.
+    """
+    from soma import ab_control, calibration
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    monkeypatch.setattr(calibration, "SOMA_DIR", tmp_path)
+
+    profile = tmp_path / "calibration_cc.json"
+    profile.write_text(json.dumps({
+        "family": "cc", "action_count": 4000, "phase": "adaptive",
+        "drift_p25": 0.0, "drift_p75": 0.0,
+        "entropy_p25": 0.0, "entropy_p75": 0.0,
+        "typical_error_burst": 0, "typical_retry_burst": 0,
+        "typical_success_rate": 0.0,
+        "silenced_patterns": ["blind_edit"],
+        "last_silence_check_action": 0,
+        "pattern_precision_cache": {},
+        "refuted_patterns": [], "last_refuted_check_action": 0,
+        "validated_patterns": [],
+        "created_at": 1.0, "updated_at": 1.0, "schema_version": 1,
+    }))
+    store = AnalyticsStore(path=tmp_path / "b.db")
+    store.close()
+
+    # Simulate post-reset silence being legitimately set again.
+    data = json.loads(profile.read_text())
+    data["silenced_patterns"] = ["new_silence"]
+    profile.write_text(json.dumps(data))
+
+    store = AnalyticsStore(path=tmp_path / "b.db")
+    store.close()
+    data = json.loads(profile.read_text())
+    # Migration is one-shot — the fresh silence survives.
+    assert data["silenced_patterns"] == ["new_silence"]
 
 
 def test_archive_migration_resets_block_randomizer_counters(tmp_path: Path, monkeypatch):

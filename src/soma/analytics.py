@@ -133,6 +133,10 @@ class AnalyticsStore:
             "20260424_drop_retired_pattern_rows",
             self._drop_retired_pattern_rows,
         )
+        self._apply_migration(
+            "20260424_clear_stale_silence_cache",
+            self._clear_stale_silence_cache_post_ab_reset,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -182,6 +186,25 @@ class AnalyticsStore:
             tuple(RETIRED_PATTERN_KEYS),
         )
         return cursor.rowcount
+
+    def _clear_stale_silence_cache_post_ab_reset(self) -> int:
+        """Follow-on to ``_archive_biased_ab_outcomes``.
+
+        The A/B reset truncated the outcomes table, but per-agent
+        calibration profiles kept a ``silenced_patterns`` list computed
+        from pre-reset (biased) data. With that cache intact, patterns
+        like blind_edit/context/entropy_drop/budget stayed silenced
+        forever — cg.evaluate() returned None, ab_outcomes stayed empty,
+        and the P2.2 coverage gate became unreachable. This migration
+        zeros the silence triad on every ``calibration_*.json`` file in
+        SOMA_DIR so the post-reset distribution can rebuild itself from
+        clean guidance_outcomes.
+        """
+        try:
+            from soma.calibration import clear_stale_silence_cache
+            return clear_stale_silence_cache()
+        except Exception:
+            return 0
 
     def _archive_biased_ab_outcomes(self) -> int:
         """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.

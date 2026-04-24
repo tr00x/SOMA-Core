@@ -498,6 +498,87 @@ def test_maybe_refresh_refuted_also_marks_validated(monkeypatch):
     assert "cost_spiral" in p.refuted_patterns
 
 
+# ── Stale-silence cache clear (v2026.5.5 migration fix) ────────────
+
+
+def _write_profile(soma_dir: Path, family: str, **fields) -> Path:
+    base = {
+        "family": family, "action_count": 4000, "phase": "adaptive",
+        "drift_p25": 0.0, "drift_p75": 0.0,
+        "entropy_p25": 0.0, "entropy_p75": 0.0,
+        "typical_error_burst": 0, "typical_retry_burst": 0,
+        "typical_success_rate": 0.0,
+        "silenced_patterns": [], "last_silence_check_action": 0,
+        "pattern_precision_cache": {},
+        "refuted_patterns": [], "last_refuted_check_action": 0,
+        "validated_patterns": [],
+        "created_at": 1.0, "updated_at": 1.0, "schema_version": 1,
+    }
+    base.update(fields)
+    path = soma_dir / f"calibration_{family}.json"
+    path.write_text(json.dumps(base))
+    return path
+
+
+def test_clear_stale_silence_cache_zeros_silence_fields(tmp_path):
+    _write_profile(
+        tmp_path, "cc",
+        silenced_patterns=["blind_edit", "context"],
+        pattern_precision_cache={"blind_edit": 0.05, "context": 0.1},
+        last_silence_check_action=3500,
+        refuted_patterns=["drift"],
+        validated_patterns=["bash_retry"],
+    )
+    n = cal.clear_stale_silence_cache(soma_dir=tmp_path)
+    assert n == 1
+    data = json.loads((tmp_path / "calibration_cc.json").read_text())
+    assert data["silenced_patterns"] == []
+    assert data["pattern_precision_cache"] == {}
+    assert data["last_silence_check_action"] == 0
+    # Auto-retire and skeptic allowlists must survive — they reflect
+    # post-reset A/B evidence, not the biased silence cache.
+    assert data["refuted_patterns"] == ["drift"]
+    assert data["validated_patterns"] == ["bash_retry"]
+    # Non-silence state must not be touched.
+    assert data["action_count"] == 4000
+    assert data["phase"] == "adaptive"
+
+
+def test_clear_stale_silence_cache_handles_multiple_profiles(tmp_path):
+    _write_profile(tmp_path, "cc", silenced_patterns=["a", "b"])
+    _write_profile(tmp_path, "claude-code", silenced_patterns=["c"])
+    _write_profile(tmp_path, "empty", silenced_patterns=[])
+    n = cal.clear_stale_silence_cache(soma_dir=tmp_path)
+    assert n == 3
+    for family in ("cc", "claude-code", "empty"):
+        data = json.loads((tmp_path / f"calibration_{family}.json").read_text())
+        assert data["silenced_patterns"] == []
+
+
+def test_clear_stale_silence_cache_missing_dir_returns_zero(tmp_path):
+    missing = tmp_path / "does-not-exist"
+    assert cal.clear_stale_silence_cache(soma_dir=missing) == 0
+
+
+def test_clear_stale_silence_cache_skips_malformed_json(tmp_path):
+    (tmp_path / "calibration_broken.json").write_text("{not json")
+    _write_profile(tmp_path, "cc", silenced_patterns=["a"])
+    # Malformed file must not halt the sweep — other profiles still clear.
+    n = cal.clear_stale_silence_cache(soma_dir=tmp_path)
+    assert n == 1
+    data = json.loads((tmp_path / "calibration_cc.json").read_text())
+    assert data["silenced_patterns"] == []
+
+
+def test_clear_stale_silence_cache_idempotent(tmp_path):
+    _write_profile(tmp_path, "cc", silenced_patterns=["a"])
+    assert cal.clear_stale_silence_cache(soma_dir=tmp_path) == 1
+    # Second run is a no-op in effect — silenced already empty.
+    cal.clear_stale_silence_cache(soma_dir=tmp_path)
+    data = json.loads((tmp_path / "calibration_cc.json").read_text())
+    assert data["silenced_patterns"] == []
+
+
 def test_maybe_refresh_refuted_unmarks_validated_on_regression(monkeypatch):
     """Pattern that drops out of validated (e.g. flips to collecting) is cleared."""
     p = CalibrationProfile(
