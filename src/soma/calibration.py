@@ -538,8 +538,19 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
             return False
 
     try:
+        # Skip pre-v2026.5.5 outcomes: they were generated under MD5
+        # A/B assignment whose per-pattern bias skewed helped-rate
+        # readings, and keeping them in the precision window kept
+        # half the patterns silenced forever after the archive
+        # migration truncated ab_outcomes.
+        try:
+            reset_ts = store.get_ab_reset_ts()
+        except Exception:
+            reset_ts = 0.0
         for pattern in _SILENCE_TRACKED_PATTERNS:
-            stats = store.get_pattern_stats(profile.family, pattern, last_n=50)
+            stats = store.get_pattern_stats(
+                profile.family, pattern, last_n=50, since_ts=reset_ts,
+            )
             profile.update_silence(pattern, stats["fires"], stats["helped"])
     except Exception:
         return False

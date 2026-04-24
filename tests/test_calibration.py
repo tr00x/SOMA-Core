@@ -570,6 +570,49 @@ def test_clear_stale_silence_cache_skips_malformed_json(tmp_path):
     assert data["silenced_patterns"] == []
 
 
+def test_silence_refresh_passes_since_ts_from_ab_reset(tmp_path):
+    """maybe_refresh_silence must scope precision queries to post-reset rows.
+
+    Closes the v2026.5.5 loop: the archive migration and silence-cache
+    clear both ran, but next refresh pulled pre-reset fires via the
+    unfiltered path and re-silenced the same patterns. Fix is to hand
+    store.get_ab_reset_ts() through get_pattern_stats(since_ts=...).
+    """
+    p = CalibrationProfile(family="cc", action_count=600)
+
+    calls = []
+
+    class FakeStore:
+        def get_ab_reset_ts(self):
+            return 1500.0
+        def get_pattern_stats(self, family, pattern, last_n=50, since_ts=0.0):
+            calls.append((pattern, since_ts))
+            return {"fires": 0, "helped": 0}
+        def close(self):
+            pass
+
+    cal.maybe_refresh_silence(p, analytics_store=FakeStore())
+    assert calls, "refresh must query at least one pattern"
+    for _pattern, since in calls:
+        assert since == 1500.0, "since_ts must match get_ab_reset_ts"
+
+
+def test_silence_refresh_survives_missing_reset_log(tmp_path):
+    """If ab_reset.log is absent, silence refresh falls back to since_ts=0."""
+    p = CalibrationProfile(family="cc", action_count=600)
+
+    class FakeStore:
+        def get_ab_reset_ts(self):
+            raise RuntimeError("simulated log read failure")
+        def get_pattern_stats(self, family, pattern, last_n=50, since_ts=0.0):
+            assert since_ts == 0.0
+            return {"fires": 0, "helped": 0}
+        def close(self):
+            pass
+
+    assert cal.maybe_refresh_silence(p, analytics_store=FakeStore()) is True
+
+
 def test_clear_stale_silence_cache_idempotent(tmp_path):
     _write_profile(tmp_path, "cc", silenced_patterns=["a"])
     assert cal.clear_stale_silence_cache(soma_dir=tmp_path) == 1

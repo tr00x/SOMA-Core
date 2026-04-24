@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -386,23 +387,71 @@ class AnalyticsStore:
             "effectiveness_rate": helped / total if total > 0 else 0.0,
         }
 
+    def get_ab_reset_ts(self) -> float:
+        """Return the v2026.5.5 archive-migration timestamp, or 0.0.
+
+        Used by the silence refresher so pre-reset (biased) guidance
+        outcomes don't keep patterns silenced after the archive migration
+        truncated ab_outcomes.
+
+        Source of truth is ``schema_migrations.applied_at`` for the
+        archive migration id — guaranteed to be set whenever the
+        migration ran. Falls back to the ab_reset.log file (for forward
+        compat with installs that don't have the migration row yet).
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT applied_at FROM schema_migrations WHERE id = ?",
+                ("20260424_archive_biased_ab_outcomes",),
+            ).fetchone()
+            if row is not None and isinstance(row[0], (int, float)):
+                return float(row[0])
+        except sqlite3.Error:
+            pass
+        log = self._path.parent / "ab_reset.log"
+        if not log.exists():
+            return 0.0
+        latest = 0.0
+        try:
+            with log.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ts = entry.get("ts")
+                    if isinstance(ts, (int, float)) and ts > latest:
+                        latest = float(ts)
+        except OSError:
+            return 0.0
+        return latest
+
     def get_pattern_stats(
         self, agent_family: str, pattern: str, last_n: int = 50,
+        since_ts: float = 0.0,
     ) -> dict[str, int]:
         """Return (fires, helped) for the last N outcomes of ``pattern``.
 
         Matches agent_ids by family prefix (``agent_id LIKE 'cc-%'`` or
         exact ``cc`` match) so short-lived session ids contribute to the
         same user's precision cache.
+
+        ``since_ts`` filters out rows older than that epoch — callers
+        use it to exclude pre-v2026.5.5 biased outcomes from silence
+        decisions. Default 0 preserves legacy "all-time" semantics.
         """
         cursor = self._conn.execute(
             """
             SELECT helped FROM guidance_outcomes
             WHERE pattern_key = ?
               AND (agent_id = ? OR agent_id LIKE ?)
+              AND timestamp >= ?
             ORDER BY timestamp DESC LIMIT ?
             """,
-            (pattern, agent_family, f"{agent_family}-%", last_n),
+            (pattern, agent_family, f"{agent_family}-%", since_ts, last_n),
         )
         rows = cursor.fetchall()
         fires = len(rows)
