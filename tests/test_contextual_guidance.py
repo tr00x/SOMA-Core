@@ -1127,3 +1127,85 @@ def test_refuted_gate_applies_in_every_phase(monkeypatch):
         current_input={}, vitals={},
     )
     assert msg is None or msg.pattern != "bash_retry"
+
+
+# ── Skeptic mode (P2.3) ─────────────────────────────────────────────
+
+
+def test_skeptic_mode_drops_non_validated(monkeypatch):
+    """SOMA_SKEPTIC=1 silences any pattern not on the validated allowlist."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_SKEPTIC", "1")
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(family="cc", action_count=600)
+    assert not profile.is_validated("bash_retry")
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_retry"
+
+
+def test_skeptic_mode_allows_validated(monkeypatch):
+    """SOMA_SKEPTIC=1 still lets patterns on the validated list fire."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_SKEPTIC", "1")
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(
+        family="cc", action_count=600, validated_patterns=["bash_retry"],
+    )
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+def test_skeptic_mode_off_ignores_validated(monkeypatch):
+    """Without SOMA_SKEPTIC, validated_patterns is a metadata no-op."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.delenv("SOMA_SKEPTIC", raising=False)
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(family="cc", action_count=600)
+    assert not profile.is_validated("bash_retry")
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+def test_skeptic_mode_respects_force_pattern(monkeypatch):
+    """SOMA_FORCE_PATTERN overrides the skeptic allowlist for debugging."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_SKEPTIC", "1")
+    monkeypatch.setenv("SOMA_FORCE_PATTERN", "bash_retry")
+    profile = CalibrationProfile(family="cc", action_count=600)
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+@pytest.mark.parametrize("val", ["0", "false", "FALSE", "no", ""])
+def test_skeptic_mode_disabled_values(monkeypatch, val):
+    """0/false/empty disable skeptic mode — only truthy values enable it."""
+    from soma.calibration import CalibrationProfile
+    monkeypatch.setenv("SOMA_SKEPTIC", val)
+    monkeypatch.delenv("SOMA_FORCE_PATTERN", raising=False)
+    profile = CalibrationProfile(family="cc", action_count=600)
+    cg = ContextualGuidance(cooldown_actions=5, profile=profile)
+    msg = cg.evaluate(
+        action_log=_bash_retry_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"

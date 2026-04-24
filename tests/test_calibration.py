@@ -429,3 +429,99 @@ def test_maybe_refresh_refuted_respects_interval(monkeypatch):
     changed = cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
     assert changed is False
     assert called["n"] == 0
+
+
+# ── P2.3: validated-pattern tracking ────────────────────────────────
+
+
+def test_mark_validated_adds_to_list():
+    p = CalibrationProfile(family="cc")
+    assert not p.is_validated("bash_retry")
+    p.mark_validated("bash_retry")
+    assert p.is_validated("bash_retry")
+    # Idempotent.
+    p.mark_validated("bash_retry")
+    assert p.validated_patterns == ["bash_retry"]
+
+
+def test_unmark_validated_drops_from_list():
+    p = CalibrationProfile(family="cc", validated_patterns=["bash_retry"])
+    p.unmark_validated("bash_retry")
+    assert not p.is_validated("bash_retry")
+    # Idempotent: removing again is a no-op.
+    p.unmark_validated("bash_retry")
+    assert p.validated_patterns == []
+
+
+def test_validated_roundtrips_through_save_load(tmp_path):
+    p = CalibrationProfile(family="cc", action_count=50)
+    p.mark_validated("bash_retry")
+    p.mark_validated("cost_spiral")
+    save_profile(p)
+    q = load_profile("cc-1")
+    assert set(q.validated_patterns) == {"bash_retry", "cost_spiral"}
+
+
+def test_maybe_refresh_refuted_also_marks_validated(monkeypatch):
+    """Same refresh pass also records validated verdicts (P2.3)."""
+    p = CalibrationProfile(family="cc", action_count=600)
+
+    class FakeStore:
+        def get_ab_outcomes(self, pattern, agent_family=None):
+            return []
+        def close(self):
+            pass
+
+    def fake_validate(outcomes, *, pattern, agent_family=None, min_pairs=30):
+        from soma.ab_control import ValidationResult
+        if pattern == "bash_retry":
+            status = "validated"
+        elif pattern == "cost_spiral":
+            status = "refuted"
+        else:
+            status = "collecting"
+        return ValidationResult(
+            pattern=pattern, agent_family=agent_family,
+            fires_treatment=30, fires_control=30,
+            mean_treatment_delta=0.0, mean_control_delta=0.0,
+            delta_difference=0.0, p_value=0.01, effect_size=0.3,
+            status=status,
+        )
+
+    import soma.ab_control as ab
+    monkeypatch.setattr(ab, "validate", fake_validate)
+
+    changed = cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
+    assert changed is True
+    assert "bash_retry" in p.validated_patterns
+    assert "cost_spiral" not in p.validated_patterns
+    assert "cost_spiral" in p.refuted_patterns
+
+
+def test_maybe_refresh_refuted_unmarks_validated_on_regression(monkeypatch):
+    """Pattern that drops out of validated (e.g. flips to collecting) is cleared."""
+    p = CalibrationProfile(
+        family="cc", action_count=600, validated_patterns=["bash_retry"],
+    )
+
+    class FakeStore:
+        def get_ab_outcomes(self, pattern, agent_family=None):
+            return []
+        def close(self):
+            pass
+
+    def fake_validate(outcomes, *, pattern, agent_family=None, min_pairs=30):
+        from soma.ab_control import ValidationResult
+        return ValidationResult(
+            pattern=pattern, agent_family=agent_family,
+            fires_treatment=10, fires_control=10,
+            mean_treatment_delta=0.0, mean_control_delta=0.0,
+            delta_difference=0.0, p_value=None, effect_size=None,
+            status="collecting",
+        )
+
+    import soma.ab_control as ab
+    monkeypatch.setattr(ab, "validate", fake_validate)
+
+    cal.maybe_refresh_refuted(p, analytics_store=FakeStore())
+    assert "bash_retry" not in p.validated_patterns
