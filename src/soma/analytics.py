@@ -18,6 +18,23 @@ from typing import Any
 # that got in before the guard existed.
 _KNOWN_TEST_PATTERN_KEYS = frozenset({"mixed", "bad_pattern", "maybe_bad"})
 
+# Agent ids used exclusively by the test suite. The hook layer already
+# rejects these for real-session writes via _is_real_production_agent,
+# but direct callers of record_* (tests, mirror.py, replay tooling)
+# bypass that gate and have historically polluted production analytics
+# — 570 retry_loop rows under agent_id='test' as of 2026-04-24. This
+# mirrors the pattern-key guard: writes are silently dropped unless
+# the caller opts in with source='test'.
+_KNOWN_TEST_AGENT_IDS = frozenset({"test", "agent-a", "nonexistent-agent", "claude-code"})
+
+
+def _is_test_agent_id(agent_id: str) -> bool:
+    return (
+        not agent_id
+        or agent_id in _KNOWN_TEST_AGENT_IDS
+        or agent_id.startswith("test-")
+    )
+
 
 class AnalyticsStore:
     """SQLite-backed historical analytics for SOMA sessions."""
@@ -138,6 +155,10 @@ class AnalyticsStore:
             "20260424_clear_stale_silence_cache",
             self._clear_stale_silence_cache_post_ab_reset,
         )
+        self._apply_migration(
+            "20260424_purge_test_agent_pollution",
+            self._purge_test_agent_pollution,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -185,6 +206,25 @@ class AnalyticsStore:
         cursor = self._conn.execute(
             f"DELETE FROM guidance_outcomes WHERE pattern_key IN ({placeholders})",
             tuple(RETIRED_PATTERN_KEYS),
+        )
+        return cursor.rowcount
+
+    def _purge_test_agent_pollution(self) -> int:
+        """Delete guidance_outcomes rows written under a test agent id.
+
+        Catches the leak the pattern-key guard missed: tests calling
+        :meth:`record_guidance_outcome` (directly or via mirror.py) with
+        real pattern keys but test agent ids (``test``, ``agent-a``,
+        starts with ``test-``). Production analytics had 570+ such rows
+        by 2026-04-24. Rows with ``source='test'`` are preserved — the
+        ROI / mirror test suites deliberately write them.
+        """
+        exact = ",".join("?" for _ in _KNOWN_TEST_AGENT_IDS)
+        cursor = self._conn.execute(
+            f"DELETE FROM guidance_outcomes "
+            f"WHERE (source IS NULL OR source != 'test') AND ("
+            f"agent_id IN ({exact}) OR agent_id LIKE 'test-%' OR agent_id = '')",
+            tuple(_KNOWN_TEST_AGENT_IDS),
         )
         return cursor.rowcount
 
@@ -354,10 +394,10 @@ class AnalyticsStore:
         pollution pattern where test runs against the user's real DB
         silently injected 672 rows of junk into the ROI view.
         """
-        if (
-            source != "test"
-            and (pattern_key in _KNOWN_TEST_PATTERN_KEYS
-                 or pattern_key.startswith("test_"))
+        if source != "test" and (
+            pattern_key in _KNOWN_TEST_PATTERN_KEYS
+            or pattern_key.startswith("test_")
+            or _is_test_agent_id(agent_id)
         ):
             return
         self._conn.execute(
