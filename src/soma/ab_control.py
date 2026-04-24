@@ -24,24 +24,42 @@ treatment and control with Welch's t-test.
 - ``status == "collecting"`` → fewer than ``min_pairs`` in at least
   one arm.
 
-The 50/50 split is deterministic on
-``hash(agent_family | pattern | action_number)`` so replays of the
-same session yield identical assignments — critical for debugging A/B
-decisions after the fact.
+Arm assignment uses **block randomization** keyed on persistent
+per-``(family, pattern)`` counters in ``~/.soma/ab_counters.json``:
+when ``|T − C| ≥ BALANCE_THRESHOLD`` we force the minority arm,
+otherwise a cryptographic coin flip. This guarantees tight balance
+even inside a short burst of firings within a single session — the
+prior MD5 scheme could cluster 40+ consecutive firings into one arm
+because neighbouring ``action_number`` values don't mix well.
+
+Trade-off: we lose replay determinism (``hash(family|pattern|N)``
+would give the same arm on replay). Reviewing 90 rows of biased data
+convinced the user that bias is a worse failure mode than losing
+replay; no existing tooling relied on replay reproducibility.
 
 Users who want their guidance always live can set
-``SOMA_DISABLE_AB=1``; assignment falls through to ``treatment`` for
-every firing.
+``SOMA_DISABLE_CONTROL_ARM=1``; assignment falls through to
+``treatment`` for every firing. The legacy ``SOMA_DISABLE_AB=1`` is
+honoured as a deprecated alias.
 """
 
 from __future__ import annotations
 
-import hashlib
+import json
 import math
 import os
+import secrets
 import statistics
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
+
+try:
+    import fcntl
+
+    _HAS_FLOCK = True
+except ImportError:
+    _HAS_FLOCK = False
 
 Arm = Literal["treatment", "control"]
 Status = Literal["collecting", "validated", "refuted", "inconclusive"]
@@ -57,6 +75,15 @@ EFFECT_SIZE_THRESHOLD = 0.2
 DELTA_DIFFERENCE_THRESHOLD = 0.1
 # Two-sided alpha.
 ALPHA = 0.05
+
+# Block-randomization: when |T−C| ≥ this many, the next firing is forced
+# into the minority arm. 2 keeps bursts within ±1 pair of each other
+# while still allowing a fair coin flip most of the time.
+BALANCE_THRESHOLD = 2
+
+# Persistent counter file. Counts are cumulative per (family, pattern)
+# and are what guarantee long-run balance across sessions.
+_COUNTERS_PATH = Path.home() / ".soma" / "ab_counters.json"
 
 
 @dataclass(frozen=True)
@@ -93,19 +120,126 @@ class ValidationResult:
 def should_inject(pattern: str, agent_family: str, action_number: int) -> Arm:
     """Return the arm this firing is assigned to.
 
-    Deterministic from ``hash(family|pattern|action_number)`` so the
-    same sequence replays the same way. ``SOMA_DISABLE_AB=1`` short-
-    circuits to always-treatment for users who opt out.
+    Uses block randomization against persistent per-(family, pattern)
+    counters: if one arm is ahead by ``BALANCE_THRESHOLD`` or more, the
+    next firing is forced into the other arm; otherwise ``secrets``
+    decides with a fair coin flip. ``action_number`` is accepted for
+    backward compatibility (old deterministic path) but is no longer
+    used — bias was worse than losing replay.
+
+    ``SOMA_DISABLE_CONTROL_ARM=1`` (or the deprecated alias
+    ``SOMA_DISABLE_AB=1``) short-circuits to always-treatment for
+    users who opt out of the counterfactual arm entirely.
     """
-    if os.environ.get("SOMA_DISABLE_AB") == "1":
+    if _ab_disabled():
         return "treatment"
     return _assign_arm(pattern, agent_family, action_number)
 
 
+def _ab_disabled() -> bool:
+    """True if the user opted out of the control arm via env var."""
+    return (
+        os.environ.get("SOMA_DISABLE_CONTROL_ARM") == "1"
+        or os.environ.get("SOMA_DISABLE_AB") == "1"
+    )
+
+
 def _assign_arm(pattern: str, agent_family: str, action_number: int) -> Arm:
-    key = f"{agent_family}|{pattern}|{action_number}".encode()
-    digest = hashlib.md5(key).hexdigest()
-    return "treatment" if int(digest, 16) % 2 == 0 else "control"
+    """Block-randomized assignment backed by the persistent counter.
+
+    Called under an exclusive file lock so concurrent processes on the
+    same machine can't both read the same counter and collide. If the
+    counter file is missing or corrupt we start fresh at ``(0, 0)`` —
+    the next ``BALANCE_THRESHOLD`` firings will still land near 50/50.
+    """
+    del action_number  # retained for signature stability; ignored.
+    key = f"{agent_family}|{pattern}"
+    with _counter_lock():
+        counters = _load_counters()
+        t_count, c_count = counters.get(key, [0, 0])
+
+        if t_count - c_count >= BALANCE_THRESHOLD:
+            arm: Arm = "control"
+        elif c_count - t_count >= BALANCE_THRESHOLD:
+            arm = "treatment"
+        else:
+            arm = "treatment" if secrets.randbits(1) == 1 else "control"
+
+        if arm == "treatment":
+            counters[key] = [t_count + 1, c_count]
+        else:
+            counters[key] = [t_count, c_count + 1]
+        _save_counters(counters)
+    return arm
+
+
+def _load_counters() -> dict[str, list[int]]:
+    """Read the counter map. Missing or corrupt file → empty map."""
+    try:
+        raw = _COUNTERS_PATH.read_text()
+    except (FileNotFoundError, OSError):
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, list[int]] = {}
+    for k, v in data.items():
+        if isinstance(v, list) and len(v) == 2 and all(isinstance(x, int) for x in v):
+            out[k] = [v[0], v[1]]
+    return out
+
+
+def _save_counters(counters: dict[str, list[int]]) -> None:
+    """Best-effort write. Failure here must not break guidance."""
+    try:
+        _COUNTERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _COUNTERS_PATH.write_text(json.dumps(counters, sort_keys=True))
+    except OSError:
+        pass
+
+
+class _counter_lock:
+    """Exclusive fcntl lock around the counter file.
+
+    Degrades to a no-op context manager when fcntl isn't available
+    (non-POSIX). In that case the counters are still correct for a
+    single-process setup; only cross-process races are unprotected.
+    """
+
+    def __enter__(self) -> "_counter_lock":
+        if not _HAS_FLOCK:
+            self._fh = None
+            return self
+        lock_path = _COUNTERS_PATH.with_suffix(".lock")
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            self._fh = open(lock_path, "w")
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            self._fh = None
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._fh is not None:
+            try:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            self._fh.close()
+
+
+def reset_counters() -> None:
+    """Wipe the counter file. Used by v2026.5.5 migration and tests."""
+    with _counter_lock():
+        try:
+            _COUNTERS_PATH.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
 
 # ── Validation ──────────────────────────────────────────────────────
