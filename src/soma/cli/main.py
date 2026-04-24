@@ -1056,133 +1056,6 @@ def _cmd_dashboard(args: argparse.Namespace) -> None:
     uvicorn.run("soma.dashboard.app:app", host=host, port=port)
 
 
-def _cmd_benchmark(args: argparse.Namespace) -> None:
-    """Run SOMA behavioral benchmarks with A/B comparison."""
-    from dataclasses import asdict
-
-    # A/B verdict mode — the definitive test
-    if getattr(args, "ab", False):
-        from soma.benchmark.live import run_live_benchmark
-        from soma.benchmark.ab_report import (
-            analyze_ab_results,
-            generate_ab_report,
-            render_ab_terminal,
-        )
-        model = getattr(args, "model", "claude-haiku-4-5-20251001")
-        runs = getattr(args, "runs", 3)
-        tasks_arg = getattr(args, "tasks", None)
-
-        # Optional task filter
-        task_defs = None
-        if tasks_arg:
-            from soma.benchmark.tasks import get_task_by_name
-            task_defs = []
-            for name in tasks_arg:
-                t = get_task_by_name(name)
-                if t:
-                    task_defs.append(t)
-                else:
-                    print(f"  Warning: unknown task '{name}', skipping")
-            if not task_defs:
-                print("  Error: no valid tasks specified")
-                return
-
-        n_tasks = len(task_defs) if task_defs else 10
-        est_calls = n_tasks * runs * 2 * 8  # tasks × runs × modes × ~steps
-        print("  SOMA A/B Benchmark — the definitive test")
-        print(f"  Model: {model} | Tasks: {n_tasks} | Runs: {runs}/task")
-        print(f"  Estimated API calls: ~{est_calls}")
-        print()
-
-        result = run_live_benchmark(runs_per_task=runs, model=model, tasks=task_defs)
-        verdict = analyze_ab_results(result)
-        render_ab_terminal(result, verdict)
-
-        output_path = Path(getattr(args, "output", "docs/AB-VERDICT.md"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(generate_ab_report(result, verdict))
-        print(f"  Full report: {output_path}")
-
-        # JSON for reproducibility
-        json_path = getattr(args, "json", None)
-        if json_path:
-            jp = Path(json_path)
-            jp.parent.mkdir(parents=True, exist_ok=True)
-            jp.write_text(json.dumps(asdict(verdict), indent=2, default=str))
-            print(f"  Verdict JSON: {jp}")
-        return
-
-    # Live benchmark mode — real LLM API calls
-    if getattr(args, "live", False):
-        from soma.benchmark.live import (
-            run_live_benchmark,
-            generate_live_report,
-            render_live_terminal,
-        )
-        model = getattr(args, "model", "claude-haiku-4-5-20251001")
-        runs = getattr(args, "runs", 3)
-        print(f"  Running live benchmark with {model}...")
-        print(f"  {runs} run(s) per task, estimated cost: ~$0.05")
-        print()
-        result = run_live_benchmark(runs_per_task=runs, model=model)
-        render_live_terminal(result)
-
-        output_path = Path(getattr(args, "output", "docs/LIVE-BENCHMARK.md"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(generate_live_report(result))
-        print(f"  Live benchmark report: {output_path}")
-        return
-
-    from soma.benchmark import run_benchmark
-    from soma.benchmark.report import generate_markdown, render_terminal
-
-    runs = getattr(args, "runs", 5)
-
-    if not getattr(args, "no_terminal", False):
-        from rich.console import Console
-        console = Console()
-        console.print()
-        console.print("[bold magenta]SOMA Benchmark[/bold magenta]")
-        console.print(f"  Running {runs} run(s) per scenario...")
-        console.print()
-
-    result = run_benchmark(runs_per_scenario=runs)
-
-    if not getattr(args, "no_terminal", False):
-        render_terminal(result)
-
-    # Write markdown report
-    output_path = Path(getattr(args, "output", "docs/BENCHMARK.md"))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(generate_markdown(result))
-    print(f"  Benchmark report written to: {output_path}")
-
-    # Optional JSON output
-    json_path = getattr(args, "json", None)
-    if json_path:
-        jp = Path(json_path)
-        jp.parent.mkdir(parents=True, exist_ok=True)
-        jp.write_text(json.dumps(asdict(result), indent=2, default=str))
-        print(f"  JSON results written to: {jp}")
-
-    # Optional threshold tuning
-    if getattr(args, "tune_thresholds", False):
-        from soma.threshold_tuner import compute_optimal_thresholds
-
-        # Collect per-action data from all SOMA runs
-        all_runs: list[dict] = []
-        for scenario in result.scenarios:
-            for run in scenario.soma_runs:
-                all_runs.append({"per_action": run.per_action})
-
-        thresholds = compute_optimal_thresholds(all_runs)
-        print()
-        print("  Optimized thresholds from benchmark data:")
-        for key, val in thresholds.items():
-            print(f"    {key}: {val:.3f}")
-        print()
-
-
 def _cmd_tui() -> None:
     # First run? Auto-wizard
     if not Path("soma.toml").exists() and not (Path.home() / ".soma" / "state.json").exists():
@@ -1386,29 +1259,6 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_parser.add_argument("--session", type=int, default=None, metavar="N",
                                help="Replay Nth session (0=most recent)")
 
-    # ---- Benchmark ----
-    benchmark_parser = subparsers.add_parser("benchmark", help="Run SOMA behavioral benchmarks")
-    benchmark_parser.add_argument("--scenarios", nargs="*", default=None,
-                                  help="Specific scenarios to run (default: all)")
-    benchmark_parser.add_argument("--runs", type=int, default=5,
-                                  help="Runs per scenario (default: 5)")
-    benchmark_parser.add_argument("--output", type=str, default="docs/BENCHMARK.md",
-                                  help="Markdown output path")
-    benchmark_parser.add_argument("--json", type=str, default=None,
-                                  help="JSON output path")
-    benchmark_parser.add_argument("--no-terminal", action="store_true", dest="no_terminal",
-                                  help="Skip rich terminal output")
-    benchmark_parser.add_argument("--tune-thresholds", action="store_true", dest="tune_thresholds",
-                                  help="Run threshold tuner on results")
-    benchmark_parser.add_argument("--live", action="store_true",
-                                  help="Run live benchmark with real LLM API calls")
-    benchmark_parser.add_argument("--ab", action="store_true",
-                                  help="Run A/B verdict benchmark — the definitive SOMA vs no-SOMA test")
-    benchmark_parser.add_argument("--tasks", nargs="*", default=None,
-                                  help="Task names to run (default: all 10). Use 'soma benchmark --ab --tasks linked_list_with_bugs state_machine'")
-    benchmark_parser.add_argument("--model", type=str, default="claude-haiku-4-5-20251001",
-                                  help="Model for live/ab benchmark (default: claude-haiku-4-5-20251001)")
-
     # ---- System ----
     subparsers.add_parser("version", help="Print the SOMA version and exit")
     subparsers.add_parser("doctor", help="Check SOMA installation health")
@@ -1468,7 +1318,6 @@ def main() -> None:
         "analytics": _cmd_analytics,
         "version": _cmd_version,
         "doctor": _cmd_doctor,
-        "benchmark": _cmd_benchmark,
         "dashboard": _cmd_dashboard,
     }
 
