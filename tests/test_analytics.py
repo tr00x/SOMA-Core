@@ -321,6 +321,88 @@ def test_retired_pattern_rows_dropped(tmp_path: Path):
     store.close()
 
 
+def test_get_ab_reset_ts_reads_schema_migrations(tmp_path: Path, monkeypatch):
+    """Primary source of truth is schema_migrations.applied_at.
+
+    The migration flag is guaranteed to exist once the archive has run —
+    unlike ab_reset.log, which the best-effort writer may have failed
+    to create on older installs.
+    """
+    from soma import ab_control
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    ts = store.get_ab_reset_ts()
+    # Opened just now, so the migration applied_at is within the last
+    # minute.
+    import time as _t
+    assert 0 < ts < _t.time() + 1
+    assert ts > _t.time() - 60
+    store.close()
+
+
+def test_get_ab_reset_ts_falls_back_to_log(tmp_path: Path, monkeypatch):
+    """If schema_migrations row is absent (forward-compat), read the log."""
+    from soma import ab_control
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    store = AnalyticsStore(path=tmp_path / "b.db")
+    # Simulate an install where the migration row is gone but the log
+    # survives.
+    store._conn.execute("DELETE FROM schema_migrations")
+    store._conn.commit()
+    log = tmp_path / "ab_reset.log"
+    log.write_text(
+        json.dumps({"ts": 100.0}) + "\n"
+        + "not-json\n"
+        + json.dumps({"ts": 500.0}) + "\n"
+        + json.dumps({"ts": 200.0}) + "\n"
+    )
+    assert store.get_ab_reset_ts() == 500.0
+    store.close()
+
+
+def test_get_ab_reset_ts_missing_everything_returns_zero(tmp_path: Path, monkeypatch):
+    from soma import ab_control
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    store = AnalyticsStore(path=tmp_path / "c.db")
+    store._conn.execute("DELETE FROM schema_migrations")
+    store._conn.commit()
+    log = tmp_path / "ab_reset.log"
+    if log.exists():
+        log.unlink()
+    assert store.get_ab_reset_ts() == 0.0
+    store.close()
+
+
+def test_get_pattern_stats_since_ts_excludes_old_rows(tmp_path: Path, monkeypatch):
+    """Pre-reset (biased) rows must not poison post-reset precision."""
+    from soma import ab_control
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    store = AnalyticsStore(path=tmp_path / "c.db")
+    # 30 pre-reset fires with helped=0 (biased).
+    for i in range(30):
+        store._conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, 'cc', 's', 'blind_edit', 0, 0, 0, 'hook')",
+            (100.0 + i,),
+        )
+    # 5 post-reset fires with helped=1 (clean).
+    for i in range(5):
+        store._conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, 'cc', 's', 'blind_edit', 1, 0, 0, 'hook')",
+            (2000.0 + i,),
+        )
+    store._conn.commit()
+
+    # Legacy call (since_ts=0) sees the biased window — 30 fires, 5 helped.
+    stats = store.get_pattern_stats("cc", "blind_edit", last_n=50)
+    assert stats["fires"] == 35
+    assert stats["helped"] == 5
+    # Post-reset call (since_ts=1500) sees only the clean fires.
+    stats = store.get_pattern_stats("cc", "blind_edit", last_n=50, since_ts=1500.0)
+    assert stats["fires"] == 5
+    assert stats["helped"] == 5
+    store.close()
+
+
 def test_clear_stale_silence_cache_migration_runs_on_open(tmp_path: Path, monkeypatch):
     """The silence triad must be zeroed when the AnalyticsStore opens.
 
