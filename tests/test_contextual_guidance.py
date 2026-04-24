@@ -1129,6 +1129,91 @@ def test_refuted_gate_applies_in_every_phase(monkeypatch):
     assert msg is None or msg.pattern != "bash_retry"
 
 
+# ── Bash error streak (P2.1) ────────────────────────────────────────
+
+
+def _bash_error_streak_log():
+    return [
+        {"tool": "Read", "error": False, "file": "/src/a.py"},
+        {"tool": "Bash", "error": True, "file": "", "output": "E: first fail"},
+        {"tool": "Bash", "error": True, "file": "", "output": "E: second fail"},
+    ]
+
+
+def test_bash_error_streak_fires_on_third_bash(cg):
+    """Current=Bash after two consecutive failed Bashes → fire."""
+    msg = cg.evaluate(
+        action_log=_bash_error_streak_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_error_streak"
+    assert msg.severity == "warn"
+    assert "100%" in msg.message
+    assert "1566" in msg.message
+
+
+def test_bash_error_streak_does_not_fire_for_non_bash_current(cg):
+    msg = cg.evaluate(
+        action_log=_bash_error_streak_log(), current_tool="Read",
+        current_input={"file_path": "/tmp/x"}, vitals={},
+    )
+    assert msg is None or msg.pattern != "bash_error_streak"
+
+
+def test_bash_error_streak_requires_two_prior_bash_errors(cg):
+    """Only the immediate previous Bash failed — bash_retry fires, not streak."""
+    log = [
+        {"tool": "Read", "error": False},
+        {"tool": "Bash", "error": False, "output": "ok"},
+        {"tool": "Bash", "error": True, "output": "fail"},
+    ]
+    msg = cg.evaluate(
+        action_log=log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_retry"
+
+
+def test_bash_error_streak_yields_to_error_cascade_at_3(cg):
+    """Once the streak crosses 3 consecutive errors, error_cascade owns it."""
+    log = [
+        {"tool": "Bash", "error": True, "output": "e1"},
+        {"tool": "Bash", "error": True, "output": "e2"},
+        {"tool": "Bash", "error": True, "output": "e3"},
+    ]
+    msg = cg.evaluate(
+        action_log=log, current_tool="Bash", current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "error_cascade"
+
+
+def test_bash_error_streak_beats_bash_retry_priority(cg):
+    """When both candidates qualify, bash_error_streak's higher priority wins."""
+    msg = cg.evaluate(
+        action_log=_bash_error_streak_log(), current_tool="Bash",
+        current_input={}, vitals={},
+    )
+    assert msg is not None
+    assert msg.pattern == "bash_error_streak"
+
+
+def test_bash_error_streak_requires_both_prior_to_be_bash(cg):
+    """Two consecutive errors but mixed tools → not a bash streak."""
+    log = [
+        {"tool": "Bash", "error": True, "output": "e1"},
+        {"tool": "Read", "error": True, "output": "e2"},
+    ]
+    msg = cg.evaluate(
+        action_log=log, current_tool="Bash", current_input={}, vitals={},
+    )
+    # bash_retry doesn't fire (last was Read, not Bash). bash_error_streak
+    # doesn't fire (only one prev Bash). Could get error_cascade if
+    # consecutive_any >= 3 — here it's 2, so nothing.
+    assert msg is None or msg.pattern not in ("bash_error_streak",)
+
+
 # ── Skeptic mode (P2.3) ─────────────────────────────────────────────
 
 
