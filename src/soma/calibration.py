@@ -132,6 +132,13 @@ class CalibrationProfile:
     refuted_patterns: list[str] = field(default_factory=list)
     last_refuted_check_action: int = 0
 
+    # Skeptic-mode allowlist (P2.3). Populated in the same refresh pass
+    # that tracks refuted_patterns: a pattern enters this list when its
+    # A/B validation returns ``validated`` and drops out when the status
+    # changes. Consumed by ContextualGuidance when SOMA_SKEPTIC=1 — the
+    # flag restricts guidance to patterns in this list.
+    validated_patterns: list[str] = field(default_factory=list)
+
     # Metadata.
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -223,6 +230,24 @@ class CalibrationProfile:
         """Drop a refuted verdict; called when newer data recovers it."""
         if pattern in self.refuted_patterns:
             self.refuted_patterns.remove(pattern)
+            self.updated_at = time.time()
+
+    # ── Skeptic allowlist (P2.3) ───────────────────────────────────
+
+    def is_validated(self, pattern: str) -> bool:
+        """Return True iff A/B validation has confirmed this pattern."""
+        return pattern in self.validated_patterns
+
+    def mark_validated(self, pattern: str) -> None:
+        """Record a validated verdict from :func:`ab_control.validate`."""
+        if pattern not in self.validated_patterns:
+            self.validated_patterns.append(pattern)
+            self.updated_at = time.time()
+
+    def unmark_validated(self, pattern: str) -> None:
+        """Drop a validated verdict when the status flips away."""
+        if pattern in self.validated_patterns:
+            self.validated_patterns.remove(pattern)
             self.updated_at = time.time()
 
     def update_silence(self, pattern: str, fires: int, helped: int) -> None:
@@ -489,15 +514,15 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
 def maybe_refresh_refuted(
     profile: CalibrationProfile, analytics_store=None,
 ) -> bool:
-    """Refresh the refuted-pattern list from A/B outcomes.
+    """Refresh the refuted- and validated-pattern lists from A/B outcomes.
 
     For each tracked pattern, query its outcomes and run
-    :func:`ab_control.validate`. A ``refuted`` status is recorded
-    permanently on the profile; a later call that flips the verdict
-    back to validated/collecting/inconclusive drops the pattern.
+    :func:`ab_control.validate`. The ``refuted`` list (P1.1) and the
+    ``validated`` list (P2.3) are both updated from the same verdict so
+    we only pay for one t-test per pattern per refresh window.
 
-    Returns True iff the refuted list was mutated or analytics was
-    actually queried. Fires in every phase — unlike silence, we want
+    Returns True iff either list was potentially touched or analytics
+    was actually queried. Fires in every phase — unlike silence, we want
     to retire bad patterns even for warmup users who still rely on
     defaults.
     """
@@ -531,6 +556,13 @@ def maybe_refresh_refuted(
                 profile.mark_refuted(pattern)
             elif not is_refuted and was_refuted:
                 profile.unmark_refuted(pattern)
+
+            is_validated = result.status == "validated"
+            was_validated = pattern in profile.validated_patterns
+            if is_validated and not was_validated:
+                profile.mark_validated(pattern)
+            elif not is_validated and was_validated:
+                profile.unmark_validated(pattern)
     except Exception:
         return False
     finally:

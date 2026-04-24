@@ -63,6 +63,16 @@ def _forced_patterns() -> frozenset[str]:
     parts = {p.strip() for p in raw.split(",") if p.strip()}
     return frozenset(parts)
 
+
+def _skeptic_mode() -> bool:
+    """Whether SOMA_SKEPTIC restricts guidance to A/B-validated patterns.
+
+    ``1``, ``true``, ``yes``, ``on`` (case-insensitive) enable it;
+    ``0``, ``false``, ``no``, ``off``, or any unset/empty value disable.
+    """
+    raw = os.environ.get("SOMA_SKEPTIC", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
 # Error message → suggestion mapping for retry storms
 _ERROR_SUGGESTIONS: list[tuple[list[str], str]] = [
     (["permission denied", "access denied"], "check file permissions or run with appropriate access"),
@@ -525,6 +535,15 @@ class ContextualGuidance:
                 c for c in active
                 if c.pattern in forced or not self._profile.is_refuted(c.pattern)
             ]
+            # Skeptic mode (P2.3): SOMA_SKEPTIC=1 narrows guidance to
+            # patterns A/B validation has confirmed. Everything else —
+            # including untested and inconclusive patterns — is silenced
+            # unless SOMA_FORCE_PATTERN overrides.
+            if _skeptic_mode():
+                active = [
+                    c for c in active
+                    if c.pattern in forced or self._profile.is_validated(c.pattern)
+                ]
         if not active:
             return None
 
