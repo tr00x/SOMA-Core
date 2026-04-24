@@ -168,6 +168,87 @@ def test_record_guidance_outcome_allows_test_keys_with_source_test(tmp_path: Pat
     store.close()
 
 
+def test_record_guidance_outcome_blocks_test_agent_ids(tmp_path: Path):
+    """Test-agent writes (test, agent-a, test-*) are silently dropped.
+
+    Pairs with the pattern-key guard: without this the mirror.py call
+    path bypasses _is_real_production_agent when tests instantiate
+    AnalyticsStore() without a path, polluting production analytics
+    with real pattern keys under fake agent ids.
+    """
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    for aid in ("test", "agent-a", "nonexistent-agent", "claude-code",
+                "test-123", "test-cc-45", ""):
+        store.record_guidance_outcome(
+            agent_id=aid, session_id="s", pattern_key="bash_retry",
+            helped=True, pressure_at_injection=0.5, pressure_after=0.3,
+        )
+    count = store._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes"
+    ).fetchone()[0]
+    assert count == 0
+    store.close()
+
+
+def test_record_guidance_outcome_test_agent_with_source_test_allowed(tmp_path: Path):
+    """Deliberate test writes (source='test') still succeed for self-contained suites."""
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    store.record_guidance_outcome(
+        agent_id="test", session_id="s", pattern_key="bash_retry",
+        helped=True, pressure_at_injection=0.5, pressure_after=0.3,
+        source="test",
+    )
+    count = store._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes"
+    ).fetchone()[0]
+    assert count == 1
+    store.close()
+
+
+def test_purge_test_agent_migration_drops_existing_leaks(tmp_path: Path):
+    """Re-opening a DB with leaked test-agent rows must clean them up."""
+    import sqlite3
+    db = tmp_path / "polluted.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("""
+        CREATE TABLE guidance_outcomes (
+            timestamp REAL, agent_id TEXT, session_id TEXT,
+            pattern_key TEXT, helped INTEGER,
+            pressure_at_injection REAL, pressure_after REAL,
+            source TEXT DEFAULT 'hook'
+        )
+    """)
+    # Seeded rows: 3 real, 3 test-agent polluters, 1 deliberate test write.
+    for aid in ("cc", "cc-123", "swe-bench"):
+        conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, ?, 's', 'bash_retry', 0, 0, 0, 'hook')",
+            (1.0, aid),
+        )
+    for aid in ("test", "agent-a", "test-99"):
+        conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, ?, 's', 'retry_loop', 0, 0, 0, 'hook')",
+            (1.0, aid),
+        )
+    conn.execute(
+        "INSERT INTO guidance_outcomes VALUES (?, 'test', 's', 'bash_retry', 0, 0, 0, 'test')",
+        (1.0,),
+    )
+    conn.commit()
+    conn.close()
+
+    store = AnalyticsStore(path=db)
+    rows = store._conn.execute(
+        "SELECT agent_id, source FROM guidance_outcomes ORDER BY agent_id"
+    ).fetchall()
+    agent_ids = {r[0] for r in rows}
+    assert agent_ids == {"cc", "cc-123", "swe-bench", "test"}
+    # The deliberate test row with source='test' survives.
+    surviving_test = [r for r in rows if r[0] == "test"]
+    assert len(surviving_test) == 1
+    assert surviving_test[0][1] == "test"
+    store.close()
+
+
 def test_record_guidance_outcome_real_patterns_unaffected(tmp_path: Path):
     """Guard must not touch legitimate pattern keys."""
     store = AnalyticsStore(path=tmp_path / "a.db")
