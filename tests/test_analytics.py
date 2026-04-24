@@ -122,4 +122,217 @@ def test_purge_before(tmp_path: Path):
     remaining = conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0]
     assert remaining <= 1
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# v2026.5.5 — test-pollution guard + purge migration
+# ---------------------------------------------------------------------------
+
+def test_record_guidance_outcome_blocks_known_test_keys(tmp_path: Path):
+    """``mixed``, ``bad_pattern``, ``maybe_bad`` are test fixtures that
+    leaked into production DBs before v2026.5.5; writes must be
+    silently dropped when ``source != 'test'``."""
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    for key in ("mixed", "bad_pattern", "maybe_bad"):
+        store.record_guidance_outcome(
+            agent_id="cc", session_id="s", pattern_key=key,
+            helped=True, pressure_at_injection=0.5, pressure_after=0.3,
+        )
+    # Also the 'test_' prefix convention used elsewhere.
+    store.record_guidance_outcome(
+        agent_id="cc", session_id="s", pattern_key="test_something",
+        helped=False, pressure_at_injection=0.5, pressure_after=0.5,
+    )
+    count = store._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes"
+    ).fetchone()[0]
+    assert count == 0
+    store.close()
+
+
+def test_record_guidance_outcome_allows_test_keys_with_source_test(tmp_path: Path):
+    """Tests that deliberately exercise the fixture keys can still
+    write by passing ``source='test'`` — required for the roi and
+    mirror learning test suites to remain self-contained."""
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    store.record_guidance_outcome(
+        agent_id="cc", session_id="s", pattern_key="mixed",
+        helped=True, pressure_at_injection=0.5, pressure_after=0.3,
+        source="test",
+    )
+    count = store._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes"
+    ).fetchone()[0]
+    assert count == 1
+    store.close()
+
+
+def test_record_guidance_outcome_real_patterns_unaffected(tmp_path: Path):
+    """Guard must not touch legitimate pattern keys."""
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    store.record_guidance_outcome(
+        agent_id="cc", session_id="s", pattern_key="bash_retry",
+        helped=True, pressure_at_injection=0.6, pressure_after=0.2,
+    )
+    count = store._conn.execute(
+        "SELECT COUNT(*) FROM guidance_outcomes WHERE pattern_key = 'bash_retry'"
+    ).fetchone()[0]
+    assert count == 1
+    store.close()
+
+
+def test_purge_migration_drops_existing_pollution(tmp_path: Path):
+    """A DB opened for the first time post-migration should have any
+    pre-existing pollution rows removed. We simulate the legacy state
+    by inserting rows with the raw INSERT (bypassing the write-guard),
+    closing, and re-opening — the migration should run during
+    re-open because schema_migrations is empty."""
+    import sqlite3
+    db_path = tmp_path / "legacy.db"
+
+    # Build a legacy-style DB: raw schema without the guard, pre-seeded
+    # with test-fixture rows and a real bash_retry row.
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE guidance_outcomes (
+            timestamp REAL NOT NULL,
+            agent_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            pattern_key TEXT NOT NULL,
+            helped INTEGER NOT NULL,
+            pressure_at_injection REAL,
+            pressure_after REAL
+        )
+    """)
+    for key in ("mixed", "bad_pattern", "maybe_bad", "test_xyz", "bash_retry"):
+        conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (1.0, "cc", "s", key, 0, 0.5, 0.5),
+        )
+    conn.commit()
+    conn.close()
+
+    # Opening via AnalyticsStore triggers the migration.
+    store = AnalyticsStore(path=db_path)
+    remaining = store._conn.execute(
+        "SELECT pattern_key FROM guidance_outcomes"
+    ).fetchall()
+    keys = {r[0] for r in remaining}
+    assert keys == {"bash_retry"}
+    store.close()
+
+
+def test_purge_migration_is_idempotent(tmp_path: Path):
+    """Opening the store twice must not rerun the DELETE (the
+    migration marker short-circuits subsequent opens)."""
+    store = AnalyticsStore(path=tmp_path / "a.db")
+    store.close()
+    store2 = AnalyticsStore(path=tmp_path / "a.db")
+    migrations = store2._conn.execute(
+        "SELECT id FROM schema_migrations"
+    ).fetchall()
+    assert any(
+        row[0] == "20260424_purge_guidance_test_pollution"
+        for row in migrations
+    )
+    store2.close()
+
+
+def test_archive_migration_moves_biased_rows_to_archive_table(tmp_path: Path, monkeypatch):
+    """Legacy ab_outcomes rows written under MD5 assignment must be
+    archived and the live table truncated. The archive table preserves
+    the data so a future analyst can audit it."""
+    # Isolate the counter file so the migration's reset doesn't touch
+    # the user's real ~/.soma.
+    from soma import ab_control
+    monkeypatch.setattr(
+        ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json"
+    )
+
+    import sqlite3
+    db_path = tmp_path / "legacy_ab.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE ab_outcomes (
+            timestamp REAL NOT NULL,
+            agent_family TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            arm TEXT NOT NULL CHECK(arm IN ('treatment', 'control')),
+            pressure_before REAL,
+            pressure_after REAL,
+            followed INTEGER DEFAULT 0
+        )
+    """)
+    for i in range(10):
+        conn.execute(
+            "INSERT INTO ab_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (1000.0 + i, "cc", "entropy_drop", "treatment",
+             0.6, 0.55, 0),
+        )
+    conn.commit()
+    conn.close()
+
+    # Re-open via AnalyticsStore — archive migration should fire.
+    store = AnalyticsStore(path=db_path)
+    live = store._conn.execute("SELECT COUNT(*) FROM ab_outcomes").fetchone()[0]
+    archived = store._conn.execute(
+        "SELECT COUNT(*) FROM ab_outcomes_biased_pre_v2026_5_5"
+    ).fetchone()[0]
+    assert live == 0
+    assert archived == 10
+    # archived_at is populated.
+    ts = store._conn.execute(
+        "SELECT archived_at FROM ab_outcomes_biased_pre_v2026_5_5 LIMIT 1"
+    ).fetchone()[0]
+    assert ts > 0
+    store.close()
+
+
+def test_retired_pattern_rows_dropped(tmp_path: Path):
+    """Legacy `_stats` / `drift` rows must be removed — the patterns
+    no longer emit so their history only confuses direct-SQL audits.
+    The dashboard filter was a belt; this migration is the braces."""
+    import sqlite3
+    db_path = tmp_path / "retired.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE guidance_outcomes (
+            timestamp REAL, agent_id TEXT, session_id TEXT,
+            pattern_key TEXT, helped INTEGER,
+            pressure_at_injection REAL, pressure_after REAL
+        )
+    """)
+    for key in ("_stats", "drift", "bash_retry", "error_cascade"):
+        conn.execute(
+            "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (1.0, "cc", "s", key, 0, 0.5, 0.5),
+        )
+    conn.commit()
+    conn.close()
+
+    store = AnalyticsStore(path=db_path)
+    keys = {
+        row[0] for row in store._conn.execute(
+            "SELECT pattern_key FROM guidance_outcomes"
+        ).fetchall()
+    }
+    assert keys == {"bash_retry", "error_cascade"}
+    store.close()
+
+
+def test_archive_migration_resets_block_randomizer_counters(tmp_path: Path, monkeypatch):
+    """After archiving biased rows the counter file from the old
+    regime must be wiped so the new block randomizer starts balanced.
+    Otherwise stale counts could force an imbalance in the fresh
+    window."""
+    from soma import ab_control
+    counter_path = tmp_path / "ab_counters.json"
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", counter_path)
+    # Prime counters with stale imbalance.
+    counter_path.parent.mkdir(parents=True, exist_ok=True)
+    counter_path.write_text('{"cc|entropy_drop": [40, 3]}')
+
+    store = AnalyticsStore(path=tmp_path / "reset.db")
+    assert not counter_path.exists(), "archive migration must delete counters"
+    store.close()
     store.close()

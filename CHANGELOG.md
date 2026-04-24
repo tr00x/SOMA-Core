@@ -1,5 +1,62 @@
 # Changelog
 
+## 2026.5.5
+
+Released April 23, 2026.
+
+Third follow-up on the A/B proof pipeline. The post-v2026.5.4 window
+collected 105 rows with catastrophic per-pattern skew — `entropy_drop`
+landed 44 treatment / 3 control and `budget` 3 / 30, making every
+Welch's test a lie by construction. Root cause: MD5-based assignment
+clustered inside single-session bursts even though it looked balanced
+at the 2000-sample scale. **Upgrade before the next validation run —
+no prior A/B row should be trusted.**
+
+### Fixes
+
+- **Block-randomized arm assignment.** `ab_control._assign_arm` now
+  maintains a persistent per-`(family, pattern)` counter in
+  `~/.soma/ab_counters.json` under an `fcntl` lock. When one arm is
+  ahead by `BALANCE_THRESHOLD = 2` the next firing is forced into
+  the minority arm; otherwise `secrets.randbits(1)` decides. This
+  gives a structural invariant `|T − C| ≤ 2` after every single
+  firing — the bug that shipped ~90 rows entirely into one arm is
+  mathematically impossible now. The deterministic-replay property
+  is gone; no tooling actually depended on it.
+
+- **`SOMA_DISABLE_CONTROL_ARM` replaces `SOMA_DISABLE_AB`.** The old
+  env name nudged users toward disabling data collection, which
+  wasn't the intent. The legacy flag is still honoured as a
+  deprecated alias.
+
+- **Test-pollution guard on `guidance_outcomes`.** `record_guidance_outcome`
+  rejects rows whose `pattern_key` matches the known test-fixture
+  set (`mixed`, `bad_pattern`, `maybe_bad`) or the `test_` prefix
+  unless `source='test'`. Prior polluted rows — 672 in the reference
+  DB — are cleaned by migration `20260424_purge_guidance_test_pollution`
+  on first open.
+
+- **Archive of biased A/B rows.** Migration `20260424_archive_biased_ab_outcomes`
+  moves every existing `ab_outcomes` row into
+  `ab_outcomes_biased_pre_v2026_5_5` and truncates the live table.
+  The new collection window starts from zero with the block
+  randomizer. The archive table keeps the data available for
+  post-mortem analysis; it isn't queried by the ROI or validation
+  paths.
+
+- **Retired pattern cleanup.** `_stats` (dropped v2026.5.0) and `drift`
+  (failed post-v2026.4.2 P0 fix, 0 % helped over 9 firings) rows are
+  deleted by migration `20260424_drop_retired_pattern_rows`. Both
+  keys are listed in `contextual_guidance.RETIRED_PATTERN_KEYS` so
+  future re-adds need evidence, not amnesia.
+
+### Breaking
+
+- `hashlib` import dropped from `ab_control`; the `action_number`
+  parameter is accepted for signature stability but ignored.
+- Downstream code that relied on `should_inject` being deterministic
+  for replays will now see different assignments across runs.
+
 ## 2026.5.4
 
 Released April 20, 2026.

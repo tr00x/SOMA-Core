@@ -8,6 +8,16 @@ from pathlib import Path
 from typing import Any
 
 
+# Pattern keys that originate from the test suite (``test_mirror_learning``
+# and ``test_roi``). When a developer ran those tests against their real
+# ``~/.soma/analytics.db`` the rows leaked into production and polluted
+# the guidance ROI view — 672 rows / ~45 % of the table at the time of
+# the v2026.5.5 migration. Rejecting them on write stops the bleeding;
+# the 20260424_purge_guidance_test_pollution migration cleans up rows
+# that got in before the guard existed.
+_KNOWN_TEST_PATTERN_KEYS = frozenset({"mixed", "bad_pattern", "maybe_bad"})
+
+
 class AnalyticsStore:
     """SQLite-backed historical analytics for SOMA sessions."""
 
@@ -53,7 +63,8 @@ class AnalyticsStore:
                 pattern_key TEXT NOT NULL,
                 helped INTEGER NOT NULL,
                 pressure_at_injection REAL,
-                pressure_after REAL
+                pressure_after REAL,
+                source TEXT DEFAULT 'hook'
             )
         """)
         # A/B-controlled outcomes — v2026.5.3. Each firing is assigned to
@@ -81,7 +92,141 @@ class AnalyticsStore:
         except sqlite3.OperationalError:
             self._conn.execute("ALTER TABLE actions ADD COLUMN source TEXT DEFAULT 'unknown'")
             self._conn.execute("ALTER TABLE actions ADD COLUMN soma_version TEXT DEFAULT ''")
+        # guidance_outcomes.source was added in v2026.5.5 alongside the
+        # test-pollution guard; older DBs need the column backfilled.
+        try:
+            self._conn.execute("SELECT source FROM guidance_outcomes LIMIT 0")
+        except sqlite3.OperationalError:
+            self._conn.execute(
+                "ALTER TABLE guidance_outcomes ADD COLUMN source TEXT DEFAULT 'hook'"
+            )
         self._conn.commit()
+        self._run_migrations()
+
+    # ── Migrations ─────────────────────────────────────────────────
+
+    def _run_migrations(self) -> None:
+        """Apply any pending schema_migrations rows.
+
+        Each migration is idempotent and keyed by a string ID. The ID
+        is inserted only after the migration's SQL commits so a crash
+        mid-run means the migration reruns next startup — at which
+        point the DELETE is a no-op because the offending rows are
+        already gone.
+        """
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id TEXT PRIMARY KEY,
+                applied_at REAL NOT NULL
+            )
+        """)
+        self._conn.commit()
+        self._apply_migration(
+            "20260424_purge_guidance_test_pollution",
+            self._purge_test_pattern_pollution,
+        )
+        self._apply_migration(
+            "20260424_archive_biased_ab_outcomes",
+            self._archive_biased_ab_outcomes,
+        )
+        self._apply_migration(
+            "20260424_drop_retired_pattern_rows",
+            self._drop_retired_pattern_rows,
+        )
+
+    def _apply_migration(self, migration_id: str, fn: Any) -> None:
+        """Run ``fn`` once; record ``migration_id`` on success."""
+        row = self._conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE id = ?", (migration_id,)
+        ).fetchone()
+        if row is not None:
+            return
+        fn()
+        self._conn.execute(
+            "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
+            (migration_id, time.time()),
+        )
+        self._conn.commit()
+
+    def _purge_test_pattern_pollution(self) -> int:
+        """Drop guidance_outcomes rows from known test fixtures.
+
+        Matches ``pattern_key`` against the hardcoded test-key set and
+        the ``test_%`` prefix convention. Returns the deleted count so
+        a release note can quote how many rows were cleaned.
+        """
+        placeholders = ",".join("?" for _ in _KNOWN_TEST_PATTERN_KEYS)
+        cursor = self._conn.execute(
+            f"DELETE FROM guidance_outcomes "
+            f"WHERE pattern_key IN ({placeholders}) OR pattern_key LIKE 'test_%'",
+            tuple(_KNOWN_TEST_PATTERN_KEYS),
+        )
+        return cursor.rowcount
+
+    def _drop_retired_pattern_rows(self) -> int:
+        """Delete guidance_outcomes rows whose pattern is retired.
+
+        `_stats` and `drift` stopped emitting guidance in earlier
+        releases but their historic rows (265 + 9 in Timur's DB at the
+        time of the migration) still bloat the table and would confuse
+        anyone looking at raw SQL. Dashboard ROI already filters them
+        via allowlist; this migration cleans the storage itself so
+        direct SQL queries also see an honest table.
+        """
+        from soma.contextual_guidance import RETIRED_PATTERN_KEYS
+        if not RETIRED_PATTERN_KEYS:
+            return 0
+        placeholders = ",".join("?" for _ in RETIRED_PATTERN_KEYS)
+        cursor = self._conn.execute(
+            f"DELETE FROM guidance_outcomes WHERE pattern_key IN ({placeholders})",
+            tuple(RETIRED_PATTERN_KEYS),
+        )
+        return cursor.rowcount
+
+    def _archive_biased_ab_outcomes(self) -> int:
+        """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.
+
+        The MD5-based arm assignment in v2026.5.4 and earlier clustered
+        bursts of firings into a single arm — per-pattern splits like
+        entropy_drop 44T/3C and budget 3T/30C are provably biased and
+        can't be de-biased post-hoc. Mixing them with the clean,
+        block-randomized stream would contaminate every Welch's t-test
+        until the bad rows rolled out.
+
+        This migration copies every existing row into
+        ``ab_outcomes_biased_pre_v2026_5_5`` (so the data isn't lost —
+        a future analyst can still look) and then truncates the live
+        table. Also resets the per-(family, pattern) counter file so
+        the new block randomizer starts balanced from scratch.
+        """
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS ab_outcomes_biased_pre_v2026_5_5 (
+                timestamp REAL NOT NULL,
+                agent_family TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                arm TEXT NOT NULL,
+                pressure_before REAL,
+                pressure_after REAL,
+                followed INTEGER,
+                archived_at REAL NOT NULL
+            )
+        """)
+        now = time.time()
+        self._conn.execute(
+            "INSERT INTO ab_outcomes_biased_pre_v2026_5_5 "
+            "(timestamp, agent_family, pattern, arm, pressure_before, "
+            "pressure_after, followed, archived_at) "
+            "SELECT timestamp, agent_family, pattern, arm, pressure_before, "
+            f"pressure_after, followed, {now} FROM ab_outcomes"
+        )
+        cursor = self._conn.execute("DELETE FROM ab_outcomes")
+        # Wipe the block-randomizer counters so the new window starts at (0,0).
+        try:
+            from soma.ab_control import reset_counters
+            reset_counters()
+        except Exception:
+            pass
+        return cursor.rowcount
 
     def record(
         self,
@@ -157,12 +302,29 @@ class AnalyticsStore:
         helped: bool,
         pressure_at_injection: float,
         pressure_after: float,
+        source: str = "hook",
     ) -> None:
-        """Record whether a guidance injection improved agent behavior."""
+        """Record whether a guidance injection improved agent behavior.
+
+        Writes are rejected when ``pattern_key`` matches a known test
+        fixture (see ``_KNOWN_TEST_PATTERN_KEYS`` or the ``test_``
+        prefix) unless ``source='test'`` — this stops the v2026.5.x
+        pollution pattern where test runs against the user's real DB
+        silently injected 672 rows of junk into the ROI view.
+        """
+        if (
+            source != "test"
+            and (pattern_key in _KNOWN_TEST_PATTERN_KEYS
+                 or pattern_key.startswith("test_"))
+        ):
+            return
         self._conn.execute(
-            "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO guidance_outcomes "
+            "(timestamp, agent_id, session_id, pattern_key, helped, "
+            "pressure_at_injection, pressure_after, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), agent_id, session_id, pattern_key,
-             int(helped), pressure_at_injection, pressure_after),
+             int(helped), pressure_at_injection, pressure_after, source),
         )
         self._conn.commit()
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 class GuidanceMessage:
     """A contextual guidance message with evidence."""
 
-    pattern: str  # "blind_edit", "retry_storm", "error_cascade", "budget", "context", "drift"
+    pattern: str  # See REAL_PATTERN_KEYS for the live set.
     severity: str  # "info", "warn", "critical"
     message: str  # Full contextual message for the agent
     evidence: tuple[str, ...] = ()  # Specific actions/errors that triggered this
@@ -34,7 +34,14 @@ _PATTERN_PRIORITY = {"cost_spiral": 10, "budget": 5, "bash_retry": 4, "error_cas
 # Canonical list of pattern keys that real production guidance paths emit.
 # Dashboard ROI whitelisting and any future analytics filter should import
 # this tuple rather than re-declare the set — single source of truth.
-# `_stats` was dropped in v2026.5.0 (largest fatigue source, 31% helped).
+#
+# Retired patterns (do not re-add without evidence):
+#   - `_stats` — dropped in v2026.5.0 (largest fatigue source, 31% helped).
+#   - `drift`  — dropped after v2026.4.2 P0 fix failed to move the needle
+#                (9 firings, 0% helped). The underlying drift signal still
+#                feeds pressure aggregation; only the guidance message was
+#                retired.
+RETIRED_PATTERN_KEYS: frozenset[str] = frozenset({"_stats", "drift"})
 REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys())
 
 # Error message → suggestion mapping for retry storms

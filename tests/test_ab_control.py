@@ -1,8 +1,10 @@
 """Tests for the A/B control module.
 
 Coverage:
-- Deterministic 50/50 assignment by hash(family|pattern|action).
-- ``SOMA_DISABLE_AB=1`` short-circuit to treatment.
+- Block-randomized 50/50 assignment with persistent per-(family,
+  pattern) counters.
+- Opt-out via ``SOMA_DISABLE_CONTROL_ARM`` (and the deprecated
+  ``SOMA_DISABLE_AB`` alias).
 - Welch's t-test numerics on stdlib implementation.
 - Classification thresholds (validated / refuted / inconclusive /
   collecting) match the plan's definition.
@@ -22,35 +24,120 @@ from soma.analytics import AnalyticsStore
 
 # ── Arm assignment ──────────────────────────────────────────────────
 
-def test_assignment_is_deterministic():
-    a = ab_control.should_inject("error_cascade", "cc", 42)
-    b = ab_control.should_inject("error_cascade", "cc", 42)
-    c = ab_control.should_inject("error_cascade", "cc", 42)
-    assert a == b == c
+@pytest.fixture(autouse=True)
+def _isolated_counters(tmp_path, monkeypatch):
+    """Redirect the counter file to a tmp path so tests never touch
+    the user's real ``~/.soma/ab_counters.json`` and don't leak state
+    between cases."""
+    monkeypatch.setattr(
+        ab_control,
+        "_COUNTERS_PATH",
+        tmp_path / "ab_counters.json",
+    )
+    yield
 
 
-def test_assignment_splits_roughly_evenly():
-    """Over 2000 action numbers the split should be ~50/50."""
+def test_assignment_stays_balanced_in_burst():
+    """A burst of 20 firings on one (family, pattern) must land within
+    ±1 pair of perfect balance — the whole point of block-randomizing
+    instead of hashing ``action_number``, which clustered 40 firings
+    into a single arm in v2026.5.4 production data."""
+    counts = {"treatment": 0, "control": 0}
+    for n in range(20):
+        counts[ab_control.should_inject("entropy_drop", "cc", n)] += 1
+    diff = abs(counts["treatment"] - counts["control"])
+    assert diff <= ab_control.BALANCE_THRESHOLD
+
+
+def test_assignment_splits_roughly_evenly_over_many_firings():
+    """Over 2000 firings the split should be very close to 50/50.
+    Block randomization makes this guarantee tighter than the old MD5
+    scheme: no streaks ≥ BALANCE_THRESHOLD are possible."""
     counts = {"treatment": 0, "control": 0}
     for n in range(2000):
         arm = ab_control.should_inject("bash_retry", "cc", n)
         counts[arm] += 1
-    # Allow ±5% slack for MD5's empirical distribution.
-    assert 900 <= counts["treatment"] <= 1100
-    assert 900 <= counts["control"] <= 1100
+    # Block randomization bounds |T−C| ≤ BALANCE_THRESHOLD regardless of
+    # the coin flips, so we can assert much tighter than ±5%.
+    assert abs(counts["treatment"] - counts["control"]) <= ab_control.BALANCE_THRESHOLD
 
 
-def test_disable_env_forces_treatment(monkeypatch):
+def test_balance_invariant_holds_after_every_firing():
+    """The core guarantee: ``|T − C| ≤ BALANCE_THRESHOLD`` after every
+    single firing. This is what prevents the v2026.5.4 bug where 40+
+    consecutive firings all went to the same arm — impossible here
+    because the next firing past the threshold is forced into the
+    minority arm."""
+    t = c = 0
+    for n in range(200):
+        arm = ab_control.should_inject("budget", "cc", n)
+        if arm == "treatment":
+            t += 1
+        else:
+            c += 1
+        assert abs(t - c) <= ab_control.BALANCE_THRESHOLD, (
+            f"balance invariant broken at firing {n}: T={t}, C={c}"
+        )
+
+
+def test_counters_are_isolated_per_pattern_and_family():
+    """One pattern's imbalance must not push another pattern's next
+    firing. Each (family, pattern) maintains its own counter."""
+    # Drive pattern A five times.
+    for n in range(5):
+        ab_control.should_inject("pattern_a", "cc", n)
+    # pattern_b starts fresh.
+    arms = [ab_control.should_inject("pattern_b", "cc", n) for n in range(2)]
+    # First two pattern_b firings are both coin flips (neither arm is
+    # ≥ BALANCE_THRESHOLD ahead on a zero counter), so they may be any
+    # combination; but the counter file must contain pattern_b entries
+    # and pattern_a entries separately.
+    counters = ab_control._load_counters()
+    assert "cc|pattern_a" in counters
+    assert "cc|pattern_b" in counters
+    assert sum(counters["cc|pattern_a"]) == 5
+    assert sum(counters["cc|pattern_b"]) == 2
+    assert arms  # Silence unused variable warning.
+
+
+def test_corrupt_counter_file_falls_back_empty(tmp_path, monkeypatch):
+    bad = tmp_path / "ab_counters.json"
+    bad.write_text("{not valid json")
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", bad)
+    # Must not raise, must produce a valid arm.
+    arm = ab_control.should_inject("bash_retry", "cc", 0)
+    assert arm in ("treatment", "control")
+
+
+def test_disable_control_arm_env_forces_treatment(monkeypatch):
+    monkeypatch.setenv("SOMA_DISABLE_CONTROL_ARM", "1")
+    for n in range(20):
+        assert ab_control.should_inject("x", "cc", n) == "treatment"
+
+
+def test_legacy_disable_ab_env_still_honoured(monkeypatch):
+    """The old ``SOMA_DISABLE_AB`` flag stays wired as a deprecated
+    alias so existing user configs don't silently re-enable the
+    control arm after upgrading."""
+    monkeypatch.delenv("SOMA_DISABLE_CONTROL_ARM", raising=False)
     monkeypatch.setenv("SOMA_DISABLE_AB", "1")
     for n in range(20):
         assert ab_control.should_inject("x", "cc", n) == "treatment"
 
 
-def test_disable_env_not_set_uses_hash(monkeypatch):
+def test_disable_env_not_set_uses_block_randomizer(monkeypatch):
+    monkeypatch.delenv("SOMA_DISABLE_CONTROL_ARM", raising=False)
     monkeypatch.delenv("SOMA_DISABLE_AB", raising=False)
-    # Not all actions can be treatment — hash split is binary.
     arms = {ab_control.should_inject("x", "cc", n) for n in range(50)}
     assert arms == {"treatment", "control"}
+
+
+def test_reset_counters_wipes_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    ab_control.should_inject("bash_retry", "cc", 0)
+    assert (tmp_path / "ab_counters.json").exists()
+    ab_control.reset_counters()
+    assert not (tmp_path / "ab_counters.json").exists()
 
 
 # ── Stats primitives ────────────────────────────────────────────────
