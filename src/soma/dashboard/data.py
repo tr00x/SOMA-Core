@@ -652,6 +652,12 @@ def get_roi_data() -> dict:
         "tokens_saved_estimate": _get_tokens_saved_estimate(),
         "session_health": _get_session_health_score(),
         "cascades_broken": _get_cascades_broken(),
+        # P1.3: A/B verdict becomes the primary pattern metric.
+        # `pattern_hit_rates` stays for back-compat but the frontend
+        # renders `pattern_ab_status` as the headline and demotes
+        # helped% to the expand panel.
+        "pattern_ab_status": get_pattern_ab_status(),
+        "ab_reset_info": get_ab_reset_info(),
     }
 
 
@@ -784,6 +790,126 @@ def _get_session_health_score() -> dict:
             "uncertainty": round(avg_uncertainty, 4),
             "drift": round(avg_drift, 4),
         },
+    }
+
+
+def get_pattern_ab_status() -> list[dict]:
+    """Per-pattern A/B validation cards for the dashboard ROI page.
+
+    For each real pattern, runs :func:`soma.ab_control.validate` across
+    every family's rows and returns one card with the primary A/B
+    verdict (``status``), mean Δp difference, p-value, effect size,
+    plus the legacy helped% metric demoted to a secondary field the UI
+    renders under an "expand" toggle. Patterns with zero outcome rows
+    still appear as ``collecting`` so the grid is always dense.
+    """
+    from soma import ab_control
+    from soma.analytics import AnalyticsStore
+
+    db_path = SOMA_DIR / "analytics.db"
+    if not db_path.exists():
+        return []
+    try:
+        store = AnalyticsStore(path=db_path)
+    except Exception:
+        return []
+
+    # Helped% comes from guidance_outcomes and is one extra query per
+    # dashboard tick. Aggregate up-front so the per-pattern loop is a
+    # pure dict lookup.
+    helped_by_pattern: dict[str, dict[str, int]] = {}
+    try:
+        # AnalyticsStore._conn uses the stdlib default row factory
+        # (returns tuples), so index into the SELECT projection rather
+        # than by column name.
+        cursor = store._conn.execute(
+            f"SELECT pattern_key, COUNT(*) as fires, SUM(helped) as helped "
+            f"FROM guidance_outcomes "
+            f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS}) "
+            f"GROUP BY pattern_key",
+            _REAL_PATTERN_KEYS,
+        )
+        for pattern_key, fires, helped in cursor.fetchall():
+            helped_by_pattern[pattern_key] = {
+                "fires": fires or 0,
+                "helped": helped or 0,
+            }
+    except Exception:
+        pass
+
+    cards: list[dict] = []
+    try:
+        for pattern in _REAL_PATTERN_KEYS:
+            try:
+                outcomes = store.get_ab_outcomes(pattern, agent_family=None)
+            except Exception:
+                outcomes = []
+            result = ab_control.validate(outcomes, pattern=pattern)
+            legacy = helped_by_pattern.get(pattern, {"fires": 0, "helped": 0})
+            helped_rate = (
+                legacy["helped"] / legacy["fires"] if legacy["fires"] else 0.0
+            )
+            cards.append({
+                "pattern": pattern,
+                "status": result.status,
+                "fires_treatment": result.fires_treatment,
+                "fires_control": result.fires_control,
+                "min_pairs": ab_control.DEFAULT_MIN_PAIRS,
+                "mean_treatment_delta": round(result.mean_treatment_delta, 4),
+                "mean_control_delta": round(result.mean_control_delta, 4),
+                "delta_difference": round(result.delta_difference, 4),
+                "p_value": (
+                    round(result.p_value, 4) if result.p_value is not None else None
+                ),
+                "effect_size": (
+                    round(result.effect_size, 3)
+                    if result.effect_size is not None else None
+                ),
+                # Legacy — kept for the "expand" section so returning
+                # users can still see the old metric they remember.
+                "legacy_helped": {
+                    "fires": legacy["fires"],
+                    "helped": legacy["helped"],
+                    "helped_rate": round(helped_rate, 3),
+                },
+            })
+    finally:
+        try:
+            store.close()
+        except Exception:
+            pass
+
+    return cards
+
+
+def get_ab_reset_info() -> dict | None:
+    """Return the most recent A/B data-reset record, or None.
+
+    Reads ``~/.soma/ab_reset.log`` (JSONL). Only the latest row is
+    surfaced — older entries stay in the file for post-mortem auditing
+    but the dashboard banner only needs to explain *why this window
+    is thin*.
+    """
+    path = SOMA_DIR / "ab_reset.log"
+    if not path.exists():
+        return None
+    try:
+        lines = [line for line in path.read_text().splitlines() if line.strip()]
+    except OSError:
+        return None
+    if not lines:
+        return None
+    try:
+        latest = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(latest, dict):
+        return None
+    return {
+        "ts": latest.get("ts"),
+        "archived_rows": latest.get("archived_rows"),
+        "reason": latest.get("reason", ""),
+        "soma_version": latest.get("soma_version", ""),
     }
 
 

@@ -226,6 +226,24 @@ class AnalyticsStore:
             reset_counters()
         except Exception:
             pass
+        # Log reset timestamp so the dashboard can surface a "data reset
+        # on <date>" banner explaining why validation cards are still in
+        # 'collecting'. Best-effort: failure to log must not fail the
+        # migration.
+        try:
+            import json
+            reset_log = self._path.parent / "ab_reset.log"
+            reset_log.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "ts": now,
+                "archived_rows": cursor.rowcount,
+                "reason": "v2026.5.5 block-randomized A/B — MD5 bias purged",
+                "soma_version": self._version(),
+            }
+            with reset_log.open("a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass
         return cursor.rowcount
 
     def record(

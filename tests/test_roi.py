@@ -226,5 +226,176 @@ class TestGetRoiData:
         assert "tokens_saved_estimate" in result
         assert "session_health" in result
         assert "cascades_broken" in result
+        assert "pattern_ab_status" in result
+        assert "ab_reset_info" in result
         assert result["guidance_effectiveness"]["total"] == 6
         assert result["session_health"]["score"] >= 80
+
+
+# ── Pattern A/B status cards (P1.3) ──────────────────────────────────
+
+@pytest.fixture()
+def ab_outcomes_db(tmp_path):
+    """analytics.db with ab_outcomes populated for one pattern.
+
+    Pre-registers the archive migration as applied so the post-open
+    migration doesn't wipe the test rows we just inserted.
+    """
+    db_path = tmp_path / "analytics.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE guidance_outcomes (
+            timestamp REAL, agent_id TEXT, session_id TEXT,
+            pattern_key TEXT, helped INTEGER,
+            pressure_at_injection REAL, pressure_after REAL,
+            source TEXT DEFAULT 'hook'
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE ab_outcomes (
+            timestamp REAL, agent_family TEXT, pattern TEXT, arm TEXT,
+            pressure_before REAL, pressure_after REAL, followed INTEGER
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE schema_migrations (
+            id TEXT PRIMARY KEY, applied_at REAL NOT NULL
+        )
+    """)
+    now = time.time()
+    for mig_id in (
+        "20260424_purge_guidance_test_pollution",
+        "20260424_archive_biased_ab_outcomes",
+        "20260424_drop_retired_pattern_rows",
+    ):
+        conn.execute(
+            "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
+            (mig_id, now),
+        )
+    # 40 treatment + 40 control rows for bash_retry — enough to leave
+    # the "collecting" bucket. Treatment reliably drops pressure more.
+    rows = []
+    for i in range(40):
+        rows.append((now - i, "cc", "bash_retry", "treatment", 0.6, 0.3))
+        rows.append((now - i, "cc", "bash_retry", "control", 0.6, 0.55))
+    conn.executemany(
+        "INSERT INTO ab_outcomes VALUES (?, ?, ?, ?, ?, ?, 0)", rows,
+    )
+    # A few helped rows so the legacy field isn't all zero.
+    conn.execute(
+        "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?, 'hook')",
+        (now, "cc", "s", "bash_retry", 1, 0.6, 0.3),
+    )
+    conn.commit()
+    conn.close()
+    return tmp_path
+
+
+def test_pattern_ab_status_returns_one_card_per_real_pattern(ab_outcomes_db):
+    with _patch_soma_dir(ab_outcomes_db):
+        cards = data.get_pattern_ab_status()
+    from soma.contextual_guidance import REAL_PATTERN_KEYS
+    patterns = {c["pattern"] for c in cards}
+    assert patterns == set(REAL_PATTERN_KEYS)
+
+
+def test_pattern_ab_status_validates_populated_pattern(ab_outcomes_db):
+    with _patch_soma_dir(ab_outcomes_db):
+        cards = data.get_pattern_ab_status()
+    card = next(c for c in cards if c["pattern"] == "bash_retry")
+    assert card["status"] in ("validated", "inconclusive", "collecting")
+    assert card["fires_treatment"] == 40
+    assert card["fires_control"] == 40
+    assert card["delta_difference"] > 0  # treatment drops more pressure
+    assert card["p_value"] is not None
+    # Legacy helped metric is demoted but still present.
+    assert card["legacy_helped"]["fires"] == 1
+    assert card["legacy_helped"]["helped"] == 1
+
+
+def test_pattern_ab_status_empty_pattern_is_collecting(ab_outcomes_db):
+    with _patch_soma_dir(ab_outcomes_db):
+        cards = data.get_pattern_ab_status()
+    card = next(c for c in cards if c["pattern"] == "cost_spiral")
+    assert card["status"] == "collecting"
+    assert card["fires_treatment"] == 0
+    assert card["fires_control"] == 0
+    assert card["p_value"] is None
+
+
+def test_pattern_ab_status_empty_when_no_db(tmp_path):
+    with _patch_soma_dir(tmp_path):
+        cards = data.get_pattern_ab_status()
+    assert cards == []
+
+
+# ── Reset banner ─────────────────────────────────────────────────────
+
+def test_ab_reset_info_none_when_missing(tmp_path):
+    with _patch_soma_dir(tmp_path):
+        assert data.get_ab_reset_info() is None
+
+
+def test_ab_reset_info_reads_latest_entry(tmp_path):
+    log = tmp_path / "ab_reset.log"
+    log.write_text(
+        json.dumps({"ts": 1000.0, "archived_rows": 50, "reason": "old"}) + "\n"
+        + json.dumps({
+            "ts": 2000.0, "archived_rows": 105,
+            "reason": "v2026.5.5", "soma_version": "2026.5.5",
+        }) + "\n"
+    )
+    with _patch_soma_dir(tmp_path):
+        info = data.get_ab_reset_info()
+    assert info is not None
+    assert info["ts"] == 2000.0
+    assert info["archived_rows"] == 105
+    assert info["reason"] == "v2026.5.5"
+    assert info["soma_version"] == "2026.5.5"
+
+
+def test_ab_reset_info_ignores_malformed_lines(tmp_path):
+    log = tmp_path / "ab_reset.log"
+    log.write_text("not json\n")
+    with _patch_soma_dir(tmp_path):
+        assert data.get_ab_reset_info() is None
+
+
+# ── Archive migration writes reset log ──────────────────────────────
+
+def test_archive_migration_writes_reset_log(tmp_path, monkeypatch):
+    """The P0.3 migration must append a row to ab_reset.log so the
+    dashboard banner can explain why the pattern cards are thin."""
+    from soma import ab_control
+    from soma.analytics import AnalyticsStore
+    monkeypatch.setattr(
+        ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json",
+    )
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE ab_outcomes (
+            timestamp REAL NOT NULL,
+            agent_family TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            arm TEXT NOT NULL CHECK(arm IN ('treatment', 'control')),
+            pressure_before REAL, pressure_after REAL,
+            followed INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute(
+        "INSERT INTO ab_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (1.0, "cc", "bash_retry", "treatment", 0.6, 0.5, 0),
+    )
+    conn.commit()
+    conn.close()
+
+    store = AnalyticsStore(path=db_path)
+    store.close()
+
+    reset_log = tmp_path / "ab_reset.log"
+    assert reset_log.exists(), "migration must write reset log"
+    entry = json.loads(reset_log.read_text().strip().splitlines()[-1])
+    assert entry["archived_rows"] == 1
+    assert "v2026.5.5" in entry["reason"]
