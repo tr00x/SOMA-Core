@@ -321,6 +321,50 @@ def load_profile(agent_id: str) -> CalibrationProfile:
     return CalibrationProfile(family=family)
 
 
+def clear_stale_silence_cache(soma_dir: Path | None = None) -> int:
+    """Zero the auto-silence cache on every calibration profile in ``soma_dir``.
+
+    Paired with the v2026.5.5 ``_archive_biased_ab_outcomes`` migration:
+    that one truncates ab_outcomes, but the per-profile silence cache
+    (populated from pre-reset guidance precision) kept suppressing
+    half of the tracked patterns. With the cache intact, those patterns
+    never fire post-reset → ab_outcomes stays empty → the P2.2 coverage
+    gate is unreachable.
+
+    Only the silence triad is cleared — ``silenced_patterns``,
+    ``pattern_precision_cache``, ``last_silence_check_action``. The
+    refuted/validated lists (P1.1/P2.3) reflect post-reset A/B evidence
+    and must survive.
+
+    Idempotent: re-running on an already-clean profile is a no-op.
+    Returns the number of profile files visited (including ones that
+    were already empty) so callers can log the sweep size.
+    """
+    base = soma_dir if soma_dir is not None else SOMA_DIR
+    if not base.exists():
+        return 0
+    visited = 0
+    for path in base.glob("calibration_*.json"):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        data["silenced_patterns"] = []
+        data["pattern_precision_cache"] = {}
+        data["last_silence_check_action"] = 0
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        try:
+            tmp.write_text(json.dumps(data))
+            os.replace(tmp, path)
+            visited += 1
+        except OSError:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    return visited
+
+
 def save_profile(profile: CalibrationProfile) -> None:
     """Persist profile atomically: tmp file → fsync → rename.
 
