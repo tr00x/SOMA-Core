@@ -85,6 +85,13 @@ BALANCE_THRESHOLD = 2
 # and are what guarantee long-run balance across sessions.
 _COUNTERS_PATH = Path.home() / ".soma" / "ab_counters.json"
 
+# Bounded LRU-ish cache of firing_id → arm. Caps memory of the dedup
+# layer (post 2026-04-25 idempotency fix) so a long-lived install
+# doesn't grow ab_counters.json unbounded. Trim is FIFO — oldest
+# firings drop first, which matches "the firing already landed and the
+# row is already written, so no caller will ask about it again."
+_FIRINGS_DEDUP_MAX = 200
+
 
 @dataclass(frozen=True)
 class AbDecision:
@@ -117,15 +124,31 @@ class ValidationResult:
 
 # ── Arm assignment ──────────────────────────────────────────────────
 
-def should_inject(pattern: str, agent_family: str, action_number: int) -> Arm:
+def should_inject(
+    pattern: str,
+    agent_family: str,
+    action_number: int,
+    firing_id: str = "",
+) -> Arm:
     """Return the arm this firing is assigned to.
 
     Uses block randomization against persistent per-(family, pattern)
     counters: if one arm is ahead by ``BALANCE_THRESHOLD`` or more, the
     next firing is forced into the other arm; otherwise ``secrets``
-    decides with a fair coin flip. ``action_number`` is accepted for
-    backward compatibility (old deterministic path) but is no longer
-    used — bias was worse than losing replay.
+    decides with a fair coin flip.
+
+    ``firing_id`` (added 2026-04-25 after ultra-review): a caller-
+    supplied deterministic key — typically
+    ``f"{agent_id}|{pattern}|{action_number}"`` — that lets the same
+    firing be safely re-asked about. Re-entry from a hook retry,
+    pre/post both consulting, or any duplicate call returns the
+    *same* arm without bumping the counter, eliminating the silent
+    A/B bias the prior code introduced. ``firing_id=""`` falls back
+    to the legacy non-idempotent path (every call increments) and is
+    only retained for backward compat.
+
+    ``action_number`` retained for signature stability; ignored when
+    ``firing_id`` is provided.
 
     ``SOMA_DISABLE_CONTROL_ARM=1`` (or the deprecated alias
     ``SOMA_DISABLE_AB=1``) short-circuits to always-treatment for
@@ -133,7 +156,7 @@ def should_inject(pattern: str, agent_family: str, action_number: int) -> Arm:
     """
     if _ab_disabled():
         return "treatment"
-    return _assign_arm(pattern, agent_family, action_number)
+    return _assign_arm(pattern, agent_family, action_number, firing_id)
 
 
 def _ab_disabled() -> bool:
@@ -144,18 +167,36 @@ def _ab_disabled() -> bool:
     )
 
 
-def _assign_arm(pattern: str, agent_family: str, action_number: int) -> Arm:
+def _assign_arm(
+    pattern: str,
+    agent_family: str,
+    action_number: int,
+    firing_id: str = "",
+) -> Arm:
     """Block-randomized assignment backed by the persistent counter.
 
     Called under an exclusive file lock so concurrent processes on the
     same machine can't both read the same counter and collide. If the
     counter file is missing or corrupt we start fresh at ``(0, 0)`` —
     the next ``BALANCE_THRESHOLD`` firings will still land near 50/50.
+
+    Idempotency (2026-04-25): if ``firing_id`` is provided AND that
+    firing has already been assigned, return the cached arm without
+    bumping the counter. Re-entry no longer silently rebiases.
     """
     del action_number  # retained for signature stability; ignored.
     key = f"{agent_family}|{pattern}"
     with _counter_lock():
-        counters = _load_counters()
+        counters, firings = _load_persisted()
+
+        # Idempotency: a firing already assigned returns its arm
+        # without touching the counter. Without this, every retry,
+        # pre/post double-consult, or replay re-rolls and re-bumps.
+        if firing_id and firing_id in firings:
+            cached_arm = firings[firing_id]
+            if cached_arm in ("treatment", "control"):
+                return cached_arm  # type: ignore[return-value]
+
         t_count, c_count = counters.get(key, [0, 0])
 
         if t_count - c_count >= BALANCE_THRESHOLD:
@@ -169,36 +210,92 @@ def _assign_arm(pattern: str, agent_family: str, action_number: int) -> Arm:
             counters[key] = [t_count + 1, c_count]
         else:
             counters[key] = [t_count, c_count + 1]
-        _save_counters(counters)
+
+        if firing_id:
+            firings[firing_id] = arm
+            # FIFO trim — drop oldest insertions once over cap. Python
+            # 3.7+ dicts preserve insertion order, so popitem(last=False
+            # equivalent) via iteration works.
+            if len(firings) > _FIRINGS_DEDUP_MAX:
+                excess = len(firings) - _FIRINGS_DEDUP_MAX
+                for old_key in list(firings.keys())[:excess]:
+                    del firings[old_key]
+
+        _save_persisted(counters, firings)
     return arm
 
 
-def _load_counters() -> dict[str, list[int]]:
-    """Read the counter map. Missing or corrupt file → empty map."""
+def _load_persisted() -> tuple[dict[str, list[int]], dict[str, str]]:
+    """Read counters AND firings dedup map.
+
+    Two on-disk schemas, both supported:
+    - Legacy (pre 2026-04-25): flat dict ``{family|pattern: [t, c]}``.
+      No firings dedup → returns empty firings dict.
+    - Current: ``{"_counters": {...}, "_firings": {...}}``.
+
+    Missing or corrupt file → empty pair.
+    """
     try:
         raw = _COUNTERS_PATH.read_text()
     except (FileNotFoundError, OSError):
-        return {}
+        return {}, {}
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        return {}
+        return {}, {}
     if not isinstance(data, dict):
-        return {}
-    out: dict[str, list[int]] = {}
-    for k, v in data.items():
-        if isinstance(v, list) and len(v) == 2 and all(isinstance(x, int) for x in v):
-            out[k] = [v[0], v[1]]
-    return out
+        return {}, {}
+
+    # Current schema if either sentinel is present.
+    if "_counters" in data or "_firings" in data:
+        raw_counters = data.get("_counters", {})
+        raw_firings = data.get("_firings", {})
+    else:
+        raw_counters = data
+        raw_firings = {}
+
+    counters: dict[str, list[int]] = {}
+    if isinstance(raw_counters, dict):
+        for k, v in raw_counters.items():
+            if (
+                isinstance(v, list) and len(v) == 2
+                and all(isinstance(x, int) and x >= 0 for x in v)
+            ):
+                counters[k] = [v[0], v[1]]
+
+    firings: dict[str, str] = {}
+    if isinstance(raw_firings, dict):
+        for k, v in raw_firings.items():
+            if isinstance(v, str) and v in ("treatment", "control"):
+                firings[k] = v
+    return counters, firings
+
+
+def _save_persisted(
+    counters: dict[str, list[int]], firings: dict[str, str],
+) -> None:
+    """Best-effort write of both maps. Failure here must not break guidance."""
+    try:
+        _COUNTERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Counters keys sorted for diff-friendliness; firings preserved
+        # in insertion order so the FIFO trim contract holds across writes.
+        _COUNTERS_PATH.write_text(json.dumps({
+            "_counters": dict(sorted(counters.items())),
+            "_firings": firings,
+        }))
+    except OSError:
+        pass
+
+
+# Legacy aliases — kept for tests and any external caller. Internal
+# call sites should use the _persisted variants directly.
+def _load_counters() -> dict[str, list[int]]:
+    return _load_persisted()[0]
 
 
 def _save_counters(counters: dict[str, list[int]]) -> None:
-    """Best-effort write. Failure here must not break guidance."""
-    try:
-        _COUNTERS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _COUNTERS_PATH.write_text(json.dumps(counters, sort_keys=True))
-    except OSError:
-        pass
+    _, firings = _load_persisted()
+    _save_persisted(counters, firings)
 
 
 class _counter_lock:

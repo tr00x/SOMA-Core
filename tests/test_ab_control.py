@@ -140,6 +140,90 @@ def test_reset_counters_wipes_file(tmp_path, monkeypatch):
     assert not (tmp_path / "ab_counters.json").exists()
 
 
+# ── Idempotency (firing_id) ────────────────────────────────────────
+
+class TestShouldInjectIdempotency:
+    """Without firing_id every call rebumps the counter — biases the A/B
+    verdict on retry, replay, or pre/post double-consult. With firing_id
+    the same firing always returns the same arm without touching the
+    counter."""
+
+    def test_same_firing_id_returns_same_arm(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab.json")
+        first = ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        second = ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        third = ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        assert first == second == third
+
+    def test_same_firing_id_does_not_bump_counter(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab.json")
+        ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        counters_after_first = dict(ab_control._load_counters())
+        ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        ab_control.should_inject(
+            "context", "cc", 0, firing_id="agent1|context|42",
+        )
+        counters_after_three = dict(ab_control._load_counters())
+        assert counters_after_first == counters_after_three
+
+    def test_different_firing_ids_all_assigned(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab.json")
+        for n in range(20):
+            ab_control.should_inject(
+                "context", "cc", n, firing_id=f"agent1|context|{n}",
+            )
+        counters = ab_control._load_counters()
+        t, c = counters["cc|context"]
+        assert t + c == 20
+
+    def test_no_firing_id_falls_back_to_legacy_path(self, tmp_path, monkeypatch):
+        """Backward compat: callers that don't pass firing_id still work
+        (every call increments) — this is the pre-2026-04-25 behaviour."""
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab.json")
+        for _ in range(5):
+            ab_control.should_inject("context", "cc", 0)
+        counters = ab_control._load_counters()
+        t, c = counters["cc|context"]
+        assert t + c == 5
+
+    def test_firings_dedup_trims_to_max(self, tmp_path, monkeypatch):
+        """The dedup map can't grow forever — caps at _FIRINGS_DEDUP_MAX
+        with FIFO trim so a long-lived install doesn't bloat the file."""
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab.json")
+        monkeypatch.setattr(ab_control, "_FIRINGS_DEDUP_MAX", 10)
+        for n in range(25):
+            ab_control.should_inject(
+                "context", "cc", n, firing_id=f"agent|context|{n}",
+            )
+        _counters, firings = ab_control._load_persisted()
+        assert len(firings) == 10
+        # Newest 10 ids retained (firing 15..24).
+        for n in range(15, 25):
+            assert f"agent|context|{n}" in firings
+        # Oldest dropped.
+        assert "agent|context|0" not in firings
+
+    def test_legacy_schema_loads_without_firings(self, tmp_path, monkeypatch):
+        """Pre-2026-04-25 ab_counters.json has no _firings sentinel.
+        Loading must not crash; firings dict starts empty."""
+        path = tmp_path / "ab.json"
+        path.write_text('{"cc|context": [10, 8]}')
+        monkeypatch.setattr(ab_control, "_COUNTERS_PATH", path)
+        counters, firings = ab_control._load_persisted()
+        assert counters == {"cc|context": [10, 8]}
+        assert firings == {}
+
+
 # ── Stats primitives ────────────────────────────────────────────────
 
 def test_welch_identical_samples_high_p():

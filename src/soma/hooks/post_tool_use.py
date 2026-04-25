@@ -856,8 +856,17 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     # actions always see guidance if a pattern fires — it
                     # keeps the install demo-visible.
                     if profile is not None and not profile.is_warmup():
+                        # firing_id makes should_inject idempotent under
+                        # retry / re-entry: the same firing always returns
+                        # the same arm without bumping the counter.
+                        # Without it, the prior every-call-rebumps path
+                        # silently biased the A/B verdict.
+                        _firing_id = (
+                            f"{agent_id}|{cg_msg.pattern}|{len(cg_action_log)}"
+                        )
                         arm = ab_control.should_inject(
                             cg_msg.pattern, family, len(cg_action_log),
+                            firing_id=_firing_id,
                         )
                 except Exception:
                     arm = "treatment"
