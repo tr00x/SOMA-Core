@@ -159,6 +159,10 @@ class AnalyticsStore:
             "20260424_purge_test_agent_pollution",
             self._purge_test_agent_pollution,
         )
+        self._apply_migration(
+            "20260425_reclear_silence_after_fix_window",
+            self._clear_stale_silence_cache_post_ab_reset,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -240,6 +244,15 @@ class AnalyticsStore:
         zeros the silence triad on every ``calibration_*.json`` file in
         SOMA_DIR so the post-reset distribution can rebuild itself from
         clean guidance_outcomes.
+
+        Re-applied as ``20260425_reclear_silence_after_fix_window``: the
+        original 08578c5 → d916d42 ship sequence left a 5-minute window
+        where the silence refresher was already running but still used
+        the unfiltered (all-time) precision query. Hooks that fired in
+        that window repopulated the silence triad from biased data; the
+        later since_ts filter then kept it stuck because fires=0
+        post-reset is a no-op in ``update_silence``. Idempotent —
+        re-running on a clean profile is a no-op.
         """
         try:
             from soma.calibration import clear_stale_silence_cache

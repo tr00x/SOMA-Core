@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from soma.analytics import AnalyticsStore
@@ -557,6 +558,52 @@ def test_clear_stale_silence_cache_migration_idempotent(tmp_path: Path, monkeypa
     data = json.loads(profile.read_text())
     # Migration is one-shot — the fresh silence survives.
     assert data["silenced_patterns"] == ["new_silence"]
+
+
+def test_reclear_silence_after_fix_window_migration(tmp_path: Path, monkeypatch):
+    """Catch the 08578c5 → d916d42 race-window stickiness.
+
+    Scenario: original clear migration ran (id present in
+    schema_migrations), but a hook in the fix window repopulated the
+    silence triad. The since_ts filter then turned ``update_silence``
+    into a no-op, leaving the triad stuck. The follow-on
+    ``20260425_reclear_silence_after_fix_window`` migration must run
+    once on next open and zero the cache.
+    """
+    from soma import ab_control, calibration
+    monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
+    monkeypatch.setattr(calibration, "SOMA_DIR", tmp_path)
+
+    profile = tmp_path / "calibration_cc.json"
+    profile.write_text(json.dumps({
+        "family": "cc", "action_count": 6024, "phase": "adaptive",
+        "drift_p25": 0.0, "drift_p75": 0.0,
+        "entropy_p25": 0.0, "entropy_p75": 0.0,
+        "typical_error_burst": 0, "typical_retry_burst": 0,
+        "typical_success_rate": 1.0,
+        "silenced_patterns": ["entropy_drop", "blind_edit", "context"],
+        "last_silence_check_action": 6024,
+        "pattern_precision_cache": {"entropy_drop": 0.2, "blind_edit": 0.03},
+        "refuted_patterns": [], "last_refuted_check_action": 0,
+        "validated_patterns": [],
+        "created_at": 1.0, "updated_at": 1.0, "schema_version": 1,
+    }))
+
+    db = tmp_path / "race.db"
+    # First open writes both silence-clear migration ids.
+    store = AnalyticsStore(path=db)
+    store.close()
+    rows = {
+        r[0] for r in
+        sqlite3.connect(db).execute("SELECT id FROM schema_migrations").fetchall()
+    }
+    assert "20260424_clear_stale_silence_cache" in rows
+    assert "20260425_reclear_silence_after_fix_window" in rows
+
+    data = json.loads(profile.read_text())
+    assert data["silenced_patterns"] == []
+    assert data["pattern_precision_cache"] == {}
+    assert data["last_silence_check_action"] == 0
 
 
 def test_archive_migration_resets_block_randomizer_counters(tmp_path: Path, monkeypatch):
