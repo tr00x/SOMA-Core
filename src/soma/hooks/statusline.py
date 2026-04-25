@@ -103,19 +103,98 @@ def _phase_badge(agent_id: str = "") -> str:
     return ""
 
 
+_STATUSLINE_CACHE_PATH = None  # set lazily to allow monkeypatching SOMA_DIR
+_STATUSLINE_CACHE_TTL_SEC = 1.0
+
+
+def _statusline_cache_path():
+    global _STATUSLINE_CACHE_PATH
+    if _STATUSLINE_CACHE_PATH is None:
+        from pathlib import Path as _P
+        _STATUSLINE_CACHE_PATH = _P.home() / ".soma" / "statusline_cache.json"
+    return _STATUSLINE_CACHE_PATH
+
+
+def _try_print_cached() -> bool:
+    """Print last rendered statusline if engine_state.json mtime is unchanged
+    AND the cache is within TTL. Returns True iff cache was used.
+
+    Statusline runs every ~5s in Claude Code; the full path opens
+    engine_state.json + soma.toml + calibration_<family>.json + block
+    files + circuit_<aid>.json — that's 5-6 JSON parses per render.
+    Caching keyed on engine state mtime cuts the warm path to a single
+    stat() + json.loads of one tiny cache file.
+    """
+    import json as _json
+    import time as _time
+    from pathlib import Path as _P
+    try:
+        engine_path = _P.home() / ".soma" / "engine_state.json"
+        if not engine_path.exists():
+            return False
+        mtime = engine_path.stat().st_mtime
+
+        cache_path = _statusline_cache_path()
+        if not cache_path.exists():
+            return False
+        cache = _json.loads(cache_path.read_text())
+        if cache.get("mtime_engine") != mtime:
+            return False
+        if _time.time() - cache.get("cached_at", 0) > _STATUSLINE_CACHE_TTL_SEC:
+            return False
+        rendered = cache.get("rendered")
+        if not isinstance(rendered, str):
+            return False
+        print(rendered)
+        return True
+    except Exception:
+        return False
+
+
+def _save_cache(rendered: str) -> None:
+    import json as _json
+    import time as _time
+    from pathlib import Path as _P
+    try:
+        engine_path = _P.home() / ".soma" / "engine_state.json"
+        if not engine_path.exists():
+            return
+        cache_path = _statusline_cache_path()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(_json.dumps({
+            "mtime_engine": engine_path.stat().st_mtime,
+            "rendered": rendered,
+            "cached_at": _time.time(),
+        }))
+    except Exception:
+        pass
+
+
+def _render(parts: list[str]) -> str:
+    return " · ".join(parts)
+
+
+def _emit(rendered: str) -> None:
+    """Print and persist into the 1-second mtime-keyed cache."""
+    print(rendered)
+    _save_cache(rendered)
+
+
 def main():
+    if _try_print_cached():
+        return
     try:
         from soma.hooks.common import get_engine
 
         engine, agent_id = get_engine()
         if engine is None:
-            print("🧠 SOMA · waiting")
+            _emit("🧠 SOMA · waiting")
             return
 
         try:
             snap = engine.get_snapshot(agent_id)
         except Exception:
-            print("🧠 SOMA · waiting")
+            _emit("🧠 SOMA · waiting")
             return
 
         level_obj = snap["level"]
@@ -142,7 +221,7 @@ def main():
             if prof_path.exists():
                 profile = load_profile(agent_id)
                 if profile.is_warmup():
-                    print(
+                    _emit(
                         f"🧠 SOMA · learning {profile.action_count}/"
                         f"{WARMUP_EXIT_ACTIONS}"
                     )
@@ -208,9 +287,10 @@ def main():
         if phase:
             parts.append(phase)
 
-        print(" · ".join(parts))
+        _emit(" · ".join(parts))
 
     except Exception:
+        # Don't cache fault lines — next render gets a fresh shot.
         print("🧠 SOMA · --")
 
 
