@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from soma.state import (  # noqa: F401
@@ -802,9 +803,6 @@ def read_guidance_state(agent_id: str = "") -> "GuidanceState":
     except Exception:
         pass
     return GuidanceState()
-
-
-from contextlib import contextmanager
 
 
 @contextmanager
