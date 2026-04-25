@@ -37,12 +37,28 @@ def test_spend_reduces_health():
     assert b.health() == pytest.approx(0.5)
 
 
-def test_overspend_clamps_to_zero_health():
+def test_overspend_health_floor_zero_but_spend_uncapped():
+    """Post-2026-04-25: spend() no longer caps at limit. Health() still
+    floors at 0 (preserves "0 = exhausted" semantic) but spent and
+    utilization expose the true overshoot so cost_spiral can fire."""
     b = make_budget(tokens=100.0)
     b.spend(tokens=200.0)
     assert b.health() == pytest.approx(0.0)
-    assert b.remaining("tokens") == pytest.approx(0.0)
-    assert b.spent["tokens"] == pytest.approx(100.0)
+    # spent is the REAL spend now, not clamped at limit
+    assert b.spent["tokens"] == pytest.approx(200.0)
+    # remaining goes negative — useful diagnostic
+    assert b.remaining("tokens") == pytest.approx(-100.0)
+    # utilization exposes the overshoot
+    assert b.utilization("tokens") == pytest.approx(2.0)
+    # overspend gives the absolute amount past the limit
+    assert b.overspend("tokens") == pytest.approx(100.0)
+
+
+def test_overspend_zero_when_within_budget():
+    b = make_budget(tokens=100.0)
+    b.spend(tokens=50.0)
+    assert b.overspend("tokens") == 0.0
+    assert b.utilization("tokens") == pytest.approx(0.5)
 
 
 def test_bottleneck_dim_determines_health():
