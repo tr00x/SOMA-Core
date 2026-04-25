@@ -53,8 +53,10 @@ class TestCircuitLocking:
             target=_writer_worker,
             args=(str(isolated_soma_dir), "raceagent", "beta", 20),
         )
-        p1.start(); p2.start()
-        p1.join(timeout=30); p2.join(timeout=30)
+        p1.start()
+        p2.start()
+        p1.join(timeout=30)
+        p2.join(timeout=30)
         assert p1.exitcode == 0 and p2.exitcode == 0
 
         data = hc.read_guidance_cooldowns("raceagent")
