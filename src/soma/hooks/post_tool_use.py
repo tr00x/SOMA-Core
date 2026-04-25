@@ -560,112 +560,120 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
 
         # Contextual guidance follow-through tracking (runs after pressure is
         # known so pressure-delta resolution works for drift/cost_spiral/etc.)
+        #
+        # The whole read-mutate-write block runs inside circuit_transaction
+        # so concurrent subagent hooks can't lose each other's
+        # ``actions_since`` increments or ``ab_recorded`` / ``strict_resolved``
+        # flags. Without this lock the v2026.5.5 "1 of 2 increments lost"
+        # race produces silent A/B contamination.
         try:
-            from soma.hooks.common import read_guidance_followthrough, write_guidance_followthrough
-            pending = read_guidance_followthrough(agent_id)
-            if pending:
-                from soma.contextual_guidance import check_followthrough
-                _tool_input = data.get("tool_input", {})
-                if not isinstance(_tool_input, dict):
-                    _tool_input = {}
-                from soma.hooks.common import read_action_log as _read_al
-                _recent_actions = _read_al(agent_id)[-10:]
-                # Increment BEFORE the strict check so both the
-                # A/B horizon gate and the followthrough branch see
-                # the same ``actions_since`` value.
-                pending["actions_since"] = int(pending.get("actions_since", 0) or 0) + 1
+            from soma.hooks.common import circuit_transaction
+            with circuit_transaction(agent_id) as _circuit_data:
+                pending = _circuit_data.get("guidance_followthrough")
+                if isinstance(pending, dict) and pending.get("pattern"):
+                    from soma.contextual_guidance import check_followthrough
+                    _tool_input = data.get("tool_input", {})
+                    if not isinstance(_tool_input, dict):
+                        _tool_input = {}
+                    from soma.hooks.common import read_action_log as _read_al
+                    _recent_actions = _read_al(agent_id)[-10:]
+                    # Increment BEFORE the strict check so both the
+                    # A/B horizon gate and the followthrough branch see
+                    # the same ``actions_since`` value.
+                    pending["actions_since"] = int(pending.get("actions_since", 0) or 0) + 1
 
-                # v2026.5.4: A/B and strict-followthrough are tracked
-                # *independently*. The old code cleared pending as
-                # soon as strict resolved, which meant fast treatment
-                # resolutions (strict True at +1) wrote the A/B row
-                # with pressure_after from +1 — smaller window than
-                # control arms which always sat till timeout. Now we
-                # keep pending alive until BOTH have resolved; each
-                # lands at its own correct horizon. No more mixed
-                # measurement windows.
-                _record_ab_outcome_at_horizon(
-                    agent_id=agent_id, pending=pending, pressure_after=pressure,
-                )
-
-                # Strict path — resolve at most once per pending.
-                strict_resolved = bool(pending.get("strict_resolved"))
-                if not strict_resolved:
-                    followed = check_followthrough(
-                        pending, tool_name, _tool_input, file_path, error,
-                        pressure_after=pressure,
-                        recent_actions=_recent_actions,
+                    # v2026.5.4: A/B and strict-followthrough are tracked
+                    # *independently*. The old code cleared pending as
+                    # soon as strict resolved, which meant fast treatment
+                    # resolutions (strict True at +1) wrote the A/B row
+                    # with pressure_after from +1 — smaller window than
+                    # control arms which always sat till timeout. Now we
+                    # keep pending alive until BOTH have resolved; each
+                    # lands at its own correct horizon. No more mixed
+                    # measurement windows.
+                    _record_ab_outcome_at_horizon(
+                        agent_id=agent_id, pending=pending, pressure_after=pressure,
                     )
-                    if followed is not None:
-                        pending["strict_resolved"] = True
-                        pending["strict_followed"] = bool(followed)
-                        strict_resolved = True
-                        try:
-                            from soma.audit import AuditLogger
-                            AuditLogger().append(
-                                agent_id=agent_id,
-                                tool_name=tool_name,
-                                error=False,
-                                pressure=pressure,
-                                mode="followthrough",
-                                type="contextual_guidance",
-                                detail=f"pattern={pending.get('pattern')}, followed={followed}",
-                                pattern=pending.get("pattern", ""),
-                                guidance_followed=followed,
-                            )
-                        except Exception:
-                            pass
-                        _record_guidance_outcome(
-                            agent_id=agent_id,
-                            pending=pending,
-                            followed=bool(followed),
+
+                    # Strict path — resolve at most once per pending.
+                    strict_resolved = bool(pending.get("strict_resolved"))
+                    if not strict_resolved:
+                        followed = check_followthrough(
+                            pending, tool_name, _tool_input, file_path, error,
                             pressure_after=pressure,
+                            recent_actions=_recent_actions,
                         )
-                        # Strict mode: clear the matching block on a
-                        # real recovery so the agent can proceed
-                        # without manual `soma unblock`.
-                        if followed:
+                        if followed is not None:
+                            pending["strict_resolved"] = True
+                            pending["strict_followed"] = bool(followed)
+                            strict_resolved = True
                             try:
-                                from soma.blocks import load_block_state, save_block_state
-                                bs = load_block_state(agent_id)
-                                removed = bs.clear_block(pattern=pending.get("pattern"))
-                                if removed:
-                                    save_block_state(bs)
+                                from soma.audit import AuditLogger
+                                AuditLogger().append(
+                                    agent_id=agent_id,
+                                    tool_name=tool_name,
+                                    error=False,
+                                    pressure=pressure,
+                                    mode="followthrough",
+                                    type="contextual_guidance",
+                                    detail=f"pattern={pending.get('pattern')}, followed={followed}",
+                                    pattern=pending.get("pattern", ""),
+                                    guidance_followed=followed,
+                                )
                             except Exception:
                                 pass
+                            _record_guidance_outcome(
+                                agent_id=agent_id,
+                                pending=pending,
+                                followed=bool(followed),
+                                pressure_after=pressure,
+                            )
+                            # Strict mode: clear the matching block on a
+                            # real recovery so the agent can proceed
+                            # without manual `soma unblock`.
+                            if followed:
+                                try:
+                                    from soma.blocks import load_block_state, save_block_state
+                                    bs = load_block_state(agent_id)
+                                    removed = bs.clear_block(pattern=pending.get("pattern"))
+                                    if removed:
+                                        save_block_state(bs)
+                                except Exception:
+                                    pass
 
-                # Terminal conditions: either both tracks landed, or
-                # we've waited too long for either.
-                ab_recorded = bool(pending.get("ab_recorded"))
-                timed_out = pending.get("actions_since", 0) > 5
+                    # Terminal conditions: either both tracks landed, or
+                    # we've waited too long for either.
+                    ab_recorded = bool(pending.get("ab_recorded"))
+                    timed_out = pending.get("actions_since", 0) > 5
 
-                if ab_recorded and strict_resolved:
-                    # Both done — discard pending cleanly.
-                    write_guidance_followthrough(None, agent_id)
-                elif timed_out:
-                    # Timed out. Best-effort close: write whichever
-                    # track hasn't landed yet so no row is lost.
-                    if not strict_resolved:
-                        _record_guidance_outcome(
-                            agent_id=agent_id, pending=pending,
-                            followed=False, pressure_after=pressure,
-                        )
-                    if not ab_recorded:
-                        # Force horizon so the A/B row lands on this
-                        # last attempt. pressure_after is current
-                        # pressure — late sample but unbiased against
-                        # the other arm (both arms time out the same
-                        # way).
-                        pending["actions_since"] = max(
-                            pending.get("actions_since", 0), _AB_MEASUREMENT_HORIZON,
-                        )
-                        _record_ab_outcome_at_horizon(
-                            agent_id=agent_id, pending=pending, pressure_after=pressure,
-                        )
-                    write_guidance_followthrough(None, agent_id)
-                else:
-                    # Still waiting on at least one track.
-                    write_guidance_followthrough(pending, agent_id)
+                    if ab_recorded and strict_resolved:
+                        # Both done — discard pending cleanly.
+                        _circuit_data.pop("guidance_followthrough", None)
+                    elif timed_out:
+                        # Timed out. Best-effort close: write whichever
+                        # track hasn't landed yet so no row is lost.
+                        if not strict_resolved:
+                            _record_guidance_outcome(
+                                agent_id=agent_id, pending=pending,
+                                followed=False, pressure_after=pressure,
+                            )
+                        if not ab_recorded:
+                            # Force horizon so the A/B row lands on this
+                            # last attempt. pressure_after is current
+                            # pressure — late sample but unbiased against
+                            # the other arm (both arms time out the same
+                            # way).
+                            pending["actions_since"] = max(
+                                pending.get("actions_since", 0), _AB_MEASUREMENT_HORIZON,
+                            )
+                            _record_ab_outcome_at_horizon(
+                                agent_id=agent_id, pending=pending, pressure_after=pressure,
+                            )
+                        _circuit_data.pop("guidance_followthrough", None)
+                    else:
+                        # Still waiting on at least one track. Persist
+                        # the mutated pending back into the transaction.
+                        _circuit_data["guidance_followthrough"] = pending
         except Exception:
             pass  # Never crash for follow-through tracking
 
