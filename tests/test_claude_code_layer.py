@@ -591,6 +591,50 @@ class TestPostToolUse:
         # Should not crash — records with defaults
         main()
 
+    def test_outer_exception_logs_to_stderr(self, soma_dir, monkeypatch, capsys):
+        """The 600-line PostToolUse main was wrapped in `except: pass` —
+        a 2-day silence-cache regression went unnoticed because nothing
+        was ever printed. Surfacing the exception type + message on
+        stderr is cheap insurance against the next silent failure."""
+        from soma.hooks import post_tool_use as ptu
+
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Edit", "output": "ok",
+        })))
+
+        # Force the inner pipeline to blow up.
+        def boom(*_a, **_kw):
+            raise RuntimeError("synthetic regression for stderr test")
+        monkeypatch.setattr(ptu, "get_engine", boom)
+
+        ptu.main()
+
+        captured = capsys.readouterr()
+        assert "SOMA hook error" in captured.err
+        assert "RuntimeError" in captured.err
+        assert "synthetic regression" in captured.err
+        # stdout is the JSON channel — must remain clean.
+        assert "SOMA hook error" not in captured.out
+
+    def test_soma_hook_quiet_silences_stderr(self, soma_dir, monkeypatch, capsys):
+        """SOMA_HOOK_QUIET=1 lets users suppress the breadcrumb in CI
+        or other known-noisy environments."""
+        from soma.hooks import post_tool_use as ptu
+
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({
+            "tool_name": "Edit", "output": "ok",
+        })))
+        monkeypatch.setenv("SOMA_HOOK_QUIET", "1")
+
+        def boom(*_a, **_kw):
+            raise RuntimeError("should be silent")
+        monkeypatch.setattr(ptu, "get_engine", boom)
+
+        ptu.main()
+
+        captured = capsys.readouterr()
+        assert "SOMA hook error" not in captured.err
+
     def test_multiple_actions_accumulate(self, soma_dir, monkeypatch):
         from soma.hooks.post_tool_use import main
 
