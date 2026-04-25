@@ -99,9 +99,14 @@ class Baseline:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Baseline":
+        # Defaults must mirror __init__ (alpha=0.08, min_samples=5).
+        # Older from_dict had alpha=0.15 / min_samples=10 — a partial /
+        # legacy state file rehydrated with different EMA dynamics than
+        # the running engine, producing a silent behavioural shift on
+        # restart. Caught by ultra-review code audit 2026-04-25.
         obj = cls(
-            alpha=data.get("alpha", 0.15),
-            min_samples=data.get("min_samples", 10),
+            alpha=data.get("alpha", 0.08),
+            min_samples=data.get("min_samples", 5),
         )
         obj._value = dict(data.get("value", {}))
         obj._variance = dict(data.get("variance", {}))

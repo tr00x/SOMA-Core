@@ -94,9 +94,33 @@ def test_serialization_roundtrip():
 
 
 def test_from_dict_empty_dict_uses_defaults():
-    """from_dict({}) should not crash — should return a fresh Baseline with defaults."""
+    """from_dict({}) should not crash — should return a fresh Baseline with
+    defaults that match the constructor (alpha=0.08, min_samples=5).
+
+    Previously diverged: from_dict had alpha=0.15 / min_samples=10, so a
+    partial state file silently changed EMA dynamics on restart. Caught by
+    ultra-review code audit 2026-04-25 (blocker #7).
+    """
     b = Baseline.from_dict({})
-    assert b.alpha == 0.15
-    assert b.min_samples == 10
+    constructor_default = Baseline()
+    assert b.alpha == constructor_default.alpha
+    assert b.min_samples == constructor_default.min_samples
     assert b.get("uncertainty") == DEFAULTS["uncertainty"]
     assert b.get_count("uncertainty") == 0
+
+
+def test_from_dict_default_alpha_matches_constructor():
+    """Concrete check: the alpha used when keys are missing must equal
+    the constructor's default alpha. Different alphas mean different EMA
+    dynamics — silent behavioural shift on restart."""
+    assert Baseline.from_dict({}).alpha == 0.08
+    assert Baseline.from_dict({}).min_samples == 5
+
+
+def test_from_dict_partial_state_preserves_constructor_defaults():
+    """A state file with values but no alpha/min_samples (older schema)
+    must still rehydrate with the constructor defaults, not legacy ones."""
+    legacy_state = {"value": {"cost": 0.5}, "count": {"cost": 3}}
+    b = Baseline.from_dict(legacy_state)
+    assert b.alpha == 0.08
+    assert b.min_samples == 5
