@@ -84,11 +84,17 @@ class PressurePredictor:
         fit_confidence = max(r_squared, 0.0) if n >= 3 else 0.0
         confidence = 0.6 * sample_confidence + 0.4 * fit_confidence
 
-        # 4. Dominant reason
+        # 4. Dominant reason — use SIGNED slope so a strongly negative
+        # trend reads as "improving" instead of being lumped into
+        # "stable". The boost comparison uses abs because "pattern
+        # dominates trend in magnitude" is the right question regardless
+        # of trend direction.
         if boost > abs(slope * self.horizon):
             reason = dominant_pattern or "pattern"
         elif slope > 0:
             reason = "trend"
+        elif slope < 0:
+            reason = "improving"
         else:
             reason = "stable"
 

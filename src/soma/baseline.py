@@ -75,10 +75,18 @@ class Baseline:
         return blend * computed + (1.0 - blend) * default
 
     def get_std(self, signal: str) -> float:
-        """Return the standard deviation of the EMA variance estimate."""
+        """Return the standard deviation of the EMA variance estimate.
+
+        The variance recurrence ``α(value-old)² + (1-α)·old_var`` is the
+        biased EWMA form — under tiny floating-point drift the running
+        variance can creep slightly negative from the
+        ``(1-α)·old_var`` term, which then makes ``math.sqrt`` raise
+        ``ValueError``. Floor at 0 before sqrt to defend the call site.
+        """
         if signal not in self._variance:
             return 0.1
-        return max(math.sqrt(self._variance[signal]), 1e-9)
+        var = max(self._variance[signal], 0.0)
+        return max(math.sqrt(var), 1e-9)
 
     def get_count(self, signal: str) -> int:
         """Return the number of observations recorded for *signal*."""

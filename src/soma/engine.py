@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -96,7 +98,12 @@ class _AgentState:
         self.cumulative_tokens: int = 0
         self._context_warning_fired: bool = False
         self._context_critical_fired: bool = False
-        self._token_burn_history: list[int] = []
+        # deque(maxlen=10) gives atomic append + bounded growth +
+        # reference-stable snapshots for any reader holding the
+        # collection. The previous list[int] slice-rebind
+        # (`self._token_burn_history = self._token_burn_history[-10:]`)
+        # broke external references on every action.
+        self._token_burn_history: deque[int] = deque(maxlen=10)
 
 
 class SOMAEngine:
@@ -522,8 +529,23 @@ class SOMAEngine:
                             "half_life": half_life,
                             "handoff_suggestion": handoff_suggestion,
                         })
-        except Exception:
-            pass  # Fingerprint unavailable — defaults apply
+        except Exception as _fp_exc:
+            # Fingerprint / half-life is consumed by the dashboard
+            # (baseline_integrity, half_life_warning) — silent absence
+            # is indistinguishable from "intact baseline" downstream.
+            # Surface to stderr so a recurrence is visible. Matches
+            # the PostToolUse breadcrumb contract; SOMA_HOOK_QUIET=1
+            # silences for CI / known-noisy runs.
+            import os as _os
+            if _os.environ.get("SOMA_HOOK_QUIET") != "1":
+                try:
+                    print(
+                        f"SOMA fingerprint error: "
+                        f"{type(_fp_exc).__name__}: {_fp_exc}",
+                        file=sys.stderr,
+                    )
+                except Exception:
+                    pass
 
         # Goal coherence (None during warmup)
         goal_coherence: float | None = None
@@ -602,8 +624,7 @@ class SOMAEngine:
 
         # Context burn rate: rolling avg of tokens per action over last 10 actions
         s._token_burn_history.append(action.token_count)
-        if len(s._token_burn_history) > 10:
-            s._token_burn_history = s._token_burn_history[-10:]
+        # deque(maxlen=10) drops oldest automatically — no explicit slice.
         context_burn_rate = sum(s._token_burn_history) / len(s._token_burn_history) if s._token_burn_history else 0.0
 
         # Context exhaustion pressure signal (D-23)
