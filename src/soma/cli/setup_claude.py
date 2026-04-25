@@ -11,9 +11,64 @@ One command to install SOMA monitoring into Claude Code:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
+
+
+def _read_settings(settings_path: Path) -> dict:
+    """Read settings.json or return {} if missing.
+
+    Raises RuntimeError if the file exists but is unparseable — the previous
+    silent ``settings = {}`` fallback was followed by a write_text() that
+    clobbered every other hook the user had configured. Refusing to write
+    is the only safe behaviour: the user can fix or remove the file.
+    """
+    if not settings_path.exists():
+        return {}
+    try:
+        return json.loads(settings_path.read_text())
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Refusing to overwrite unparseable settings.json at {settings_path} "
+            f"({e}). Move or repair the file and re-run setup."
+        ) from e
+
+
+def _safe_write_settings(settings_path: Path, settings: dict) -> None:
+    """Atomic write of settings.json with .bak of prior content.
+
+    Backup only made when the file already exists — first-time install
+    shouldn't leave an empty .bak. Atomic via mkstemp + os.replace so a
+    crash mid-write leaves either the prior file or the new one, never
+    a half-written truncation.
+    """
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        backup = settings_path.with_suffix(settings_path.suffix + ".bak")
+        backup.write_bytes(settings_path.read_bytes())
+    fd, tmp = tempfile.mkstemp(
+        dir=str(settings_path.parent),
+        prefix=settings_path.name + ".",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(settings, f, indent=2)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, settings_path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _find_soma_hook_command() -> str:
@@ -45,13 +100,7 @@ def _find_statusline_command() -> str:
 
 def _install_hooks(settings_path: Path, hook_cmd: str) -> bool:
     """Install SOMA hooks into Claude Code settings.json. Returns True if changed."""
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, IOError):
-            settings = {}
-
+    settings = _read_settings(settings_path)
     hooks = settings.get("hooks", {})
     changed = False
 
@@ -89,20 +138,14 @@ def _install_hooks(settings_path: Path, hook_cmd: str) -> bool:
 
     if changed:
         settings["hooks"] = hooks
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(settings, indent=2))
+        _safe_write_settings(settings_path, settings)
 
     return changed
 
 
 def _install_statusline(settings_path: Path, sl_cmd: str) -> bool:
     """Add SOMA status line to Claude Code. Returns True if changed."""
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, IOError):
-            settings = {}
+    settings = _read_settings(settings_path)
 
     if "statusLine" in settings:
         existing = settings["statusLine"]
@@ -117,7 +160,7 @@ def _install_statusline(settings_path: Path, sl_cmd: str) -> bool:
         "command": sl_cmd,
     }
 
-    settings_path.write_text(json.dumps(settings, indent=2))
+    _safe_write_settings(settings_path, settings)
     return True
 
 
