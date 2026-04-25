@@ -804,20 +804,96 @@ def read_guidance_state(agent_id: str = "") -> "GuidanceState":
     return GuidanceState()
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def _circuit_lock(agent_id: str = ""):
+    """Advisory file lock for circuit_{aid}.json read-modify-write blocks.
+
+    All four guidance writers (state, signal_pressures, followthrough,
+    cooldowns) target the same JSON file. Without this, two concurrent
+    PostToolUse hooks (parent + subagent, parallel tool calls) lose each
+    other's increments — exactly the silent-failure class that
+    masked the v2026.5.5 silence-cache regression for two days.
+
+    Same fcntl pattern as ``append_action_log``: a sibling .lock file
+    serves as the lock target so we don't lock the data file itself.
+    Falls through unlocked on non-POSIX where fcntl is unavailable.
+    """
+    aid = agent_id or "default"
+    lock_path = SOMA_DIR / f"circuit_{aid}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    with open(lock_path, "w") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        except OSError:
+            yield
+            return
+        try:
+            yield
+        finally:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+            except OSError:
+                pass
+
+
+def _circuit_path(agent_id: str = "") -> Path:
+    aid = agent_id or "default"
+    return SOMA_DIR / f"circuit_{aid}.json"
+
+
+def _read_circuit_data(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+@contextmanager
+def circuit_transaction(agent_id: str = ""):
+    """Locked read-modify-write of circuit_{aid}.json.
+
+    Yields the parsed data dict; mutations are persisted on context exit.
+    Use this when a caller needs to read the current state, mutate one
+    field, and write — the per-writer lock alone doesn't cover that
+    pattern (lost-update race between read and write).
+
+    Example::
+
+        with circuit_transaction(agent_id) as data:
+            pending = data.get("guidance_followthrough", {})
+            pending["actions_since"] = pending.get("actions_since", 0) + 1
+            data["guidance_followthrough"] = pending
+    """
+    path = _circuit_path(agent_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _circuit_lock(agent_id):
+        data = _read_circuit_data(path)
+        yield data
+        try:
+            path.write_text(json.dumps(data))
+        except OSError:
+            pass
+
+
 def write_guidance_state(state: "GuidanceState", agent_id: str = "") -> None:
     """Persist guidance state into circuit file. Merges with existing data. Never raises."""
     try:
-        aid = agent_id or "default"
-        path = SOMA_DIR / f"circuit_{aid}.json"
+        path = _circuit_path(agent_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, IOError):
-                data = {}
-        data["guidance_state"] = state.to_dict()
-        path.write_text(json.dumps(data))
+        with _circuit_lock(agent_id):
+            data = _read_circuit_data(path)
+            data["guidance_state"] = state.to_dict()
+            path.write_text(json.dumps(data))
     except Exception:
         pass
 
@@ -825,17 +901,14 @@ def write_guidance_state(state: "GuidanceState", agent_id: str = "") -> None:
 def write_signal_pressures(signal_pressures: dict[str, float], agent_id: str = "") -> None:
     """Persist last signal pressures into circuit file. Never raises."""
     try:
-        aid = agent_id or "default"
-        path = SOMA_DIR / f"circuit_{aid}.json"
+        path = _circuit_path(agent_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, IOError):
-                data = {}
-        data["signal_pressures"] = {k: round(v, 4) for k, v in signal_pressures.items()}
-        path.write_text(json.dumps(data))
+        with _circuit_lock(agent_id):
+            data = _read_circuit_data(path)
+            data["signal_pressures"] = {
+                k: round(v, 4) for k, v in signal_pressures.items()
+            }
+            path.write_text(json.dumps(data))
     except Exception:
         pass
 
@@ -873,20 +946,15 @@ def read_guidance_followthrough(agent_id: str = "") -> dict | None:
 def write_guidance_followthrough(pending: dict | None, agent_id: str = "") -> None:
     """Persist pending contextual guidance follow-through into circuit file."""
     try:
-        aid = agent_id or "default"
-        path = SOMA_DIR / f"circuit_{aid}.json"
+        path = _circuit_path(agent_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, IOError):
-                data = {}
-        if pending is None:
-            data.pop("guidance_followthrough", None)
-        else:
-            data["guidance_followthrough"] = pending
-        path.write_text(json.dumps(data))
+        with _circuit_lock(agent_id):
+            data = _read_circuit_data(path)
+            if pending is None:
+                data.pop("guidance_followthrough", None)
+            else:
+                data["guidance_followthrough"] = pending
+            path.write_text(json.dumps(data))
     except Exception:
         pass
 
@@ -909,17 +977,12 @@ def read_guidance_cooldowns(agent_id: str = "") -> dict[str, int]:
 def write_guidance_cooldowns(cooldowns: dict[str, int], agent_id: str = "") -> None:
     """Persist pattern cooldown state into circuit file."""
     try:
-        aid = agent_id or "default"
-        path = SOMA_DIR / f"circuit_{aid}.json"
+        path = _circuit_path(agent_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, IOError):
-                data = {}
-        data["guidance_cooldowns"] = cooldowns
-        path.write_text(json.dumps(data))
+        with _circuit_lock(agent_id):
+            data = _read_circuit_data(path)
+            data["guidance_cooldowns"] = cooldowns
+            path.write_text(json.dumps(data))
     except Exception:
         pass
 
