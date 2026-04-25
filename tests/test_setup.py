@@ -5,7 +5,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from soma.cli.setup_claude import _install_hooks, _install_skills
+import pytest
+
+from soma.cli.setup_claude import _install_hooks, _install_skills, _install_statusline
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -80,6 +82,96 @@ class TestIdempotentSetup:
         assert any("soma" in c for c in commands)
 
         path.unlink()
+
+
+class TestSettingsSafety:
+    """Settings.json is shared with every other Claude Code hook the user
+    runs. SOMA must NEVER silently overwrite a corrupt or unreadable
+    settings file — that destroys the user's config in one command. And
+    every successful write must be backed up first so a bad release can
+    be rolled back."""
+
+    def test_corrupt_settings_raises_not_overwrites(self, tmp_path):
+        """If settings.json has invalid JSON, refuse to write rather than
+        silently zero it out. The previous behaviour silently fell back
+        to ``settings = {}`` and clobbered every other hook on disk."""
+        path = tmp_path / "settings.json"
+        path.write_text("{ broken json /// not parseable")
+        original = path.read_text()
+
+        with pytest.raises(RuntimeError, match="settings.json"):
+            _install_hooks(path, "soma-hook")
+
+        # Original content untouched.
+        assert path.read_text() == original
+
+    def test_corrupt_settings_statusline_also_raises(self, tmp_path):
+        path = tmp_path / "settings.json"
+        path.write_text("not json")
+        original = path.read_text()
+
+        with pytest.raises(RuntimeError, match="settings.json"):
+            _install_statusline(path, "soma-statusline")
+
+        assert path.read_text() == original
+
+    def test_install_creates_backup_before_write(self, tmp_path):
+        """Successful installs must leave a .bak copy of the prior
+        settings.json next to it so the user can roll back."""
+        path = tmp_path / "settings.json"
+        prior = {"hooks": {"PreToolUse": [
+            {"hooks": [{"type": "command", "command": "my-tool", "timeout": 5}]}
+        ]}}
+        path.write_text(json.dumps(prior, indent=2))
+
+        _install_hooks(path, "soma-hook")
+
+        backup = path.with_suffix(".json.bak")
+        assert backup.exists(), "must back up before write"
+        assert json.loads(backup.read_text()) == prior
+
+    def test_no_backup_when_no_prior_file(self, tmp_path):
+        """First-time installs (no settings.json at all) must NOT create
+        an empty .bak — that would just be noise."""
+        path = tmp_path / "settings.json"
+        assert not path.exists()
+
+        _install_hooks(path, "soma-hook")
+
+        backup = path.with_suffix(".json.bak")
+        assert not backup.exists()
+
+    def test_write_is_atomic(self, tmp_path, monkeypatch):
+        """Simulate a crash between truncate and full write: the prior
+        file must remain intact (atomic temp+rename, not in-place write)."""
+        path = tmp_path / "settings.json"
+        prior = {"hooks": {"PreToolUse": [
+            {"hooks": [{"type": "command", "command": "keep-me", "timeout": 5}]}
+        ]}}
+        path.write_text(json.dumps(prior))
+        original_bytes = path.read_bytes()
+
+        # Make os.replace blow up partway through
+        import os as _os
+        original_replace = _os.replace
+
+        def explode(*_a, **_kw):
+            raise OSError("simulated disk full")
+
+        monkeypatch.setattr(_os, "replace", explode)
+
+        with pytest.raises(OSError):
+            _install_hooks(path, "soma-hook")
+
+        # Original file content unchanged — the write was never half-applied.
+        assert path.read_bytes() == original_bytes
+        # And no temp file left behind.
+        leftover = list(tmp_path.glob("settings.json.*"))
+        # backup may exist (.bak) but no .tmp
+        for p in leftover:
+            assert not p.name.endswith(".tmp"), f"leftover temp: {p}"
+
+        monkeypatch.setattr(_os, "replace", original_replace)
 
 
 class TestSkillsPackaging:
