@@ -63,6 +63,35 @@ class TestWrap:
         response = wrapped.messages.create(model="test", max_tokens=100, messages=[])
         assert response.content[0].text == "Hello from Claude"
 
+    def test_double_wrap_does_not_double_record(self, capsys):
+        """Pre-2026-04-25 wrap mutated the client object; calling
+        wrap() twice silently double-wrapped messages.create so every
+        API call recorded twice and burned the budget at 2x. Now the
+        second wrap warns to stderr and returns without rewrapping."""
+        client = MockAnthropicClient()
+        wrapped1 = soma.wrap(client, auto_export=False)
+        soma.wrap(client, auto_export=False)
+
+        # Second wrap call must surface a warning (catches the misuse early).
+        captured = capsys.readouterr()
+        assert "already wrapped" in captured.err.lower()
+
+        # And critically: only ONE recording per API call, not two. The
+        # underlying client.messages.create is still the single wrapper
+        # installed by the first wrap — invoking it once must record once.
+        client.messages.create(model="test", max_tokens=100, messages=[])
+        snap = wrapped1._engine.get_snapshot(wrapped1._agent_id)
+        assert snap["action_count"] == 1, (
+            "double-wrap protection failed: messages.create recorded "
+            f"{snap['action_count']} times for one call"
+        )
+
+    def test_sentinel_set_on_wrap(self):
+        client = MockAnthropicClient()
+        assert not getattr(client, "_soma_wrapped", False)
+        soma.wrap(client, auto_export=False)
+        assert getattr(client, "_soma_wrapped", False) is True
+
     def test_records_action_after_call(self):
         client = MockAnthropicClient()
         wrapped = soma.wrap(client, budget={"tokens": 10000}, auto_export=False)
@@ -165,7 +194,12 @@ class TestWrap:
 
         # Patch the underlying API call to capture what messages were passed
         with patch.object(client.messages, "create", wraps=client.messages.create) as mock_create:
-            # Re-wrap after patching
+            # Reset the soma-wrap sentinel so re-wrap actually rebinds
+            # messages.create around the freshly-patched mock. The
+            # double-wrap guard added 2026-04-25 (ultra-review) refuses
+            # to rewrap a client that's already been soma-wrapped, so
+            # this test must opt out by clearing the sentinel.
+            client._soma_wrapped = False
             wrapped2 = soma.wrap(client, auto_export=False)
             wrapped2._pending_context_action = "truncate_20"
 

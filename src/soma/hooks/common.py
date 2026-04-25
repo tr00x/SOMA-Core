@@ -147,22 +147,29 @@ SESSION_ID_PATH = SOMA_DIR / "session_id"
 
 
 def _get_session_agent_id() -> str:
-    """Return a unique agent ID per Claude Code session.
+    """Return a unique agent ID per host-process session.
 
-    Uses PPID (the Claude Code process that spawned this hook) so each
+    Uses PPID (the agent process that spawned this hook) so each
     terminal/session gets isolated monitoring. Context compressions
     within the same session keep the same PPID, so state is preserved.
 
-    Fallback to 'claude-code' if PPID detection fails.
+    Family prefix comes from ``SOMA_AGENT_FAMILY`` env var when set
+    (cursor.main / windsurf.main set this before dispatching). Without
+    it, defaults to ``cc`` for Claude Code. Without the family prefix,
+    cursor and windsurf sessions used to land in the ``cc`` family and
+    contaminate each other's calibration profiles + ROI dashboards.
+
+    Fallback to ``<family>`` (no PPID suffix) if PPID detection fails.
     """
     import os
+    family = os.environ.get("SOMA_AGENT_FAMILY") or "cc"
     try:
         ppid = os.getppid()
         if ppid > 1:  # 1 = init/launchd, not useful
-            return f"cc-{ppid}"
+            return f"{family}-{ppid}"
     except Exception:
         pass
-    return "claude-code"
+    return family
 
 
 def _get_display_name(agent_id: str) -> str:

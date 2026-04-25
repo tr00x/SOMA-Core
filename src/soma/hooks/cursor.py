@@ -96,6 +96,12 @@ def generate_cursor_config() -> dict:
 
 def main() -> None:
     """Entry point for Cursor hook invocation."""
+    import os
+    # Tag agent_ids with the cursor family so analytics, calibration
+    # profiles, and ROI metrics segregate cleanly from claude-code
+    # sessions. Without this prefix every cursor session landed in the
+    # cc-* family and silently contaminated each other's data.
+    os.environ.setdefault("SOMA_AGENT_FAMILY", "cursor")
     from soma.hooks.common import read_stdin
     adapter = CursorAdapter()
     raw = read_stdin()
