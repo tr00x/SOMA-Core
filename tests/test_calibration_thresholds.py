@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from soma.calibration import (
     CALIBRATED_EXIT_ACTIONS,
     CalibrationProfile,
@@ -91,6 +93,7 @@ def _mixed_log() -> list[dict]:
     return [{"tool": t} for t in ["Bash", "Read", "Grep", "Edit"] * 3]
 
 
+@pytest.mark.skip(reason="entropy_drop retired 2026-04-25 (ultra-review)")
 def test_entropy_drop_uses_legacy_ceiling_without_profile():
     cg = ContextualGuidance()
     # Monotool — low entropy → fires.

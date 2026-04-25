@@ -30,7 +30,14 @@ class GuidanceMessage:
 _SEVERITY_ORDER = {"info": 0, "warn": 1, "critical": 2}
 
 # Pattern priority within same severity (higher = wins ties)
-_PATTERN_PRIORITY = {"cost_spiral": 10, "bash_error_streak": 6, "budget": 5, "bash_retry": 4, "error_cascade": 2, "entropy_drop": 1, "blind_edit": 1, "context": 1}
+_PATTERN_PRIORITY = {
+    "cost_spiral": 10,
+    "bash_error_streak": 6,
+    "budget": 5,
+    "bash_retry": 4,
+    "error_cascade": 2,
+    "blind_edit": 1,
+}
 
 # Canonical list of pattern keys that real production guidance paths emit.
 # Dashboard ROI whitelisting and any future analytics filter should import
@@ -42,7 +49,23 @@ _PATTERN_PRIORITY = {"cost_spiral": 10, "bash_error_streak": 6, "budget": 5, "ba
 #                (9 firings, 0% helped). The underlying drift signal still
 #                feeds pressure aggregation; only the guidance message was
 #                retired.
-RETIRED_PATTERN_KEYS: frozenset[str] = frozenset({"_stats", "drift"})
+#   - `entropy_drop` — retired 2026-04-25 after ultra-review audit. Panic
+#                detector used a hardcoded `avg_gap < 3.0` threshold — a
+#                magic number with no per-user calibration that fired
+#                during fast Read/Glob exploration loops (the opposite of
+#                panic). Historical precision <20%. Underlying entropy
+#                signal stays in vitals; only the guidance message retired.
+#   - `context`     — retired 2026-04-25 after ultra-review audit. The
+#                check_followthrough math required the agent to literally
+#                write `next.md`/`handoff` or run `git commit/compact` to
+#                count as "helped" — almost no real session does this
+#                verbatim, so helped% was structurally biased toward 0%
+#                regardless of whether the message actually changed
+#                behaviour. Underlying context_usage signal stays in
+#                vitals; only the guidance message retired.
+RETIRED_PATTERN_KEYS: frozenset[str] = frozenset(
+    {"_stats", "drift", "entropy_drop", "context"}
+)
 REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys())
 
 
@@ -507,13 +530,11 @@ class ContextualGuidance:
         if msg:
             candidates.append(msg)
 
-        msg = self._check_context_window(vitals)
-        if msg:
-            candidates.append(msg)
-
-        msg = self._check_entropy_drop(action_log)
-        if msg:
-            candidates.append(msg)
+        # context + entropy_drop retired 2026-04-25 (see RETIRED_PATTERN_KEYS).
+        # The underlying signals (context_usage, tool entropy) still feed
+        # vitals and pressure; only the guidance messages were dropped.
+        # _check_context_window and _check_entropy_drop methods are kept
+        # for unit-test coverage but no longer wired into evaluate().
 
         if not candidates:
             return None
