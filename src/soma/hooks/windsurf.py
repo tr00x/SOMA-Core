@@ -115,6 +115,12 @@ def generate_windsurf_config() -> dict:
 
 def main() -> None:
     """Entry point for Windsurf hook invocation."""
+    import os
+    # Tag agent_ids with the windsurf family so analytics, calibration
+    # profiles, and ROI metrics segregate cleanly from claude-code
+    # sessions. Without this prefix every windsurf session landed in the
+    # cc-* family and silently contaminated each other's data.
+    os.environ.setdefault("SOMA_AGENT_FAMILY", "windsurf")
     from soma.hooks.common import read_stdin
     adapter = WindsurfAdapter()
     raw = read_stdin()

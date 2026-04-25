@@ -289,8 +289,32 @@ class WrappedClient:
         return self._engine.get_snapshot(self._agent_id)["pressure"]
 
     def _wrap_client(self) -> None:
-        """Detect client type and wrap the appropriate methods."""
+        """Detect client type and wrap the appropriate methods.
+
+        Idempotent guard (2026-04-25 ultra-review fix): if the client
+        was already wrapped (sentinel ``_soma_wrapped`` attribute set),
+        we skip rewrapping. The previous code mutated the user's
+        client object on every ``wrap()`` call — calling ``wrap(c)``
+        twice silently double-wrapped each method, so every API call
+        recorded twice and burned the budget at 2×. A second SOMAEngine
+        wrapping the same client wouldn't even know the first one was
+        there.
+
+        A proper proxy refactor (universal __getattr__ wrapper that
+        intercepts beta/responses/batch APIs as the SDK evolves) is
+        deferred — this guard at least stops the silent 2× burn.
+        """
         client = self._client
+
+        if getattr(client, "_soma_wrapped", False):
+            import sys as _sys
+            print(
+                "SOMA wrap warning: client already wrapped — skipping. "
+                "Call soma.wrap() once per client; reuse the returned "
+                "WrappedClient instead of re-wrapping.",
+                file=_sys.stderr,
+            )
+            return
 
         # Anthropic SDK: client.messages.create(...)
         if hasattr(client, "messages") and hasattr(client.messages, "create"):
@@ -317,6 +341,16 @@ class WrappedClient:
                     client.chat.completions.create = self._make_wrapper(
                         original_create, "chat.completions.create"
                     )
+
+        # Sentinel — second wrap() call on this same client returns
+        # early at the guard above instead of double-wrapping.
+        try:
+            client._soma_wrapped = True
+        except (AttributeError, TypeError):
+            # Some SDK clients use __slots__ or otherwise reject ad-hoc
+            # attribute writes. The double-wrap protection silently
+            # degrades for those — same outcome as before this guard.
+            pass
 
     def _make_wrapper(self, original_fn: Any, tool_name: str) -> Any:
         """Create a wrapped version of an API method."""
