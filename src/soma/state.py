@@ -8,9 +8,45 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+def _atomic_write_json(path: Path, data: dict | list) -> None:
+    """Atomic JSON write: mkstemp → fsync → os.replace.
+
+    The previous ``path.write_text(json.dumps(...))`` was a single
+    non-atomic syscall — a crash mid-write left a truncated file, which
+    the loaders then silently reset to defaults on the next boot. That
+    means a SIGKILL during a predictor save was wiping the
+    cross-session learning state. Mirrors the pattern used in
+    blocks.py and persistence.py.
+
+    Caller is responsible for ensuring ``path.parent`` exists.
+    """
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 SOMA_DIR = Path.home() / ".soma"
 FINGERPRINT_PATH = SOMA_DIR / "fingerprint.json"
@@ -47,7 +83,7 @@ def save_quality_tracker(tracker, agent_id: str = "") -> None:
     path = _session_path(agent_id, "quality") if agent_id else QUALITY_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(tracker.to_dict()))
+        _atomic_write_json(path, tracker.to_dict())
     except Exception:
         log.warning("Failed to save quality tracker to %s", path, exc_info=True)
 
@@ -91,7 +127,7 @@ def save_predictor(predictor, agent_id: str = "") -> None:
     path = _session_path(agent_id, "predictor") if agent_id else PREDICTOR_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(predictor.to_dict()))
+        _atomic_write_json(path, predictor.to_dict())
     except Exception:
         log.warning("Failed to save predictor to %s", path, exc_info=True)
 
@@ -112,7 +148,7 @@ def save_fingerprint_engine(engine) -> None:
     """Persist fingerprint engine."""
     try:
         SOMA_DIR.mkdir(parents=True, exist_ok=True)
-        FINGERPRINT_PATH.write_text(json.dumps(engine.to_dict()))
+        _atomic_write_json(FINGERPRINT_PATH, engine.to_dict())
     except Exception:
         log.warning("Failed to save fingerprint engine to %s", FINGERPRINT_PATH, exc_info=True)
 
@@ -138,7 +174,7 @@ def save_task_tracker(tracker, agent_id: str = "") -> None:
     path = _session_path(agent_id, "task_tracker") if agent_id else TASK_TRACKER_PATH
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(tracker.to_dict()))
+        _atomic_write_json(path, tracker.to_dict())
     except Exception:
         log.warning("Failed to save task tracker to %s", path, exc_info=True)
 
