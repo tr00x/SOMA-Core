@@ -35,13 +35,16 @@ def analytics_db(tmp_path):
     """)
     # Insert guidance outcomes
     now = time.time()
+    # entropy_drop and context were retired 2026-04-25 (ultra-review).
+    # Fixture uses only live REAL_PATTERN_KEYS so dashboard whitelist
+    # doesn't drop the rows under us.
     outcomes = [
         (now - 100, "a1", "s1", "error_cascade", 1, 0.6, 0.3),
         (now - 90, "a1", "s1", "error_cascade", 1, 0.5, 0.2),
         (now - 80, "a1", "s1", "bash_retry", 1, 0.7, 0.4),
         (now - 70, "a1", "s1", "blind_edit", 0, 0.4, 0.5),
-        (now - 60, "a1", "s1", "entropy_drop", 1, 0.3, 0.1),
-        (now - 50, "a1", "s1", "entropy_drop", 0, 0.2, 0.3),
+        (now - 60, "a1", "s1", "budget", 1, 0.3, 0.1),
+        (now - 50, "a1", "s1", "budget", 0, 0.2, 0.3),
     ]
     conn.executemany(
         "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",

@@ -66,6 +66,7 @@ def test_entropy_drop_diverse_user_does_not_lower_ceiling():
         )
 
 
+@pytest.mark.skip(reason="entropy_drop retired 2026-04-25 (ultra-review)")
 def test_entropy_drop_focused_user_floor_applies():
     """A user with very low P25 (0.2) still fires when entropy < 0.5
     because the floor clamps ceiling up from 0.2 to 0.5."""

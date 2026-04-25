@@ -249,6 +249,14 @@ def test_budget_ok(cg):
 # ── Context Window ──
 
 
+_RETIRED_2026_04_25 = pytest.mark.skip(
+    reason="context + entropy_drop retired 2026-04-25 (ultra-review audit). "
+    "_check_* methods kept for unit coverage but evaluate() no longer "
+    "invokes them; see RETIRED_PATTERN_KEYS."
+)
+
+
+@_RETIRED_2026_04_25
 def test_context_window_warning(cg):
     msg = cg.evaluate(
         action_log=[],
@@ -261,6 +269,7 @@ def test_context_window_warning(cg):
     assert "85%" in msg.message
 
 
+@_RETIRED_2026_04_25
 def test_context_window_critical(cg):
     msg = cg.evaluate(
         action_log=[],
@@ -282,6 +291,7 @@ def test_context_window_ok(cg):
     assert msg is None or msg.pattern != "context"
 
 
+@_RETIRED_2026_04_25
 def test_context_fires_at_60_percent_v2026_5_3(cg):
     """v2026.5.3 lowered the threshold from 80% → 60% so the wrap-up
     message arrives while there's still room to commit + hand off."""
@@ -527,6 +537,7 @@ def test_healing_transition_suggested_after_bash_error(cg):
 # Pattern 8: Entropy Drop (monotool tunnel vision)
 # ---------------------------------------------------------------------------
 
+@_RETIRED_2026_04_25
 def test_entropy_drop_detected(cg):
     """Low tool entropy (monotool) triggers warning."""
     action_log = [
@@ -549,6 +560,7 @@ def test_entropy_drop_detected(cg):
     assert "Bash" in msg.message
 
 
+@_RETIRED_2026_04_25
 def test_panic_detected_low_entropy_fast_velocity(cg):
     """Low entropy + fast actions = panic, should escalate to critical.
 
@@ -575,6 +587,7 @@ def test_panic_detected_low_entropy_fast_velocity(cg):
     assert msg.severity == "critical"  # Panic: low entropy + fast velocity
 
 
+@_RETIRED_2026_04_25
 def test_entropy_warn_without_velocity(cg):
     """Same low entropy but no timestamps = stays at warn, not critical."""
     action_log = [

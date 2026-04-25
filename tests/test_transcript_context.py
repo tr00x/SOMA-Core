@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from soma.contextual_guidance import ContextualGuidance
 from soma.hooks.common import (
     estimate_context_tokens_from_transcript,
@@ -91,6 +93,10 @@ def _diverse_log(n: int = 10) -> list[dict]:
     return [{"tool": tools[i % len(tools)]} for i in range(n)]
 
 
+@pytest.mark.skip(
+    reason="context pattern retired 2026-04-25 (ultra-review). Transcript "
+    "proxy still feeds vitals.context_usage but no guidance fires."
+)
 def test_contextual_guidance_context_pattern_fires_from_transcript_proxy():
     """With transcript proxy at 85%, context pattern fires even when
     engine-computed token_usage is 0."""
