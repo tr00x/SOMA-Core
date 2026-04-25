@@ -606,6 +606,74 @@ def test_reclear_silence_after_fix_window_migration(tmp_path: Path, monkeypatch)
     assert data["last_silence_check_action"] == 0
 
 
+class TestRecordAbOutcomeWriteGuard:
+    """Mirror of the record_guidance_outcome guard (c1467df, 2026-04-24).
+
+    Without this guard, mirror.py / replay tooling could leak rows into
+    production ab_outcomes the same way 722 rows leaked into
+    guidance_outcomes before the guidance-side guard shipped.
+    """
+
+    def test_test_agent_family_dropped_by_default(self, tmp_path: Path):
+        store = AnalyticsStore(path=tmp_path / "guard.db")
+        try:
+            store.record_ab_outcome(
+                agent_family="test", pattern="entropy_drop", arm="treatment",
+                pressure_before=0.5, pressure_after=0.4,
+            )
+            assert store.get_ab_outcomes("entropy_drop") == []
+        finally:
+            store.close()
+
+    def test_test_pattern_dropped_by_default(self, tmp_path: Path):
+        store = AnalyticsStore(path=tmp_path / "guard.db")
+        try:
+            store.record_ab_outcome(
+                agent_family="cc", pattern="test_synthetic", arm="treatment",
+                pressure_before=0.5, pressure_after=0.4,
+            )
+            assert store.get_ab_outcomes("test_synthetic") == []
+        finally:
+            store.close()
+
+    def test_known_test_pattern_dropped_by_default(self, tmp_path: Path):
+        store = AnalyticsStore(path=tmp_path / "guard.db")
+        try:
+            store.record_ab_outcome(
+                agent_family="cc", pattern="mixed", arm="treatment",
+                pressure_before=0.5, pressure_after=0.4,
+            )
+            assert store.get_ab_outcomes("mixed") == []
+        finally:
+            store.close()
+
+    def test_test_source_opt_in_writes(self, tmp_path: Path):
+        """source='test' lets the test suite write its own ab_outcomes
+        rows for end-to-end coverage."""
+        store = AnalyticsStore(path=tmp_path / "guard.db")
+        try:
+            store.record_ab_outcome(
+                agent_family="test", pattern="entropy_drop", arm="treatment",
+                pressure_before=0.5, pressure_after=0.4, source="test",
+            )
+            rows = store.get_ab_outcomes("entropy_drop")
+            assert len(rows) == 1
+            assert rows[0]["agent_family"] == "test"
+        finally:
+            store.close()
+
+    def test_real_agent_real_pattern_writes(self, tmp_path: Path):
+        store = AnalyticsStore(path=tmp_path / "guard.db")
+        try:
+            store.record_ab_outcome(
+                agent_family="cc", pattern="entropy_drop", arm="treatment",
+                pressure_before=0.5, pressure_after=0.4,
+            )
+            assert len(store.get_ab_outcomes("entropy_drop")) == 1
+        finally:
+            store.close()
+
+
 def test_archive_migration_resets_block_randomizer_counters(tmp_path: Path, monkeypatch):
     """After archiving biased rows the counter file from the old
     regime must be wiped so the new block randomizer starts balanced.

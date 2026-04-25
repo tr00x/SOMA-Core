@@ -520,6 +520,7 @@ class AnalyticsStore:
         pressure_before: float,
         pressure_after: float | None,
         followed: bool = False,
+        source: str = "hook",
     ) -> None:
         """Insert a row into ``ab_outcomes``.
 
@@ -529,9 +530,23 @@ class AnalyticsStore:
         at once with the pressure at the time of the *next* tool-use
         event; this method is the single write-path used by the A/B
         controller.
+
+        Mirrors the test-pollution write guard added to
+        :meth:`record_guidance_outcome` in commit c1467df: writes from
+        test fixtures (test pattern keys, test agent ids) are silently
+        dropped unless the caller opts in with ``source='test'``.
+        Without this guard mirror.py / replay tooling could leak rows
+        into production ab_outcomes the same way 722 guidance_outcomes
+        rows leaked before the guidance-side guard shipped.
         """
         if arm not in ("treatment", "control"):
             raise ValueError(f"arm must be 'treatment' or 'control', got {arm!r}")
+        if source != "test" and (
+            pattern in _KNOWN_TEST_PATTERN_KEYS
+            or pattern.startswith("test_")
+            or _is_test_agent_id(agent_family)
+        ):
+            return
         self._conn.execute(
             "INSERT INTO ab_outcomes "
             "(timestamp, agent_family, pattern, arm, pressure_before, pressure_after, followed) "
