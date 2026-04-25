@@ -120,7 +120,18 @@ class TestTokensSavedEstimate:
     def test_no_db(self, tmp_path):
         with _patch_soma_dir(tmp_path):
             result = data._get_tokens_saved_estimate()
-        assert result == {"estimated_tokens_saved": 0, "interventions_helped": 0}
+        assert result["estimated_tokens_saved"] == 0
+        assert result["interventions_helped"] == 0
+        # Honesty fields added 2026-04-25 (ultra-review): callers can
+        # check is_estimate before treating the number as measurement.
+        assert result["is_estimate"] is True
+        assert "rough estimate" in result["methodology"]
+
+    def test_marks_itself_as_estimate(self, analytics_db):
+        with _patch_soma_dir(analytics_db):
+            result = data._get_tokens_saved_estimate()
+        assert result["is_estimate"] is True
+        assert "synthetic" in result["methodology"] or "unmeasured" in result["methodology"]
 
 
 class TestSessionHealthScore:

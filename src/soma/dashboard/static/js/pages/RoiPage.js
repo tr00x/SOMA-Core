@@ -207,11 +207,19 @@ export function RoiPage() {
       <div class="roi-hero">
         <${HealthGauge} score=${healthScore} />
         <div class="roi-hero-metrics">
-          <${Metric} value=${tokenStr} label="tokens saved" sublabel="estimated from broken cascades" accent />
-          <${Metric} value=${cb.total} label="cascades broken" sublabel="error chains stopped early" />
+          <${Metric} value=${cb.total} label="cascades broken" sublabel="error chains stopped early" accent />
           <${Metric} value=${effectivenessStr} label="guidance precision" sublabel="${ge.helped}/${ge.total} interventions helped" />
+          <${Metric} value=${ge.helped} label="interventions helped" sublabel="followthrough confirmed" />
         </div>
       </div>
+
+      <aside class="roi-estimate-note" title=${ts.methodology}>
+        <span class="roi-estimate-label">rough estimate (unverified):</span>
+        <span class="roi-estimate-value">~${tokenStr} tokens saved</span>
+        <span class="roi-estimate-disclaimer">
+          synthetic multiplier (helped × 3 × 800), not measured
+        </span>
+      </aside>
 
       ${sh.components && Object.keys(sh.components).length > 0 && html`
         <section class="roi-section">
