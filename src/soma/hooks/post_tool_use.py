@@ -317,19 +317,19 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
 
     global _mirror
 
-    engine, agent_id = get_engine()
-    if engine is None:
-        return
-
-    # Lazy-init Mirror once per process
-    if _mirror is None:
-        try:
-            from soma.mirror import Mirror
-            _mirror = Mirror(engine)
-        except Exception:
-            pass  # Mirror is optional — never crash
-
     try:
+        engine, agent_id = get_engine()
+        if engine is None:
+            return
+
+        # Lazy-init Mirror once per process
+        if _mirror is None:
+            try:
+                from soma.mirror import Mirror
+                _mirror = Mirror(engine)
+            except Exception:
+                pass  # Mirror is optional — never crash
+
         from soma.types import Action
 
         data = _data if _data is not None else read_stdin()
@@ -938,8 +938,20 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         _prev_level = level_name
         _prev_pressure = pressure
 
-    except Exception:
-        pass
+    except Exception as _outer_exc:
+        # Bare `pass` here silenced a 2-day production regression
+        # (silence-cache stuck post-v2026.5.5). Stderr is safe — Claude
+        # Code's hook contract uses stdout for JSON; stderr surfaces in
+        # the user-visible debug stream without breaking the protocol.
+        # Suppressible via SOMA_HOOK_QUIET=1 for CI / known-noisy runs.
+        if os.environ.get("SOMA_HOOK_QUIET") != "1":
+            try:
+                print(
+                    f"SOMA hook error: {type(_outer_exc).__name__}: {_outer_exc}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
