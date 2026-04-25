@@ -710,14 +710,30 @@ def _get_pattern_hit_rates() -> list[dict]:
 
 
 def _get_tokens_saved_estimate() -> dict:
-    """Estimate tokens saved by breaking error cascades early.
+    """ROUGH estimate of tokens saved by breaking error cascades.
 
-    Logic: each guidance intervention that helped likely prevented
-    continued error actions. Estimate = helped_count * avg_tokens_per_error.
+    NOT a measured number. Two stacked unverified multipliers:
+    - 3 × ``helped`` (assumed prevented error actions per intervention)
+    - 800 (``_AVG_TOKENS_PER_ERROR_ACTION``, single hand-picked constant)
+
+    Surfaced with ``is_estimate=True`` so the UI can label it honestly
+    instead of presenting it as measurement. Demoted from the ROI hero
+    on 2026-04-25 (ultra-review): the headline metric must be
+    something measured, not a 3× synthetic multiplier.
     """
+    methodology = (
+        "rough estimate: helped_interventions × 3 assumed prevented "
+        "error actions × 800 tokens per error action — both multipliers "
+        "are unmeasured constants, not derived from this user's data"
+    )
     conn = _get_db_connection()
     if not conn:
-        return {"estimated_tokens_saved": 0, "interventions_helped": 0}
+        return {
+            "estimated_tokens_saved": 0,
+            "interventions_helped": 0,
+            "is_estimate": True,
+            "methodology": methodology,
+        }
     try:
         cursor = conn.execute(
             f"SELECT COUNT(*) as total, SUM(helped) as helped "
@@ -727,14 +743,20 @@ def _get_tokens_saved_estimate() -> dict:
         )
         row = cursor.fetchone()
         helped = row["helped"] or 0
-        # Each successful intervention prevents ~3 wasted error actions on average
         estimated = helped * 3 * _AVG_TOKENS_PER_ERROR_ACTION
         return {
             "estimated_tokens_saved": estimated,
             "interventions_helped": helped,
+            "is_estimate": True,
+            "methodology": methodology,
         }
     except Exception:
-        return {"estimated_tokens_saved": 0, "interventions_helped": 0}
+        return {
+            "estimated_tokens_saved": 0,
+            "interventions_helped": 0,
+            "is_estimate": True,
+            "methodology": methodology,
+        }
     finally:
         conn.close()
 
