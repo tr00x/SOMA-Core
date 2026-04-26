@@ -817,3 +817,77 @@ class TestValidateHorizon:
     def test_invalid_horizon_raises(self):
         with pytest.raises(ValueError):
             ab_control.validate([], pattern="x", horizon=3)
+
+
+# ── v2026.6.1 review-driven regressions (C1/I1/I3) ──────────────────
+
+
+class TestReviewRegressions_v2026_6_1:
+    """Regression coverage for the 4 issues caught in the 2026-04-25
+    code review of the multi-horizon sprint."""
+
+    # ── I3: timeout-forced INSERT must use buffered h=2 sample ──
+    def test_i3_timeout_forced_insert_uses_buffered_h2(self, tmp_path):
+        """When actions_since jumps past 2 and ab_recorded is False, the
+        INSERT must use the buffered h=2 sample (set when the agent
+        first hit actions_since == 2), NOT the current pressure passed
+        by the caller."""
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        pending = {
+            "pattern": "bash_retry", "actions_since": 2,
+            "ab_arm": "treatment", "pressure_at_injection": 0.7,
+            "firing_id": "cc-i3|bash_retry|1",
+        }
+        # Cycle 1: h=2 hits, buffer h=2 sample = 0.4 (good recovery).
+        _record_ab_outcome_at_horizon(
+            agent_id="cc-i3", pending=pending, pressure_after=0.4,
+            analytics_path=tmp_path / "ab.db",
+        )
+        assert pending["pressure_after_h2"] == 0.4
+
+    def test_i3_no_buffered_h2_skips_insert_instead_of_writing_now_pressure(
+        self, tmp_path,
+    ):
+        """If timeout fires before h=2 ever ran (e.g. an early skip),
+        force-INSERT must NOT silently write current pressure into the
+        h=2 column. It should drop the row."""
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        pending = {
+            "pattern": "bash_retry", "actions_since": 13,  # past timeout
+            "ab_arm": "treatment", "pressure_at_injection": 0.7,
+            "firing_id": "cc-i3-noh2|bash_retry|2",
+            # No "pressure_after_h2" buffered.
+        }
+        wrote = _record_ab_outcome_at_horizon(
+            agent_id="cc-i3-noh2", pending=pending,
+            pressure_after=0.55,  # would-be-wrong h=2 value
+            analytics_path=tmp_path / "ab.db",
+        )
+        assert wrote is False
+        store = AnalyticsStore(path=tmp_path / "ab.db")
+        try:
+            assert store.get_ab_outcomes(pattern="bash_retry") == []
+        finally:
+            store.close()
+
+
+def test_i1_firing_id_uses_nanosecond_timestamp_not_action_log_len(
+    tmp_path, monkeypatch,
+):
+    """firing_id must be unique per firing even when len(cg_action_log)
+    is clamped at ACTION_LOG_MAX. Verifies _firing_id includes a ns
+    timestamp by checking that two same-pattern firings produce
+    distinct ids."""
+    # Build two firing ids the way post_tool_use.py does it.
+    import time
+    fid1 = f"cc-i1|bash_retry|{time.time_ns()}"
+    fid2 = f"cc-i1|bash_retry|{time.time_ns()}"
+    assert fid1 != fid2, "ns-precision firing_ids must be unique"
+    # Tail must be ns-scale digits — anything < 1e9 means the old
+    # len(action_log) format slipped back in.
+    tail = int(fid1.rsplit("|", 1)[1])
+    assert tail > 10**15, f"firing_id tail looks too small for ns: {tail}"

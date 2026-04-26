@@ -102,3 +102,37 @@ class TestCircuitLocking:
         data = json.loads(hc._circuit_path("shareagent").read_text())
         assert data["guidance_cooldowns"] == {"context": 5}
         assert data["guidance_followthrough"]["pattern"] == "context"
+
+
+# ── v2026.6.1 (review I2): exception inside transaction must rollback ──
+
+
+def test_circuit_transaction_discards_partial_mutation_on_exception(
+    monkeypatch, tmp_path,
+):
+    """If an exception escapes the with-block, partial mutations to the
+    yielded dict must NOT be persisted. Otherwise a half-incremented
+    counter persists across cycles, eventually triggering phantom
+    timeouts."""
+    import soma.hooks.common as hc
+    monkeypatch.setattr(hc, "SOMA_DIR", tmp_path)
+
+    # Seed with a baseline state.
+    with hc.circuit_transaction("rollback-agent") as d:
+        d["counter"] = 1
+        d["committed"] = True
+
+    # Now mutate and raise — both changes must be discarded.
+    try:
+        with hc.circuit_transaction("rollback-agent") as d:
+            d["counter"] = 999
+            d["new_field"] = "should_not_persist"
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+
+    # Reopen and verify only the baseline survived.
+    with hc.circuit_transaction("rollback-agent") as d:
+        assert d["counter"] == 1
+        assert d["committed"] is True
+        assert "new_field" not in d

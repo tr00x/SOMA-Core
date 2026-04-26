@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 
 from soma.hooks.common import (
     get_engine, save_state, read_stdin, append_action_log, get_predictor,
@@ -181,7 +182,14 @@ def _record_ab_outcome_at_horizon(
 
     # h=2: INSERT the canonical row. This is the idempotency boundary —
     # ab_recorded gates re-entry from a same-cycle hook re-run.
+    #
+    # v2026.6.1 (review I3): we ALWAYS buffer the h=2 sample into
+    # pending["pressure_after_h2"] so the timeout-path forced INSERT
+    # below can use it instead of the (wrong) current pressure. Buffer
+    # even on INSERT failure so a transient sqlite hiccup doesn't
+    # erase the sample.
     if actions_since == _AB_MEASUREMENT_HORIZON:
+        pending["pressure_after_h2"] = float(pressure_after)
         if pending.get("ab_recorded"):
             return False
         pressure_before = float(pending.get("pressure_at_injection", 0.0))
@@ -203,6 +211,35 @@ def _record_ab_outcome_at_horizon(
         except Exception:
             # Retryable write failure — leave ab_recorded unset so a
             # later hook can try again with the same pending state.
+            return False
+
+    # h>2 path. The "force INSERT" branch (review I3): if we never
+    # captured h=2 because the timeout path forced actions_since past
+    # 2 in one jump, prefer the buffered h=2 sample over the caller's
+    # current pressure (which is "now-pressure", not h=2-pressure).
+    if not pending.get("ab_recorded"):
+        buffered_h2 = pending.get("pressure_after_h2")
+        if buffered_h2 is None:
+            # No h=2 sample was ever buffered — better to drop than to
+            # silently write today's pressure into the h=2 column and
+            # bias future verdicts. Return False so the caller knows.
+            return False
+        pressure_before = float(pending.get("pressure_at_injection", 0.0))
+        delta = pressure_before - float(buffered_h2)
+        recovered = delta >= _AB_RECOVERED_DELTA
+        try:
+            store.record_ab_outcome(
+                agent_family=calibration_family(agent_id),
+                pattern=pending.get("pattern", ""),
+                arm=arm,
+                pressure_before=pressure_before,
+                pressure_after=float(buffered_h2),
+                followed=recovered,
+                firing_id=firing_id,
+                pressure_after_h1=pending.get("pressure_after_h1"),
+            )
+            pending["ab_recorded"] = True
+        except Exception:
             return False
 
     # h>2: UPDATE one of the horizon columns. Pick the closest tracked
@@ -692,17 +729,27 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                                 )
                             except Exception:
                                 pass
-                            # next_actions = the post-firing tail of
-                            # the action log. ``actions_since`` counts
-                            # PostToolUse cycles since firing; the same
-                            # number of action_log entries are post-
-                            # firing because the log is appended once
-                            # per cycle. compute_multi_helped only
-                            # inspects the first 3 inside.
-                            _na_count = int(pending.get("actions_since", 0) or 0)
-                            _next_actions = (
-                                _recent_actions[-_na_count:] if _na_count > 0 else []
-                            )
+                            # v2026.6.1 (review C1): slice the action
+                            # log by firing_ts instead of by
+                            # ``actions_since`` count. The previous
+                            # ``_recent_actions[-actions_since:]``
+                            # silently overshot when actions_since > 10
+                            # (the log was capped at the last 10), and
+                            # compute_multi_helped[:3] then read PRE-
+                            # firing actions as if they were post-
+                            # firing. Timestamp filter is robust to log
+                            # rotation: entries older than firing_ts
+                            # never enter the slice. If firing_ts is
+                            # missing (legacy pending from < v2026.6.1),
+                            # we pass None and skip multi-helped.
+                            _firing_ts = pending.get("firing_ts")
+                            if _firing_ts is None:
+                                _next_actions = None
+                            else:
+                                _next_actions = [
+                                    a for a in _recent_actions
+                                    if float(a.get("ts", 0) or 0) > float(_firing_ts)
+                                ]
                             _record_guidance_outcome(
                                 agent_id=agent_id,
                                 pending=pending,
@@ -740,14 +787,18 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         # Timed out. Best-effort close: write whichever
                         # track hasn't landed yet so no row is lost.
                         if not strict_resolved:
-                            _na_count = int(pending.get("actions_since", 0) or 0)
-                            _next_actions = (
-                                _recent_actions[-_na_count:] if _na_count > 0 else []
-                            )
+                            # v2026.6.1 (review C1): on timeout we don't
+                            # trust multi-helped — the action log may
+                            # have rotated past firing_ts entries we'd
+                            # need, and the timeout window itself spans
+                            # 13+ cycles where compute_multi_helped[:3]
+                            # bias would be most pronounced. Pass None
+                            # so the legacy `helped` row still lands
+                            # but the multi-helped columns stay NULL.
                             _record_guidance_outcome(
                                 agent_id=agent_id, pending=pending,
                                 followed=False, pressure_after=pressure,
-                                next_actions=_next_actions,
+                                next_actions=None,
                             )
                         if not ab_recorded:
                             # Force horizon so the h=2 row lands on this
@@ -955,8 +1006,16 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 # multi-horizon UPDATE key exists for warmup firings too
                 # (warmup skips the A/B gate but still records ab_outcomes
                 # in the treatment arm).
+                #
+                # v2026.6.1 (review I1): use time.time_ns() instead of
+                # len(cg_action_log). The action log is clamped at
+                # ACTION_LOG_MAX=20, so after 20 actions every firing
+                # of pattern X produced the same firing_id — same
+                # rebias class as the MD5 collision bug we fixed in
+                # 2378faa. ns-precision timestamp is monotonic and
+                # collision-free within a hook process.
                 _firing_id = (
-                    f"{agent_id}|{cg_msg.pattern}|{len(cg_action_log)}"
+                    f"{agent_id}|{cg_msg.pattern}|{time.time_ns()}"
                 )
                 try:
                     from soma.calibration import calibration_family
@@ -1025,6 +1084,13 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     # so a single firing has one stable identifier
                     # across the lifetime of the followthrough.
                     "firing_id": _firing_id,
+                    # v2026.6.1 (review C1): firing timestamp is the
+                    # marker for slicing the post-firing tail of the
+                    # action log. Absolute index doesn't work because
+                    # the log is truncated at ACTION_LOG_MAX=20 and
+                    # rotates as new actions append; timestamp is
+                    # stable across rotations.
+                    "firing_ts": time.time(),
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
