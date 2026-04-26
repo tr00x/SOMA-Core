@@ -341,24 +341,48 @@ def reset_counters() -> None:
 
 # ── Validation ──────────────────────────────────────────────────────
 
+_VALID_HORIZONS: frozenset[int] = frozenset({1, 2, 5, 10})
+
+
 def validate(
     outcomes: list[dict],
     *,
     pattern: str,
     agent_family: str | None = None,
     min_pairs: int = DEFAULT_MIN_PAIRS,
+    horizon: int = 2,
 ) -> ValidationResult:
     """Run the Welch's t-test on ``outcomes`` and classify the pattern.
 
     ``outcomes`` must be a list of rows like those returned by
     :meth:`AnalyticsStore.get_ab_outcomes` — each with ``arm``,
-    ``pressure_before``, ``pressure_after``.
+    ``pressure_before``, and a ``pressure_after`` column for the
+    requested horizon.
+
+    ``horizon`` selects which post-firing sample to use for the delta:
+
+    - 2 (default): reads ``pressure_after`` — the canonical h=2 sample
+      that maps to all pre-v2026.6.0 verdicts.
+    - 1, 5, 10: reads ``pressure_after_h{horizon}`` — populated by
+      the multi-horizon recording flow shipped in 2026.6.0. Rows
+      missing the requested column are skipped (legacy rows / late
+      sample never landed).
+
+    Skipping is intentional: zero-filling missing horizons would
+    bias short-recovery patterns toward "no effect" and tilt the
+    pressure-delta math.
     """
+    if horizon not in _VALID_HORIZONS:
+        raise ValueError(
+            f"horizon must be one of {sorted(_VALID_HORIZONS)}, got {horizon!r}"
+        )
+    column = "pressure_after" if horizon == 2 else f"pressure_after_h{horizon}"
+
     treatment_deltas: list[float] = []
     control_deltas: list[float] = []
     for row in outcomes:
         before = row.get("pressure_before")
-        after = row.get("pressure_after")
+        after = row.get(column)
         if before is None or after is None:
             continue
         delta = float(before) - float(after)  # positive = pressure dropped

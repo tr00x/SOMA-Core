@@ -337,8 +337,12 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
 
     v2026.5.3+. Reads from the ``ab_outcomes`` table and prints a
     per-pattern classification (treatment Δp / control Δp / p-value /
-    effect size / status). Intended for the 15-20 day validation window
-    between 2026.5.3 and 2026.6.0.
+    effect size / status).
+
+    v2026.6.0 adds ``--horizon`` (1/2/5/10/all) so each pattern can be
+    validated at the recovery window that fits its dynamics, and
+    ``--definition`` which annotates the report with the multi-helped
+    breakdown from ``guidance_outcomes`` for the chosen definition.
     """
     import json as _json
     from soma import ab_control
@@ -347,6 +351,13 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
     family = getattr(args, "family", None)
     min_pairs = int(getattr(args, "min_pairs", ab_control.DEFAULT_MIN_PAIRS) or ab_control.DEFAULT_MIN_PAIRS)
     want_json = bool(getattr(args, "json", False))
+    horizon_arg = str(getattr(args, "horizon", "2"))
+    definition = str(getattr(args, "definition", "delta"))
+
+    if horizon_arg == "all":
+        horizons: list[int] = [1, 2, 5, 10]
+    else:
+        horizons = [int(horizon_arg)]
 
     store = AnalyticsStore()
     try:
@@ -355,22 +366,55 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
         print(f"  Error reading ab_outcomes table: {exc}")
         sys.exit(1)
 
-    rows: list[ab_control.ValidationResult] = []
-    for pattern in patterns:
-        outcomes = store.get_ab_outcomes(pattern=pattern, agent_family=family)
-        rows.append(
-            ab_control.validate(
-                outcomes,
-                pattern=pattern,
-                agent_family=family,
-                min_pairs=min_pairs,
+    # rows_by_horizon[horizon] = list[ValidationResult] for that horizon.
+    rows_by_horizon: dict[int, list[ab_control.ValidationResult]] = {}
+    for h in horizons:
+        h_rows: list[ab_control.ValidationResult] = []
+        for pattern in patterns:
+            outcomes = store.get_ab_outcomes(pattern=pattern, agent_family=family)
+            h_rows.append(
+                ab_control.validate(
+                    outcomes,
+                    pattern=pattern,
+                    agent_family=family,
+                    min_pairs=min_pairs,
+                    horizon=h,
+                )
             )
-        )
+        rows_by_horizon[h] = h_rows
+
+    # --definition stays report-side: pull aggregate helped-X% from
+    # guidance_outcomes for each pattern and add it to the JSON / table.
+    # The t-test itself is delta-based (ab_outcomes does not yet carry
+    # per-firing helped_* booleans — that would need a 7th migration).
+    multi_def_stats: dict[str, dict[str, float | None]] = {}
+    if definition != "delta":
+        column = f"helped_{definition}"
+        try:
+            for pattern in patterns:
+                cur = store._conn.execute(
+                    f"SELECT AVG({column} * 1.0), COUNT({column}) "
+                    f"FROM guidance_outcomes WHERE pattern_key = ? "
+                    f"AND {column} IS NOT NULL",
+                    (pattern,),
+                )
+                avg, count = cur.fetchone()
+                multi_def_stats[pattern] = {
+                    "rate": None if avg is None else float(avg),
+                    "n": int(count or 0),
+                }
+        except Exception as exc:
+            print(f"  Warning: --definition stats unavailable ({exc})")
+
+    # rows = "primary" horizon for the table (h=2 by default; first in
+    # all-mode). Status colour comes from this horizon.
+    primary_horizon = horizons[0]
+    rows = rows_by_horizon[primary_horizon]
 
     if want_json:
         payload = []
-        for r in rows:
-            payload.append({
+        for i, r in enumerate(rows):
+            entry: dict[str, Any] = {
                 "pattern": r.pattern,
                 "agent_family": r.agent_family,
                 "fires_treatment": r.fires_treatment,
@@ -381,7 +425,25 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
                 "p_value": r.p_value,
                 "effect_size": r.effect_size,
                 "status": r.status,
-            })
+                "horizon": primary_horizon,
+            }
+            if horizon_arg == "all":
+                entry["horizons"] = {
+                    str(h): {
+                        "fires_treatment": rows_by_horizon[h][i].fires_treatment,
+                        "fires_control": rows_by_horizon[h][i].fires_control,
+                        "mean_treatment_delta": rows_by_horizon[h][i].mean_treatment_delta,
+                        "mean_control_delta": rows_by_horizon[h][i].mean_control_delta,
+                        "p_value": rows_by_horizon[h][i].p_value,
+                        "effect_size": rows_by_horizon[h][i].effect_size,
+                        "status": rows_by_horizon[h][i].status,
+                    }
+                    for h in horizons
+                }
+            if multi_def_stats:
+                entry["definition"] = definition
+                entry["definition_stats"] = multi_def_stats.get(r.pattern)
+            payload.append(entry)
         print(_json.dumps(payload, indent=2))
         return
 
@@ -395,10 +457,18 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
         return
 
     # Human-readable table.
+    title_scope = "family=" + family if family else "all families"
+    title_horizon = (
+        f", horizon=all (primary h={primary_horizon})"
+        if horizon_arg == "all"
+        else f", horizon=h{primary_horizon}"
+    )
     try:
         from rich.console import Console
         from rich.table import Table
-        table = Table(title=f"SOMA pattern validation ({'family=' + family if family else 'all families'})")
+        table = Table(
+            title=f"SOMA pattern validation ({title_scope}{title_horizon})"
+        )
         table.add_column("Pattern", style="bold")
         table.add_column("T n", justify="right")
         table.add_column("C n", justify="right")
@@ -408,15 +478,19 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
         table.add_column("p", justify="right")
         table.add_column("d", justify="right")
         table.add_column("status", style="bold")
+        if horizon_arg == "all":
+            table.add_column("p @ horizons", justify="right")
+        if multi_def_stats:
+            table.add_column(f"helped_{definition}", justify="right")
         status_color = {
             "validated": "green",
             "refuted": "red",
             "inconclusive": "yellow",
             "collecting": "cyan",
         }
-        for r in rows:
+        for i, r in enumerate(rows):
             color = status_color.get(r.status, "white")
-            table.add_row(
+            cells = [
                 r.pattern,
                 str(r.fires_treatment),
                 str(r.fires_control),
@@ -426,20 +500,50 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
                 "—" if r.p_value is None else f"{r.p_value:.4f}",
                 "—" if r.effect_size is None else f"{r.effect_size:+.2f}",
                 f"[{color}]{r.status}[/{color}]",
-            )
+            ]
+            if horizon_arg == "all":
+                cells.append(
+                    " ".join(
+                        f"h{h}:{rows_by_horizon[h][i].p_value:.3f}"
+                        if rows_by_horizon[h][i].p_value is not None
+                        else f"h{h}:—"
+                        for h in horizons
+                    )
+                )
+            if multi_def_stats:
+                stat = multi_def_stats.get(r.pattern) or {}
+                rate = stat.get("rate")
+                n = stat.get("n", 0)
+                if rate is None:
+                    cells.append(f"— (n={n})")
+                else:
+                    cells.append(f"{rate * 100:.0f}% (n={n})")
+            table.add_row(*cells)
         Console().print(table)
     except Exception:
         # rich is a hard dep but if something goes sideways we still
         # want a plain fallback so the CLI never crashes.
-        print(f"{'pattern':<18} T  C   ΔpT      ΔpC      diff    p        d     status")
+        header = f"{'pattern':<18} T  C   ΔpT      ΔpC      diff    p        d     status"
+        if multi_def_stats:
+            header += f"   helped_{definition}"
+        print(header)
         for r in rows:
             p = "—" if r.p_value is None else f"{r.p_value:.4f}"
             d = "—" if r.effect_size is None else f"{r.effect_size:+.2f}"
-            print(
+            line = (
                 f"{r.pattern:<18} {r.fires_treatment:>3} {r.fires_control:>3} "
                 f"{r.mean_treatment_delta:+.3f}  {r.mean_control_delta:+.3f}  "
                 f"{r.delta_difference:+.3f}  {p:<7} {d:<5} {r.status}"
             )
+            if multi_def_stats:
+                stat = multi_def_stats.get(r.pattern) or {}
+                rate = stat.get("rate")
+                n = stat.get("n", 0)
+                line += (
+                    f"   — (n={n})" if rate is None
+                    else f"   {rate * 100:.0f}% (n={n})"
+                )
+            print(line)
 
 
 def _cmd_unblock(args: argparse.Namespace) -> None:
@@ -1183,6 +1287,21 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument(
         "--json", action="store_true",
         help="Emit JSON instead of the human-readable table",
+    )
+    validate_parser.add_argument(
+        "--horizon", default="2",
+        choices=["1", "2", "5", "10", "all"],
+        help=("Recovery horizon for the t-test: 1, 2 (default), 5, 10, "
+              "or 'all' to print verdicts at every horizon side-by-side"),
+    )
+    validate_parser.add_argument(
+        "--definition", default="delta",
+        choices=["delta", "pressure_drop", "tool_switch", "error_resolved"],
+        help=("Helped definition surfaced alongside the t-test: 'delta' "
+              "(default, pressure-based) or one of the three orthogonal "
+              "definitions from guidance_outcomes (pressure_drop / "
+              "tool_switch / error_resolved). The t-test itself stays "
+              "delta-based — definition flags annotate the report."),
     )
 
     unblock_parser = subparsers.add_parser(

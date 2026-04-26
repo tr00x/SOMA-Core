@@ -730,3 +730,90 @@ def test_update_ab_outcome_horizon_unknown_firing_id_is_noop(tmp_path):
         )
     finally:
         store.close()
+
+
+# ── validate() gains horizon kwarg ──────────────────────────────────
+
+
+class TestValidateHorizon:
+    """``ab_control.validate()`` reads pressure_after at the requested
+    horizon. Default horizon=2 keeps prior behaviour; horizon=1/5/10
+    look at the new columns. Rows missing the horizon column are
+    skipped (legacy rows / late-arriving sample never landed)."""
+
+    @staticmethod
+    def _row(arm: str, before: float, after_h2: float,
+             h1: float | None = None, h5: float | None = None,
+             h10: float | None = None) -> dict:
+        return {
+            "arm": arm,
+            "pressure_before": before,
+            "pressure_after": after_h2,
+            "pressure_after_h1": h1,
+            "pressure_after_h5": h5,
+            "pressure_after_h10": h10,
+        }
+
+    def test_default_horizon_is_2_and_reads_pressure_after(self):
+        """Back-compat: validate() with no horizon kwarg behaves
+        identically to before — same column read, same delta math."""
+        rows = [
+            self._row("treatment", 0.7, 0.3) for _ in range(35)
+        ] + [
+            self._row("control", 0.7, 0.6) for _ in range(35)
+        ]
+        result = ab_control.validate(rows, pattern="bash_retry")
+        # 0.4 vs 0.1 mean delta — clearly different.
+        assert result.fires_treatment == 35
+        assert result.fires_control == 35
+        assert abs(result.mean_treatment_delta - 0.4) < 0.001
+        assert abs(result.mean_control_delta - 0.1) < 0.001
+
+    def test_horizon_5_reads_pressure_after_h5(self):
+        """h=5 should compute deltas against pressure_after_h5, not h=2."""
+        rows = [
+            self._row("treatment", 0.7, after_h2=0.5, h5=0.2)
+            for _ in range(35)
+        ] + [
+            self._row("control", 0.7, after_h2=0.6, h5=0.55)
+            for _ in range(35)
+        ]
+        result = ab_control.validate(rows, pattern="bash_retry", horizon=5)
+        # Treatment Δp_h5 = 0.5; control Δp_h5 = 0.15.
+        assert abs(result.mean_treatment_delta - 0.5) < 0.001
+        assert abs(result.mean_control_delta - 0.15) < 0.001
+
+    def test_horizon_10_skips_rows_without_h10_sample(self):
+        """h=10 is best-effort — if a row never got the late update,
+        it must be skipped, not silently treated as zero delta."""
+        rows = [
+            # Treatment: 5 with h10, 30 without.
+            self._row("treatment", 0.7, after_h2=0.5, h10=0.2)
+            for _ in range(5)
+        ] + [
+            self._row("treatment", 0.7, after_h2=0.5)
+            for _ in range(30)
+        ] + [
+            self._row("control", 0.7, after_h2=0.6, h10=0.5)
+            for _ in range(35)
+        ]
+        result = ab_control.validate(rows, pattern="bash_retry", horizon=10)
+        # Only 5 treatment rows have h10 — below min_pairs (30) → collecting.
+        assert result.fires_treatment == 5
+        assert result.status == "collecting"
+
+    def test_horizon_1_reads_pressure_after_h1(self):
+        rows = [
+            self._row("treatment", 0.7, after_h2=0.5, h1=0.4)
+            for _ in range(35)
+        ] + [
+            self._row("control", 0.7, after_h2=0.65, h1=0.62)
+            for _ in range(35)
+        ]
+        result = ab_control.validate(rows, pattern="bash_retry", horizon=1)
+        assert abs(result.mean_treatment_delta - 0.3) < 0.001
+        assert abs(result.mean_control_delta - 0.08) < 0.001
+
+    def test_invalid_horizon_raises(self):
+        with pytest.raises(ValueError):
+            ab_control.validate([], pattern="x", horizon=3)
