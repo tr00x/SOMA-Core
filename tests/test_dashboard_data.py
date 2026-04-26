@@ -469,3 +469,96 @@ def test_update_config(soma_dir, tmp_path):
     from soma.dashboard.data import update_config
     result = update_config({"soma": {"mode": "guide"}})
     assert isinstance(result, dict)
+
+
+# ------------------------------------------------------------------
+# Multi-definition helped — surfaced in pattern_hit_rates
+# ------------------------------------------------------------------
+
+
+def test_pattern_hit_rates_includes_multi_definition_stats(soma_dir):
+    """_get_pattern_hit_rates must surface helped_{pressure_drop,
+    tool_switch, error_resolved} rates per pattern. Old rows that
+    pre-date the multi-helped columns are NULL and excluded from
+    the rate (sqlite AVG skips NULLs); n_multi tracks the count of
+    rows that actually contributed."""
+    from soma.analytics import AnalyticsStore
+    from soma.dashboard.data import _get_pattern_hit_rates
+
+    store = AnalyticsStore(path=soma_dir / "analytics.db")
+    try:
+        # Old-style row (no multi columns) — should not affect new rates.
+        store.record_guidance_outcome(
+            agent_id="cc-roi", session_id="s",
+            pattern_key="bash_retry", helped=True,
+            pressure_at_injection=0.7, pressure_after=0.4,
+        )
+        # Three new-style rows: 2 helped_pressure_drop, 1 not.
+        for hp, ts, er in (
+            (True, True, True),
+            (True, False, True),
+            (False, True, False),
+        ):
+            store.record_guidance_outcome(
+                agent_id="cc-roi", session_id="s",
+                pattern_key="bash_retry", helped=False,
+                pressure_at_injection=0.7, pressure_after=0.6,
+                helped_pressure_drop=hp,
+                helped_tool_switch=ts,
+                helped_error_resolved=er,
+            )
+    finally:
+        store.close()
+
+    rows = _get_pattern_hit_rates()
+    bash_rows = [r for r in rows if r["pattern_key"] == "bash_retry"]
+    assert len(bash_rows) == 1
+    row = bash_rows[0]
+    # 4 total fires (1 legacy + 3 new).
+    assert row["fires"] == 4
+    # Only the 3 new rows contribute to multi.
+    assert row["n_multi"] == 3
+    # 2/3 ≈ 0.667.
+    assert abs(row["rate_pressure_drop"] - 0.667) < 0.005
+    # 2/3 ≈ 0.667.
+    assert abs(row["rate_tool_switch"] - 0.667) < 0.005
+    # 2/3 ≈ 0.667.
+    assert abs(row["rate_error_resolved"] - 0.667) < 0.005
+
+
+def test_pattern_ab_status_card_carries_multi_helped(soma_dir):
+    """``get_pattern_ab_status`` must include a ``multi_helped`` block
+    on every card so RoiPage.js can render the three orthogonal rates
+    without a second roundtrip."""
+    from soma.analytics import AnalyticsStore
+    from soma.dashboard.data import get_pattern_ab_status
+
+    store = AnalyticsStore(path=soma_dir / "analytics.db")
+    try:
+        for _ in range(3):
+            store.record_guidance_outcome(
+                agent_id="cc-card", session_id="s",
+                pattern_key="bash_retry", helped=True,
+                pressure_at_injection=0.7, pressure_after=0.4,
+                helped_pressure_drop=True,
+                helped_tool_switch=False,
+                helped_error_resolved=True,
+            )
+    finally:
+        store.close()
+
+    cards = get_pattern_ab_status()
+    bash_cards = [c for c in cards if c["pattern"] == "bash_retry"]
+    assert len(bash_cards) == 1
+    multi = bash_cards[0]["multi_helped"]
+    assert multi["n_multi"] == 3
+    assert abs(multi["rate_pressure_drop"] - 1.0) < 0.001
+    assert abs(multi["rate_tool_switch"] - 0.0) < 0.001
+    assert abs(multi["rate_error_resolved"] - 1.0) < 0.001
+
+    # A pattern with zero firings must still expose multi_helped with
+    # null rates so the UI doesn't crash on undefined.
+    other = next(c for c in cards if c["pattern"] != "bash_retry")
+    assert "multi_helped" in other
+    assert other["multi_helped"]["n_multi"] == 0
+    assert other["multi_helped"]["rate_pressure_drop"] is None
