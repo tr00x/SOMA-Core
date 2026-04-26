@@ -688,15 +688,29 @@ def _get_guidance_effectiveness() -> dict:
 
 
 def _get_pattern_hit_rates() -> list[dict]:
-    """Which patterns fire most and which get followed."""
+    """Which patterns fire most and which get followed.
+
+    v2026.6.0 also returns three orthogonal helped rates per pattern
+    (``rate_pressure_drop``, ``rate_tool_switch``, ``rate_error_resolved``)
+    plus a count of rows that actually have those columns populated
+    (``n_multi``). Older rows (pre-multi-helped) have NULLs in the new
+    columns and are excluded from those rates so legacy data doesn't
+    drag the percentages down.
+    """
     conn = _get_db_connection()
     if not conn:
         return []
     try:
         cursor = conn.execute(
-            f"SELECT pattern_key, COUNT(*) as fires, "
+            f"SELECT pattern_key, "
+            f"COUNT(*) as fires, "
             f"SUM(helped) as followed, "
-            f"ROUND(CAST(SUM(helped) AS REAL) / COUNT(*), 3) as follow_rate "
+            f"ROUND(CAST(SUM(helped) AS REAL) / COUNT(*), 3) as follow_rate, "
+            # AVG(col*1.0) skips NULLs in sqlite — exactly what we want.
+            f"ROUND(AVG(helped_pressure_drop * 1.0), 3) as rate_pressure_drop, "
+            f"ROUND(AVG(helped_tool_switch * 1.0), 3) as rate_tool_switch, "
+            f"ROUND(AVG(helped_error_resolved * 1.0), 3) as rate_error_resolved, "
+            f"SUM(CASE WHEN helped_pressure_drop IS NOT NULL THEN 1 ELSE 0 END) as n_multi "
             f"FROM guidance_outcomes "
             f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS}) "
             f"GROUP BY pattern_key ORDER BY fires DESC",
@@ -845,16 +859,34 @@ def get_pattern_ab_status() -> list[dict]:
         # (returns tuples), so index into the SELECT projection rather
         # than by column name.
         cursor = store._conn.execute(
-            f"SELECT pattern_key, COUNT(*) as fires, SUM(helped) as helped "
+            f"SELECT pattern_key, COUNT(*) as fires, SUM(helped) as helped, "
+            # Multi-definition rates: AVG(col*1.0) skips NULLs.
+            f"AVG(helped_pressure_drop * 1.0) as rate_pdrop, "
+            f"AVG(helped_tool_switch * 1.0) as rate_tswitch, "
+            f"AVG(helped_error_resolved * 1.0) as rate_eresolved, "
+            f"SUM(CASE WHEN helped_pressure_drop IS NOT NULL THEN 1 ELSE 0 END) as n_multi "
             f"FROM guidance_outcomes "
             f"WHERE pattern_key IN ({_REAL_PATTERN_PLACEHOLDERS}) "
             f"GROUP BY pattern_key",
             _REAL_PATTERN_KEYS,
         )
-        for pattern_key, fires, helped in cursor.fetchall():
+        for (
+            pattern_key, fires, helped,
+            rate_pdrop, rate_tswitch, rate_eresolved, n_multi,
+        ) in cursor.fetchall():
             helped_by_pattern[pattern_key] = {
                 "fires": fires or 0,
                 "helped": helped or 0,
+                "rate_pressure_drop": (
+                    None if rate_pdrop is None else round(float(rate_pdrop), 3)
+                ),
+                "rate_tool_switch": (
+                    None if rate_tswitch is None else round(float(rate_tswitch), 3)
+                ),
+                "rate_error_resolved": (
+                    None if rate_eresolved is None else round(float(rate_eresolved), 3)
+                ),
+                "n_multi": int(n_multi or 0),
             }
     except Exception:
         pass
@@ -893,6 +925,17 @@ def get_pattern_ab_status() -> list[dict]:
                     "fires": legacy["fires"],
                     "helped": legacy["helped"],
                     "helped_rate": round(helped_rate, 3),
+                },
+                # v2026.6.0: three orthogonal helped definitions (rate
+                # is None until the n_multi rows accumulate). UI shows
+                # them as a triple beneath the legacy card so a pattern
+                # validated by tool-switch but flat on pressure-drop
+                # tells the richer story instead of one boolean.
+                "multi_helped": {
+                    "rate_pressure_drop": legacy.get("rate_pressure_drop"),
+                    "rate_tool_switch": legacy.get("rate_tool_switch"),
+                    "rate_error_resolved": legacy.get("rate_error_resolved"),
+                    "n_multi": legacy.get("n_multi", 0),
                 },
             })
     finally:

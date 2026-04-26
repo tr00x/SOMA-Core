@@ -86,6 +86,13 @@ function PatternCard({ card }) {
   const legacy = card.legacy_helped || { fires: 0, helped: 0, helped_rate: 0 };
   const legacyRate = `${(legacy.helped_rate * 100).toFixed(0)}%`;
 
+  // v2026.6.0: three orthogonal helped definitions. Each is null
+  // until n_multi rows have accumulated; render "—" so the UI doesn't
+  // claim a 0% rate when there's actually no data yet.
+  const multi = card.multi_helped || {};
+  const multiPct = (rate) =>
+    rate === null || rate === undefined ? '—' : `${(rate * 100).toFixed(0)}%`;
+
   return html`
     <article class="roi-pattern-card">
       <header class="roi-pattern-card-header">
@@ -110,6 +117,13 @@ function PatternCard({ card }) {
           <span class="roi-pattern-stat-value">${progress}</span>
         </div>
       </div>
+      ${multi.n_multi > 0 && html`
+        <div class="roi-pattern-multi" title="Three orthogonal helped definitions — n=${multi.n_multi}">
+          <span class="roi-pattern-multi-cell">Δp ${multiPct(multi.rate_pressure_drop)}</span>
+          <span class="roi-pattern-multi-cell">tool-switch ${multiPct(multi.rate_tool_switch)}</span>
+          <span class="roi-pattern-multi-cell">err-resolved ${multiPct(multi.rate_error_resolved)}</span>
+        </div>
+      `}
       <button
         type="button"
         class="roi-pattern-expand"

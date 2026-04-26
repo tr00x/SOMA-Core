@@ -1221,6 +1221,21 @@
   color: var(--accent);
 }
 
+.roi-pattern-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.roi-pattern-multi-cell {
+  background: var(--surface);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
 .roi-pattern-legacy {
   border-top: 1px dashed var(--border);
   padding-top: 10px;

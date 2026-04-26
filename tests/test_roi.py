@@ -30,24 +30,30 @@ def analytics_db(tmp_path):
         CREATE TABLE guidance_outcomes (
             timestamp REAL, agent_id TEXT, session_id TEXT,
             pattern_key TEXT, helped INTEGER,
-            pressure_at_injection REAL, pressure_after REAL
+            pressure_at_injection REAL, pressure_after REAL,
+            source TEXT DEFAULT 'hook',
+            helped_pressure_drop INTEGER,
+            helped_tool_switch INTEGER,
+            helped_error_resolved INTEGER
         )
     """)
     # Insert guidance outcomes
     now = time.time()
     # entropy_drop and context were retired 2026-04-25 (ultra-review).
     # Fixture uses only live REAL_PATTERN_KEYS so dashboard whitelist
-    # doesn't drop the rows under us.
+    # doesn't drop the rows under us. Multi-helped columns left NULL
+    # to mirror the legacy-row case the v2026.6.0 dashboard handles.
     outcomes = [
-        (now - 100, "a1", "s1", "error_cascade", 1, 0.6, 0.3),
-        (now - 90, "a1", "s1", "error_cascade", 1, 0.5, 0.2),
-        (now - 80, "a1", "s1", "bash_retry", 1, 0.7, 0.4),
-        (now - 70, "a1", "s1", "blind_edit", 0, 0.4, 0.5),
-        (now - 60, "a1", "s1", "budget", 1, 0.3, 0.1),
-        (now - 50, "a1", "s1", "budget", 0, 0.2, 0.3),
+        (now - 100, "a1", "s1", "error_cascade", 1, 0.6, 0.3, "hook", None, None, None),
+        (now - 90, "a1", "s1", "error_cascade", 1, 0.5, 0.2, "hook", None, None, None),
+        (now - 80, "a1", "s1", "bash_retry", 1, 0.7, 0.4, "hook", None, None, None),
+        (now - 70, "a1", "s1", "blind_edit", 0, 0.4, 0.5, "hook", None, None, None),
+        (now - 60, "a1", "s1", "budget", 1, 0.3, 0.1, "hook", None, None, None),
+        (now - 50, "a1", "s1", "budget", 0, 0.2, 0.3, "hook", None, None, None),
     ]
     conn.executemany(
-        "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO guidance_outcomes VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         outcomes,
     )
     conn.commit()
@@ -177,23 +183,28 @@ def polluted_db(tmp_path):
         CREATE TABLE guidance_outcomes (
             timestamp REAL, agent_id TEXT, session_id TEXT,
             pattern_key TEXT, helped INTEGER,
-            pressure_at_injection REAL, pressure_after REAL
+            pressure_at_injection REAL, pressure_after REAL,
+            source TEXT DEFAULT 'hook',
+            helped_pressure_drop INTEGER,
+            helped_tool_switch INTEGER,
+            helped_error_resolved INTEGER
         )
     """)
     now = time.time()
     rows = [
         # Real production patterns
-        (now - 10, "cc-1", "s1", "bash_retry", 1, 0.7, 0.2),
-        (now - 20, "cc-1", "s1", "blind_edit", 1, 0.5, 0.2),
+        (now - 10, "cc-1", "s1", "bash_retry", 1, 0.7, 0.2, "hook", None, None, None),
+        (now - 20, "cc-1", "s1", "blind_edit", 1, 0.5, 0.2, "hook", None, None, None),
         # Test-fixture garbage that must be filtered
-        (now - 30, "test", "s2", "retry_loop", 1, 0.6, 0.3),
-        (now - 40, "test", "s2", "mixed", 0, 0.5, 0.5),
-        (now - 50, "test", "s2", "bad_pattern", 0, 0.5, 0.5),
-        (now - 60, "test", "s2", "maybe_bad", 0, 0.5, 0.5),
-        (now - 70, "test", "s2", "test_key", 1, 0.5, 0.2),
+        (now - 30, "test", "s2", "retry_loop", 1, 0.6, 0.3, "hook", None, None, None),
+        (now - 40, "test", "s2", "mixed", 0, 0.5, 0.5, "hook", None, None, None),
+        (now - 50, "test", "s2", "bad_pattern", 0, 0.5, 0.5, "hook", None, None, None),
+        (now - 60, "test", "s2", "maybe_bad", 0, 0.5, 0.5, "hook", None, None, None),
+        (now - 70, "test", "s2", "test_key", 1, 0.5, 0.2, "hook", None, None, None),
     ]
     conn.executemany(
-        "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+        "INSERT INTO guidance_outcomes VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
     )
     conn.commit()
     conn.close()
