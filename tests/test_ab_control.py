@@ -578,3 +578,155 @@ def test_get_ab_outcomes_no_family_filter(tmp_path):
     rows = store.get_ab_outcomes(pattern="x")
     families = {r["agent_family"] for r in rows}
     assert families == {"cc", "swe"}
+
+
+# ── Multi-horizon recording (h1/h2/h5/h10) ──────────────────────────
+
+
+class TestMultiHorizonRecording:
+    """The new flow: INSERT once at h=2 carrying ``firing_id`` and the
+    h=1 sample we already buffered, then UPDATE the same row at h=5
+    and h=10 horizons via ``update_ab_outcome_horizon``. No data loss
+    vs the prior behaviour because the row still lands at h=2; later
+    horizons simply add columns to the same row."""
+
+    def test_h1_buffered_into_pending_no_row_yet(self, tmp_path):
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        pending = {
+            "pattern": "bash_retry", "actions_since": 1,
+            "ab_arm": "treatment", "pressure_at_injection": 0.7,
+            "firing_id": "cc-h1|bash_retry|100",
+        }
+        wrote = _record_ab_outcome_at_horizon(
+            agent_id="cc-h1",
+            pending=pending,
+            pressure_after=0.55,
+            analytics_path=tmp_path / "ab.db",
+        )
+        # No INSERT at h=1 — just buffer into pending for the h=2 INSERT.
+        assert wrote is False
+        assert pending.get("pressure_after_h1") == 0.55
+        # The DB has nothing yet.
+        store = AnalyticsStore(path=tmp_path / "ab.db")
+        try:
+            assert store.get_ab_outcomes(pattern="bash_retry") == []
+        finally:
+            store.close()
+
+    def test_h2_inserts_with_firing_id_and_h1_sample(self, tmp_path):
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        pending = {
+            "pattern": "bash_retry", "actions_since": 2,
+            "ab_arm": "treatment", "pressure_at_injection": 0.8,
+            "firing_id": "cc-h2|bash_retry|200",
+            "pressure_after_h1": 0.65,  # buffered earlier
+        }
+        ok = _record_ab_outcome_at_horizon(
+            agent_id="cc-h2",
+            pending=pending,
+            pressure_after=0.4,  # h=2 sample
+            analytics_path=tmp_path / "ab.db",
+        )
+        assert ok is True
+        assert pending["ab_recorded"] is True
+
+        store = AnalyticsStore(path=tmp_path / "ab.db")
+        try:
+            cur = store._conn.execute(
+                "SELECT firing_id, pressure_after, pressure_after_h1, "
+                "pressure_after_h5, pressure_after_h10 FROM ab_outcomes"
+            )
+            row = cur.fetchone()
+        finally:
+            store.close()
+        assert row[0] == "cc-h2|bash_retry|200"
+        assert row[1] == 0.4
+        assert row[2] == 0.65  # h1 backfilled into row
+        assert row[3] is None  # h5 not yet
+        assert row[4] is None  # h10 not yet
+
+    def test_h5_updates_existing_row(self, tmp_path):
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        # First, plant the h=2 row.
+        pending = {
+            "pattern": "bash_retry", "actions_since": 2,
+            "ab_arm": "treatment", "pressure_at_injection": 0.8,
+            "firing_id": "cc-h5|bash_retry|300",
+        }
+        _record_ab_outcome_at_horizon(
+            agent_id="cc-h5", pending=pending, pressure_after=0.5,
+            analytics_path=tmp_path / "ab.db",
+        )
+        # Now drive to h=5.
+        pending["actions_since"] = 5
+        _record_ab_outcome_at_horizon(
+            agent_id="cc-h5", pending=pending, pressure_after=0.3,
+            analytics_path=tmp_path / "ab.db",
+        )
+        store = AnalyticsStore(path=tmp_path / "ab.db")
+        try:
+            cur = store._conn.execute(
+                "SELECT pressure_after, pressure_after_h5 FROM ab_outcomes "
+                "WHERE firing_id = 'cc-h5|bash_retry|300'"
+            )
+            row = cur.fetchone()
+        finally:
+            store.close()
+        # Original h=2 sample untouched, h=5 column populated.
+        assert row[0] == 0.5
+        assert row[1] == 0.3
+
+    def test_h10_updates_existing_row_no_duplicate(self, tmp_path):
+        from soma.analytics import AnalyticsStore
+        from soma.hooks.post_tool_use import _record_ab_outcome_at_horizon
+
+        pending = {
+            "pattern": "bash_retry", "actions_since": 2,
+            "ab_arm": "treatment", "pressure_at_injection": 0.8,
+            "firing_id": "cc-h10|bash_retry|400",
+        }
+        _record_ab_outcome_at_horizon(
+            agent_id="cc-h10", pending=pending, pressure_after=0.5,
+            analytics_path=tmp_path / "ab.db",
+        )
+        for n, p in ((5, 0.4), (10, 0.2)):
+            pending["actions_since"] = n
+            _record_ab_outcome_at_horizon(
+                agent_id="cc-h10", pending=pending, pressure_after=p,
+                analytics_path=tmp_path / "ab.db",
+            )
+        store = AnalyticsStore(path=tmp_path / "ab.db")
+        try:
+            cur = store._conn.execute("SELECT COUNT(*) FROM ab_outcomes")
+            count = cur.fetchone()[0]
+            cur = store._conn.execute(
+                "SELECT pressure_after, pressure_after_h5, pressure_after_h10 "
+                "FROM ab_outcomes WHERE firing_id = 'cc-h10|bash_retry|400'"
+            )
+            row = cur.fetchone()
+        finally:
+            store.close()
+        assert count == 1, "should still be one row, not three"
+        assert (row[0], row[1], row[2]) == (0.5, 0.4, 0.2)
+
+
+def test_update_ab_outcome_horizon_unknown_firing_id_is_noop(tmp_path):
+    """If we get an UPDATE for a firing_id that was never INSERTed (e.g.
+    h=2 INSERT failed and we still hit h=5), the UPDATE silently
+    affects 0 rows. No crash."""
+    from soma.analytics import AnalyticsStore
+
+    store = AnalyticsStore(path=tmp_path / "ab.db")
+    try:
+        # Should not raise.
+        store.update_ab_outcome_horizon(
+            firing_id="never-existed", horizon=5, pressure_after=0.3,
+        )
+    finally:
+        store.close()

@@ -566,6 +566,8 @@ class AnalyticsStore:
         pressure_after: float | None,
         followed: bool = False,
         source: str = "hook",
+        firing_id: str | None = None,
+        pressure_after_h1: float | None = None,
     ) -> None:
         """Insert a row into ``ab_outcomes``.
 
@@ -575,6 +577,13 @@ class AnalyticsStore:
         at once with the pressure at the time of the *next* tool-use
         event; this method is the single write-path used by the A/B
         controller.
+
+        ``firing_id`` is the v2026.6.0 UPDATE key — when set, later
+        horizons (h5, h10) land via :meth:`update_ab_outcome_horizon`
+        against the same row instead of inserting siblings.
+        ``pressure_after_h1`` carries the h=1 sample buffered before this
+        INSERT (h=1 fires before h=2 — we can't insert at h=1 because
+        that would split the same firing across two rows).
 
         Mirrors the test-pollution write guard added to
         :meth:`record_guidance_outcome` in commit c1467df: writes from
@@ -594,12 +603,44 @@ class AnalyticsStore:
             return
         self._conn.execute(
             "INSERT INTO ab_outcomes "
-            "(timestamp, agent_family, pattern, arm, pressure_before, pressure_after, followed) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(timestamp, agent_family, pattern, arm, pressure_before, "
+            " pressure_after, followed, firing_id, pressure_after_h1) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), agent_family, pattern, arm,
-             pressure_before, pressure_after, int(followed)),
+             pressure_before, pressure_after, int(followed),
+             firing_id, pressure_after_h1),
         )
         self._conn.commit()
+
+    def update_ab_outcome_horizon(
+        self,
+        *,
+        firing_id: str,
+        horizon: int,
+        pressure_after: float,
+    ) -> int:
+        """Set ``pressure_after_h<horizon>`` for the row keyed by firing_id.
+
+        Returns the number of rows updated (0 if the firing_id was never
+        INSERTed — silently tolerated; horizon-only writes happen for
+        late samples after the h=2 row already shipped).
+
+        ``horizon`` must be 1, 5, or 10. h=2 lives in the legacy
+        ``pressure_after`` column and is set at INSERT time, so it is
+        not a valid update target here.
+        """
+        if horizon not in (1, 5, 10):
+            raise ValueError(
+                f"horizon must be 1, 5, or 10 (h=2 is the INSERT column), "
+                f"got {horizon!r}"
+            )
+        col = f"pressure_after_h{horizon}"
+        cursor = self._conn.execute(
+            f"UPDATE ab_outcomes SET {col} = ? WHERE firing_id = ?",
+            (pressure_after, firing_id),
+        )
+        self._conn.commit()
+        return cursor.rowcount
 
     def get_ab_outcomes(
         self, pattern: str, agent_family: str | None = None,
