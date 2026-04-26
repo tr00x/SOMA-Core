@@ -1307,3 +1307,143 @@ def test_skeptic_mode_disabled_values(monkeypatch, val):
     )
     assert msg is not None
     assert msg.pattern == "bash_retry"
+
+
+# ── Multi-definition helped (compute_multi_helped) ─────────────────
+
+
+class TestComputeMultiHelped:
+    """Three orthogonal helped definitions per firing — pressure_drop,
+    tool_switch, error_resolved. validate-patterns picks the best per
+    pattern in a follow-up commit."""
+
+    def test_pressure_drop_true_when_drop_exceeds_10pp(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.4,  # 30pp drop
+            next_actions=[{"tool": "Read", "error": False}],
+        )
+        assert result["helped_pressure_drop"] is True
+
+    def test_pressure_drop_false_when_drop_under_10pp(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.65,  # 5pp drop — below 10pp threshold
+            next_actions=[],
+        )
+        assert result["helped_pressure_drop"] is False
+
+    def test_tool_switch_true_when_family_changes(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            # Bash → Read = bash family → read family.
+            next_actions=[{"tool": "Read", "error": False}],
+        )
+        assert result["helped_tool_switch"] is True
+
+    def test_tool_switch_false_when_same_family(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Edit"},
+            pressure_after=0.7,
+            # Edit → Write are both `edit` family — no real switch.
+            next_actions=[
+                {"tool": "Write", "error": False},
+                {"tool": "NotebookEdit", "error": False},
+            ],
+        )
+        assert result["helped_tool_switch"] is False
+
+    def test_tool_switch_false_when_no_failing_tool_anchor(self):
+        from soma.contextual_guidance import compute_multi_helped
+        # No 'tool' / 'failing_tool' key in pending → can't anchor.
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7},
+            pressure_after=0.7,
+            next_actions=[{"tool": "Read", "error": False}],
+        )
+        assert result["helped_tool_switch"] is False
+
+    def test_error_resolved_true_when_no_errors_in_next_3(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            next_actions=[
+                {"tool": "Read", "error": False},
+                {"tool": "Edit", "error": False},
+                {"tool": "Bash", "error": False},
+            ],
+        )
+        assert result["helped_error_resolved"] is True
+
+    def test_error_resolved_false_when_any_error_in_next_3(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            next_actions=[
+                {"tool": "Read", "error": False},
+                {"tool": "Bash", "error": True},
+                {"tool": "Bash", "error": False},
+            ],
+        )
+        assert result["helped_error_resolved"] is False
+
+    def test_error_resolved_true_vacuously_on_empty_next_actions(self):
+        """No actions observed = no errors observed = vacuously resolved.
+        The signal is weak but the alternative (returning False) would
+        bias the metric against patterns that fire near session end."""
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            next_actions=[],
+        )
+        assert result["helped_error_resolved"] is True
+
+    def test_only_first_3_next_actions_inspected(self):
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            next_actions=[
+                {"tool": "Bash", "error": False},
+                {"tool": "Bash", "error": False},
+                {"tool": "Bash", "error": False},
+                # Beyond index 3 — must be ignored.
+                {"tool": "Read", "error": True},
+            ],
+        )
+        # Same family for first 3 → no switch.
+        assert result["helped_tool_switch"] is False
+        # No errors in first 3 → resolved (the late error doesn't count).
+        assert result["helped_error_resolved"] is True
+
+    def test_unknown_tool_maps_to_other_family(self):
+        from soma.contextual_guidance import _tool_family
+        assert _tool_family("Unknown") == "other"
+        assert _tool_family("") == "other"
+        # Switch from known → unknown should still register as a switch.
+        from soma.contextual_guidance import compute_multi_helped
+        result = compute_multi_helped(
+            pending={"pressure_at_injection": 0.7, "tool": "Bash"},
+            pressure_after=0.7,
+            next_actions=[{"tool": "WebFetch", "error": False}],
+        )
+        assert result["helped_tool_switch"] is True
+
+
+def test_tool_family_known_mappings():
+    from soma.contextual_guidance import _tool_family
+    assert _tool_family("Bash") == "bash"
+    assert _tool_family("Read") == "read"
+    assert _tool_family("Grep") == "read"
+    assert _tool_family("Glob") == "read"
+    assert _tool_family("Write") == "edit"
+    assert _tool_family("Edit") == "edit"
+    assert _tool_family("NotebookEdit") == "edit"
