@@ -103,63 +103,105 @@ def _record_ab_outcome_at_horizon(
     pressure_after: float,
     analytics_path=None,
 ) -> bool:
-    """Write an ``ab_outcomes`` row once ``actions_since`` reaches horizon.
+    """Capture pressure at h=1/2/5/10 horizons; INSERT at h=2, UPDATE later.
 
-    Returns True if a row was written. Also mutates ``pending`` in place
-    so ``pending["ab_recorded"] = True`` on success — this is the
-    in-process idempotency guard so two successive calls in the same
-    hook invocation can never double-write. Cross-process race is
-    prevented upstream by the per-agent followthrough file being the
-    single source of truth: both processes read the same bytes and
-    only one ever writes back.
+    Multi-horizon flow (v2026.6.0):
 
-    The horizon is the same for both arms, which is the whole point —
-    it removes the systematic bias where treatment was captured fast
-    (on recovery signal) and control slow (on timeout).
+    - **h=1**: buffer ``pressure_after`` into ``pending["pressure_after_h1"]``
+      and return False (no row yet — h=1 fires before the h=2 INSERT).
+    - **h=2**: INSERT the row, carrying ``firing_id`` and the buffered
+      h=1 sample. Sets ``pending["ab_recorded"] = True``. Returns True.
+    - **h=5 / h=10**: UPDATE the existing row's ``pressure_after_h<N>``
+      column via ``firing_id``. Returns True on a successful UPDATE.
 
-    ``followed`` in the A/B table is a simple pressure-drop check —
-    *not* the strict v2026.5.3 recovery-action semantic. Mixing in
-    pattern-specific "recovery" semantics here would bias against the
-    control arm, which by construction cannot "follow" guidance it
-    never saw. The strict semantic still lives in
-    ``guidance_outcomes`` for the dashboard's ROI view.
+    The h=2 INSERT is the data-loss-safe checkpoint — even if the
+    session ends before h=10, the prior single-horizon analysis still
+    works. Multi-horizon data is purely additive.
+
+    ``followed`` is the simple pressure-drop check at h=2 — *not* the
+    strict v2026.5.3 recovery-action semantic. Mixing in pattern-
+    specific "recovery" semantics here would bias against the control
+    arm, which by construction cannot "follow" guidance it never saw.
+    The strict semantic still lives in ``guidance_outcomes``.
     """
     if not _is_real_production_agent(agent_id):
-        return False
-    if pending.get("ab_recorded"):
         return False
     arm = pending.get("ab_arm")
     if arm not in ("treatment", "control"):
         return False
     actions_since = int(pending.get("actions_since", 0) or 0)
-    if actions_since < _AB_MEASUREMENT_HORIZON:
+
+    # Below h=1: nothing to do. h=0 hits on the very first follow-up
+    # action increment that runs before we can sample anything useful.
+    if actions_since < 1:
         return False
 
-    pressure_before = float(pending.get("pressure_at_injection", 0.0))
-    delta = pressure_before - float(pressure_after)
-    recovered = delta >= _AB_RECOVERED_DELTA
+    # h=1: buffer the sample for the upcoming h=2 INSERT. No row yet.
+    if actions_since == 1:
+        pending["pressure_after_h1"] = float(pressure_after)
+        return False
 
+    # h>=2: arm the analytics path lazily once.
     try:
         from soma.analytics import AnalyticsStore
         from soma.calibration import calibration_family
         store = AnalyticsStore(path=analytics_path) if analytics_path else AnalyticsStore()
-        store.record_ab_outcome(
-            agent_family=calibration_family(agent_id),
-            pattern=pending.get("pattern", ""),
-            arm=arm,
-            pressure_before=pressure_before,
-            pressure_after=float(pressure_after),
-            followed=recovered,
-        )
-        # Self-mark so the in-process caller can't double-record and
-        # so the persisted pending file carries the flag forward.
-        pending["ab_recorded"] = True
-        return True
     except Exception:
-        # Retryable write failure — leave ``ab_recorded`` unset so the
-        # next hook can try again with the same pending state. This is
-        # the M1 fix: we used to clear pending even when the A/B write
-        # silently dropped; now the row survives to a later attempt.
+        return False
+
+    firing_id = pending.get("firing_id")
+
+    # h=2: INSERT the canonical row. This is the idempotency boundary —
+    # ab_recorded gates re-entry from a same-cycle hook re-run.
+    if actions_since == _AB_MEASUREMENT_HORIZON:
+        if pending.get("ab_recorded"):
+            return False
+        pressure_before = float(pending.get("pressure_at_injection", 0.0))
+        delta = pressure_before - float(pressure_after)
+        recovered = delta >= _AB_RECOVERED_DELTA
+        try:
+            store.record_ab_outcome(
+                agent_family=calibration_family(agent_id),
+                pattern=pending.get("pattern", ""),
+                arm=arm,
+                pressure_before=pressure_before,
+                pressure_after=float(pressure_after),
+                followed=recovered,
+                firing_id=firing_id,
+                pressure_after_h1=pending.get("pressure_after_h1"),
+            )
+            pending["ab_recorded"] = True
+            return True
+        except Exception:
+            # Retryable write failure — leave ab_recorded unset so a
+            # later hook can try again with the same pending state.
+            return False
+
+    # h>2: UPDATE one of the horizon columns. Pick the closest tracked
+    # horizon (5 or 10). Anything in between is captured at the next
+    # tracked horizon to keep the column set fixed.
+    if actions_since < 5:
+        return False
+    horizon = 10 if actions_since >= 10 else 5
+    horizon_key = f"_ab_h{horizon}_recorded"
+    if pending.get(horizon_key):
+        return False
+    if not firing_id:
+        # Without firing_id we can't UPDATE — happens for legacy pending
+        # dicts captured pre-v2026.6.0. Skip silently.
+        return False
+    try:
+        rowcount = store.update_ab_outcome_horizon(
+            firing_id=firing_id,
+            horizon=horizon,
+            pressure_after=float(pressure_after),
+        )
+        # Mark even if rowcount == 0 (firing_id never INSERTed) so we
+        # don't keep retrying every action. The horizon is past either
+        # way.
+        pending[horizon_key] = True
+        return rowcount > 0
+    except Exception:
         return False
 
 
@@ -641,13 +683,18 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                                 except Exception:
                                     pass
 
-                    # Terminal conditions: either both tracks landed, or
-                    # we've waited too long for either.
+                    # Terminal conditions: either both tracks landed (A/B
+                    # h=10 + strict resolution), or we've waited too long.
+                    # Timeout extended to >12 (was >5) to let the h=10
+                    # horizon land. The h=2 INSERT still happens at
+                    # actions_since=2, so the prior single-horizon
+                    # verdict is unaffected by a late timeout.
                     ab_recorded = bool(pending.get("ab_recorded"))
-                    timed_out = pending.get("actions_since", 0) > 5
+                    h10_done = bool(pending.get("_ab_h10_recorded"))
+                    timed_out = pending.get("actions_since", 0) > 12
 
-                    if ab_recorded and strict_resolved:
-                        # Both done — discard pending cleanly.
+                    if ab_recorded and h10_done and strict_resolved:
+                        # All three tracks done — discard pending cleanly.
                         _circuit_data.pop("guidance_followthrough", None)
                     elif timed_out:
                         # Timed out. Best-effort close: write whichever
@@ -658,13 +705,23 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                                 followed=False, pressure_after=pressure,
                             )
                         if not ab_recorded:
-                            # Force horizon so the A/B row lands on this
-                            # last attempt. pressure_after is current
-                            # pressure — late sample but unbiased against
-                            # the other arm (both arms time out the same
-                            # way).
+                            # Force horizon so the h=2 row lands on this
+                            # last attempt. Late sample but unbiased
+                            # against the other arm — both arms time out
+                            # the same way.
                             pending["actions_since"] = max(
                                 pending.get("actions_since", 0), _AB_MEASUREMENT_HORIZON,
+                            )
+                            _record_ab_outcome_at_horizon(
+                                agent_id=agent_id, pending=pending, pressure_after=pressure,
+                            )
+                        if not h10_done:
+                            # Best-effort late h=10 update so the column
+                            # gets *something*. Force actions_since past
+                            # the h=10 threshold; UPDATE is no-op if h=2
+                            # row never made it in.
+                            pending["actions_since"] = max(
+                                pending.get("actions_since", 0), 10,
                             )
                             _record_ab_outcome_at_horizon(
                                 agent_id=agent_id, pending=pending, pressure_after=pressure,
@@ -849,6 +906,13 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 # not to suppress the first 30 actions' worth of signal.
                 from soma import ab_control
                 arm = "treatment"
+                # firing_id is computed unconditionally so the
+                # multi-horizon UPDATE key exists for warmup firings too
+                # (warmup skips the A/B gate but still records ab_outcomes
+                # in the treatment arm).
+                _firing_id = (
+                    f"{agent_id}|{cg_msg.pattern}|{len(cg_action_log)}"
+                )
                 try:
                     from soma.calibration import calibration_family
                     family = calibration_family(agent_id)
@@ -861,9 +925,6 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         # the same arm without bumping the counter.
                         # Without it, the prior every-call-rebumps path
                         # silently biased the A/B verdict.
-                        _firing_id = (
-                            f"{agent_id}|{cg_msg.pattern}|{len(cg_action_log)}"
-                        )
                         arm = ab_control.should_inject(
                             cg_msg.pattern, family, len(cg_action_log),
                             firing_id=_firing_id,
@@ -914,6 +975,11 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     "actions_since": 0,
                     "pressure_at_injection": pressure,
                     "ab_arm": arm,
+                    # firing_id is the UPDATE key for multi-horizon
+                    # recording. Same string as the should_inject token
+                    # so a single firing has one stable identifier
+                    # across the lifetime of the followthrough.
+                    "firing_id": _firing_id,
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
