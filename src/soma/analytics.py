@@ -163,6 +163,10 @@ class AnalyticsStore:
             "20260425_reclear_silence_after_fix_window",
             self._clear_stale_silence_cache_post_ab_reset,
         )
+        self._apply_migration(
+            "20260426_multi_horizon_ab_outcomes",
+            self._add_multi_horizon_columns,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -259,6 +263,47 @@ class AnalyticsStore:
             return clear_stale_silence_cache()
         except Exception:
             return 0
+
+    def _add_multi_horizon_columns(self) -> int:
+        """Add pressure_after_h1/_h5/_h10 + firing_id columns to ab_outcomes.
+
+        Multi-horizon measurement lets validate-patterns pick the best
+        recovery window per pattern (some patterns recover at h=1, others
+        need h=10). The existing ``pressure_after`` column stays as the
+        canonical h=2 sample for backward-compatible verdicts.
+
+        ``firing_id`` is the UPDATE key: rows are inserted at h=2 (no data
+        loss vs prior behaviour) and updated at h1/h5/h10 as those
+        horizons land. The h=1 column gets backfilled because h=1 fires
+        before the h=2 insert; we capture pressure into pending and stamp
+        it on the INSERT.
+
+        sqlite ALTER TABLE ADD COLUMN is idempotent only when guarded by
+        PRAGMA table_info — re-running the migration without the guard
+        would crash with ``duplicate column``.
+        """
+        cursor = self._conn.execute("PRAGMA table_info(ab_outcomes)")
+        existing = {row[1] for row in cursor.fetchall()}
+        added = 0
+        for col, sql_type in (
+            ("pressure_after_h1", "REAL"),
+            ("pressure_after_h5", "REAL"),
+            ("pressure_after_h10", "REAL"),
+            ("firing_id", "TEXT"),
+        ):
+            if col not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE ab_outcomes ADD COLUMN {col} {sql_type}"
+                )
+                added += 1
+        if added:
+            # Index the UPDATE key so update_ab_outcome_horizon stays fast
+            # as the table grows.
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ab_outcomes_firing_id "
+                "ON ab_outcomes(firing_id)"
+            )
+        return added
 
     def _archive_biased_ab_outcomes(self) -> int:
         """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.
