@@ -167,6 +167,10 @@ class AnalyticsStore:
             "20260426_multi_horizon_ab_outcomes",
             self._add_multi_horizon_columns,
         )
+        self._apply_migration(
+            "20260426_multi_definition_guidance_outcomes",
+            self._add_multi_definition_columns,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -303,6 +307,41 @@ class AnalyticsStore:
                 "CREATE INDEX IF NOT EXISTS idx_ab_outcomes_firing_id "
                 "ON ab_outcomes(firing_id)"
             )
+        return added
+
+    def _add_multi_definition_columns(self) -> int:
+        """Add helped_pressure_drop/_tool_switch/_error_resolved columns.
+
+        The legacy ``helped`` column stays as the canonical pattern-
+        specific rule (what the dashboard already shows). The three new
+        orthogonal definitions answer different questions about the
+        same firing:
+
+        - ``helped_pressure_drop``: did pressure actually drop > 10pp?
+          Generic, pattern-agnostic.
+        - ``helped_tool_switch``: did the agent switch tool family?
+          Useful for retry-storm / bash_retry where the fix is to
+          stop hitting the same tool.
+        - ``helped_error_resolved``: were the next 3 actions error-free?
+          Useful for error_cascade / blind_edit.
+
+        validate-patterns can pick the definition that best matches the
+        pattern's recovery story instead of being forced into one
+        boolean per pattern.
+        """
+        cursor = self._conn.execute("PRAGMA table_info(guidance_outcomes)")
+        existing = {row[1] for row in cursor.fetchall()}
+        added = 0
+        for col in (
+            "helped_pressure_drop",
+            "helped_tool_switch",
+            "helped_error_resolved",
+        ):
+            if col not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE guidance_outcomes ADD COLUMN {col} INTEGER"
+                )
+                added += 1
         return added
 
     def _archive_biased_ab_outcomes(self) -> int:

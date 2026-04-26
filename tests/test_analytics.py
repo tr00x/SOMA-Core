@@ -460,18 +460,19 @@ def test_get_pattern_stats_since_ts_excludes_old_rows(tmp_path: Path, monkeypatc
     from soma import ab_control
     monkeypatch.setattr(ab_control, "_COUNTERS_PATH", tmp_path / "ab_counters.json")
     store = AnalyticsStore(path=tmp_path / "c.db")
+    # Named-column INSERT so additive migrations don't break this test.
+    insert_sql = (
+        "INSERT INTO guidance_outcomes "
+        "(timestamp, agent_id, session_id, pattern_key, helped, "
+        " pressure_at_injection, pressure_after, source) "
+        "VALUES (?, 'cc', 's', 'blind_edit', ?, 0, 0, 'hook')"
+    )
     # 30 pre-reset fires with helped=0 (biased).
     for i in range(30):
-        store._conn.execute(
-            "INSERT INTO guidance_outcomes VALUES (?, 'cc', 's', 'blind_edit', 0, 0, 0, 'hook')",
-            (100.0 + i,),
-        )
+        store._conn.execute(insert_sql, (100.0 + i, 0))
     # 5 post-reset fires with helped=1 (clean).
     for i in range(5):
-        store._conn.execute(
-            "INSERT INTO guidance_outcomes VALUES (?, 'cc', 's', 'blind_edit', 1, 0, 0, 'hook')",
-            (2000.0 + i,),
-        )
+        store._conn.execute(insert_sql, (2000.0 + i, 1))
     store._conn.commit()
 
     # Legacy call (since_ts=0) sees the biased window — 30 fires, 5 helped.
@@ -722,3 +723,33 @@ def test_multi_horizon_migration_idempotent(tmp_path: Path):
     AnalyticsStore(path=db).close()
     AnalyticsStore(path=db).close()
     # Survived three opens — migration is idempotent.
+
+
+# ---------------------------------------------------------------------------
+# Multi-definition guidance_outcomes columns (20260426 migration)
+# ---------------------------------------------------------------------------
+
+
+def test_multi_definition_columns_added(tmp_path: Path):
+    """guidance_outcomes must gain helped_pressure_drop, _tool_switch,
+    _error_resolved INTEGER columns after the 20260426 migration. The
+    legacy ``helped`` column stays as the canonical pattern-specific
+    rule for the dashboard."""
+    store = AnalyticsStore(path=tmp_path / "test.db")
+    try:
+        cursor = store._conn.execute("PRAGMA table_info(guidance_outcomes)")
+        cols = {row[1] for row in cursor.fetchall()}
+        assert "helped_pressure_drop" in cols
+        assert "helped_tool_switch" in cols
+        assert "helped_error_resolved" in cols
+        # Legacy column stays untouched.
+        assert "helped" in cols
+    finally:
+        store.close()
+
+
+def test_multi_definition_migration_idempotent(tmp_path: Path):
+    db = tmp_path / "test.db"
+    AnalyticsStore(path=db).close()
+    AnalyticsStore(path=db).close()
+    AnalyticsStore(path=db).close()
