@@ -708,22 +708,28 @@ class AnalyticsStore:
         ``soma validate-patterns`` CLI in global mode. Rows with
         ``pressure_after IS NULL`` are excluded; they're incomplete
         recordings (next action never arrived, e.g. session ended).
+
+        v2026.6.0: returns multi-horizon columns
+        (``pressure_after_h1``, ``_h5``, ``_h10``) and ``firing_id``
+        too so :func:`ab_control.validate` can pick the right horizon.
         """
+        select = (
+            "SELECT timestamp, agent_family, pattern, arm, "
+            "pressure_before, pressure_after, followed, "
+            "pressure_after_h1, pressure_after_h5, pressure_after_h10, "
+            "firing_id "
+        )
         if agent_family is None:
             cursor = self._conn.execute(
-                "SELECT timestamp, agent_family, pattern, arm, "
-                "pressure_before, pressure_after, followed "
-                "FROM ab_outcomes WHERE pattern = ? "
+                f"{select}FROM ab_outcomes WHERE pattern = ? "
                 "AND pressure_after IS NOT NULL "
                 "ORDER BY timestamp DESC",
                 (pattern,),
             )
         else:
             cursor = self._conn.execute(
-                "SELECT timestamp, agent_family, pattern, arm, "
-                "pressure_before, pressure_after, followed "
-                "FROM ab_outcomes WHERE pattern = ? AND agent_family = ? "
-                "AND pressure_after IS NOT NULL "
+                f"{select}FROM ab_outcomes WHERE pattern = ? "
+                "AND agent_family = ? AND pressure_after IS NOT NULL "
                 "ORDER BY timestamp DESC",
                 (pattern, agent_family),
             )
