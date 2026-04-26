@@ -689,4 +689,36 @@ def test_archive_migration_resets_block_randomizer_counters(tmp_path: Path, monk
     store = AnalyticsStore(path=tmp_path / "reset.db")
     assert not counter_path.exists(), "archive migration must delete counters"
     store.close()
-    store.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-horizon ab_outcomes columns (20260426 migration)
+# ---------------------------------------------------------------------------
+
+
+def test_multi_horizon_columns_added(tmp_path: Path):
+    """ab_outcomes must have pressure_after_h1/_h5/_h10 + firing_id columns
+    after the 20260426 migration runs. firing_id is the UPDATE key for
+    landing later horizons against an existing row inserted at h=2."""
+    store = AnalyticsStore(path=tmp_path / "test.db")
+    try:
+        cursor = store._conn.execute("PRAGMA table_info(ab_outcomes)")
+        cols = {row[1] for row in cursor.fetchall()}
+        assert "pressure_after_h1" in cols
+        assert "pressure_after_h5" in cols
+        assert "pressure_after_h10" in cols
+        assert "firing_id" in cols
+        # Existing pressure_after stays — semantically equals h=2.
+        assert "pressure_after" in cols
+    finally:
+        store.close()
+
+
+def test_multi_horizon_migration_idempotent(tmp_path: Path):
+    """Re-opening the DB must not re-add the columns (would fail with
+    'duplicate column' SQL error if not guarded by PRAGMA table_info)."""
+    db = tmp_path / "test.db"
+    AnalyticsStore(path=db).close()
+    AnalyticsStore(path=db).close()
+    AnalyticsStore(path=db).close()
+    # Survived three opens — migration is idempotent.
