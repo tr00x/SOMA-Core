@@ -309,6 +309,109 @@ def _pressure_dropped(pressure_delta: float | None) -> bool:
     return pressure_delta >= _PRESSURE_DROP_HELPED
 
 
+# Tool families used by ``compute_multi_helped`` to detect a tool-class
+# switch after a guidance firing. The grouping is deliberately coarse —
+# a switch from Bash to Read/Grep/Glob is what we mean by "stopped
+# bashing the same wall"; switches inside the same family (Edit→Write)
+# are noise. ``_tool_family("Anything else")`` returns ``other``.
+_TOOL_FAMILIES: dict[str, str] = {
+    "Bash": "bash",
+    "Read": "read",
+    "Grep": "read",
+    "Glob": "read",
+    "Write": "edit",
+    "Edit": "edit",
+    "NotebookEdit": "edit",
+    "MultiEdit": "edit",
+}
+
+
+def _tool_family(tool_name: str) -> str:
+    """Map a tool name to its coarse family for ``compute_multi_helped``.
+
+    Returns one of: ``bash``, ``read``, ``edit``, ``other``. Empty /
+    unknown tool names map to ``other``. The mapping is intentionally
+    minimal so it stays cheap to extend; if a new tool ships and isn't
+    in this dict, the worst case is one false negative for the
+    tool-switch helped definition — never a crash.
+    """
+    if not tool_name:
+        return "other"
+    return _TOOL_FAMILIES.get(tool_name, "other")
+
+
+# Multi-definition helped pressure-drop threshold. Generic, pattern-
+# agnostic — just "did the load come down?". Looser than the strict
+# 0.15 used in ``_PRESSURE_DROP_HELPED`` because the multi-definition
+# stat is meant to surface *any* recovery, including small ones the
+# pattern-specific rule would miss.
+_MULTI_HELPED_PRESSURE_DROP = 0.10
+
+
+def compute_multi_helped(
+    pending: dict,
+    pressure_after: float,
+    next_actions: list[dict],
+) -> dict[str, bool]:
+    """Compute three orthogonal helped definitions for one firing.
+
+    Inputs:
+
+    - ``pending``: the followthrough dict — must carry
+      ``pressure_at_injection`` and (for tool_switch) the failing tool
+      under one of the keys we already use today (``tool`` /
+      ``failing_tool`` / ``file`` is unused here).
+    - ``pressure_after``: pressure sample at the resolution point.
+    - ``next_actions``: action_log slice of the *N* actions that
+      happened after the firing. Caller supplies the slice so this
+      helper stays pure / testable. Three is enough — beyond that
+      any "recovery" is statistically indistinguishable from drift.
+
+    Returns a dict with three booleans:
+
+    - ``helped_pressure_drop``: pressure_after dropped > 10pp from
+      injection. Generic, pattern-agnostic.
+    - ``helped_tool_switch``: any of next_actions[0:3] uses a tool
+      from a family different from the failing tool's family. Useful
+      for retry-storm / bash_retry where the fix is "stop hitting
+      the same tool".
+    - ``helped_error_resolved``: none of next_actions[0:3] errored.
+      Useful for error_cascade / blind_edit.
+
+    Edge cases:
+
+    - Empty ``next_actions`` → tool_switch False, error_resolved True
+      (vacuous: no errors observed).
+    - Missing ``failing_tool`` → tool_switch False (no anchor to
+      switch from).
+    """
+    pressure_at_injection = float(pending.get("pressure_at_injection", 0.0))
+    failing_tool = (
+        pending.get("failing_tool")
+        or pending.get("tool")
+        or ""
+    )
+    failing_family = _tool_family(failing_tool) if failing_tool else None
+    sample = next_actions[:3]
+
+    if failing_family is None:
+        tool_switch = False
+    else:
+        tool_switch = any(
+            _tool_family(a.get("tool", "")) != failing_family
+            for a in sample
+        )
+    error_resolved = all(not a.get("error", False) for a in sample)
+    pressure_drop = (
+        float(pressure_after) < pressure_at_injection - _MULTI_HELPED_PRESSURE_DROP
+    )
+    return {
+        "helped_pressure_drop": bool(pressure_drop),
+        "helped_tool_switch": bool(tool_switch),
+        "helped_error_resolved": bool(error_resolved),
+    }
+
+
 def check_followthrough(
     pending: dict,
     tool_name: str,

@@ -482,8 +482,18 @@ class AnalyticsStore:
         pressure_at_injection: float,
         pressure_after: float,
         source: str = "hook",
+        helped_pressure_drop: bool | None = None,
+        helped_tool_switch: bool | None = None,
+        helped_error_resolved: bool | None = None,
     ) -> None:
         """Record whether a guidance injection improved agent behavior.
+
+        ``helped`` is the canonical pattern-specific rule (back-compat
+        for the dashboard). The three orthogonal definitions
+        (``helped_pressure_drop``, ``_tool_switch``, ``_error_resolved``)
+        are optional — older callers that don't compute them leave the
+        columns NULL. validate-patterns picks the best definition per
+        pattern.
 
         Writes are rejected when ``pattern_key`` matches a known test
         fixture (see ``_KNOWN_TEST_PATTERN_KEYS`` or the ``test_``
@@ -497,13 +507,21 @@ class AnalyticsStore:
             or _is_test_agent_id(agent_id)
         ):
             return
+
+        def _bool_or_none(b: bool | None) -> int | None:
+            return None if b is None else int(b)
+
         self._conn.execute(
             "INSERT INTO guidance_outcomes "
             "(timestamp, agent_id, session_id, pattern_key, helped, "
-            "pressure_at_injection, pressure_after, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " pressure_at_injection, pressure_after, source, "
+            " helped_pressure_drop, helped_tool_switch, helped_error_resolved) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), agent_id, session_id, pattern_key,
-             int(helped), pressure_at_injection, pressure_after, source),
+             int(helped), pressure_at_injection, pressure_after, source,
+             _bool_or_none(helped_pressure_drop),
+             _bool_or_none(helped_tool_switch),
+             _bool_or_none(helped_error_resolved)),
         )
         self._conn.commit()
 

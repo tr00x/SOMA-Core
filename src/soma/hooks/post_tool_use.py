@@ -63,6 +63,7 @@ def _record_guidance_outcome(
     followed: bool,
     pressure_after: float,
     analytics_path=None,
+    next_actions: list[dict] | None = None,
 ) -> None:
     """Persist a contextual-guidance outcome to ``guidance_outcomes``.
 
@@ -70,6 +71,11 @@ def _record_guidance_outcome(
     guidance_outcomes table so ROI metrics reflect real production
     patterns. This is the *strict* resolution path — it only fires when
     ``check_followthrough`` returns True / False.
+
+    ``next_actions`` is the post-firing slice of the action log used to
+    compute the three orthogonal multi-helped definitions. Caller
+    passes ``_recent_actions`` already in scope; if absent we fall
+    back to None for the new columns (legacy / test paths).
 
     Control-arm firings are deliberately skipped here: the guidance
     message was computed but never shown to the agent, so asking "did
@@ -82,6 +88,25 @@ def _record_guidance_outcome(
         return
     if pending.get("ab_arm") == "control":
         return
+
+    multi: dict[str, bool] | dict[str, None] = {
+        "helped_pressure_drop": None,
+        "helped_tool_switch": None,
+        "helped_error_resolved": None,
+    }
+    if next_actions is not None:
+        try:
+            from soma.contextual_guidance import compute_multi_helped
+            multi = compute_multi_helped(
+                pending=pending,
+                pressure_after=float(pressure_after),
+                next_actions=next_actions,
+            )
+        except Exception:
+            # Multi-helped is additive analytics — never block the
+            # canonical helped row on its failure.
+            pass
+
     try:
         from soma.analytics import AnalyticsStore
         store = AnalyticsStore(path=analytics_path) if analytics_path else AnalyticsStore()
@@ -92,6 +117,9 @@ def _record_guidance_outcome(
             helped=bool(followed),
             pressure_at_injection=float(pending.get("pressure_at_injection", 0.0)),
             pressure_after=float(pressure_after),
+            helped_pressure_drop=multi["helped_pressure_drop"],
+            helped_tool_switch=multi["helped_tool_switch"],
+            helped_error_resolved=multi["helped_error_resolved"],
         )
     except Exception:
         pass  # Never crash the hook for analytics
@@ -664,11 +692,23 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                                 )
                             except Exception:
                                 pass
+                            # next_actions = the post-firing tail of
+                            # the action log. ``actions_since`` counts
+                            # PostToolUse cycles since firing; the same
+                            # number of action_log entries are post-
+                            # firing because the log is appended once
+                            # per cycle. compute_multi_helped only
+                            # inspects the first 3 inside.
+                            _na_count = int(pending.get("actions_since", 0) or 0)
+                            _next_actions = (
+                                _recent_actions[-_na_count:] if _na_count > 0 else []
+                            )
                             _record_guidance_outcome(
                                 agent_id=agent_id,
                                 pending=pending,
                                 followed=bool(followed),
                                 pressure_after=pressure,
+                                next_actions=_next_actions,
                             )
                             # Strict mode: clear the matching block on a
                             # real recovery so the agent can proceed
@@ -700,9 +740,14 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         # Timed out. Best-effort close: write whichever
                         # track hasn't landed yet so no row is lost.
                         if not strict_resolved:
+                            _na_count = int(pending.get("actions_since", 0) or 0)
+                            _next_actions = (
+                                _recent_actions[-_na_count:] if _na_count > 0 else []
+                            )
                             _record_guidance_outcome(
                                 agent_id=agent_id, pending=pending,
                                 followed=False, pressure_after=pressure,
+                                next_actions=_next_actions,
                             )
                         if not ab_recorded:
                             # Force horizon so the h=2 row lands on this

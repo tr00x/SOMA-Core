@@ -753,3 +753,34 @@ def test_multi_definition_migration_idempotent(tmp_path: Path):
     AnalyticsStore(path=db).close()
     AnalyticsStore(path=db).close()
     AnalyticsStore(path=db).close()
+
+
+def test_record_guidance_outcome_persists_multi_definition(tmp_path: Path):
+    """Round-trip: caller passes the three booleans, they land in the
+    new columns. NULLs are preserved when caller omits them (back-compat
+    for legacy code paths that don't compute multi-helped yet)."""
+    store = AnalyticsStore(path=tmp_path / "g.db")
+    try:
+        store.record_guidance_outcome(
+            agent_id="cc-multi", session_id="s",
+            pattern_key="bash_retry", helped=True,
+            pressure_at_injection=0.7, pressure_after=0.4,
+            helped_pressure_drop=True,
+            helped_tool_switch=False,
+            helped_error_resolved=True,
+        )
+        # Legacy caller — three columns must remain NULL.
+        store.record_guidance_outcome(
+            agent_id="cc-multi", session_id="s",
+            pattern_key="bash_retry", helped=False,
+            pressure_at_injection=0.6, pressure_after=0.55,
+        )
+        rows = store._conn.execute(
+            "SELECT helped, helped_pressure_drop, helped_tool_switch, "
+            "helped_error_resolved FROM guidance_outcomes "
+            "WHERE pattern_key = 'bash_retry' ORDER BY timestamp"
+        ).fetchall()
+        assert rows[0] == (1, 1, 0, 1)
+        assert rows[1] == (0, None, None, None)
+    finally:
+        store.close()
