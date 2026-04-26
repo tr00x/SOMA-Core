@@ -867,7 +867,13 @@ def _read_circuit_data(path: Path) -> dict:
 def circuit_transaction(agent_id: str = ""):
     """Locked read-modify-write of circuit_{aid}.json.
 
-    Yields the parsed data dict; mutations are persisted on context exit.
+    Yields the parsed data dict; mutations are persisted on context exit
+    *only when the with-block exited cleanly*. If an exception escapes
+    the block, the partially-mutated data is discarded — otherwise a
+    half-incremented counter or a missing follow-up flag would persist
+    across cycles, eventually triggering phantom timeouts (review I2,
+    2026-04-26).
+
     Use this when a caller needs to read the current state, mutate one
     field, and write — the per-writer lock alone doesn't cover that
     pattern (lost-update race between read and write).
@@ -883,11 +889,17 @@ def circuit_transaction(agent_id: str = ""):
     path.parent.mkdir(parents=True, exist_ok=True)
     with _circuit_lock(agent_id):
         data = _read_circuit_data(path)
-        yield data
         try:
-            path.write_text(json.dumps(data))
-        except OSError:
-            pass
+            yield data
+        except Exception:
+            # Partial mutations are discarded — re-raise so the caller's
+            # outer try/except (if any) can still observe the failure.
+            raise
+        else:
+            try:
+                path.write_text(json.dumps(data))
+            except OSError:
+                pass
 
 
 def write_guidance_state(state: "GuidanceState", agent_id: str = "") -> None:
