@@ -788,6 +788,80 @@ def test_record_guidance_outcome_persists_multi_definition(tmp_path: Path):
         store.close()
 
 
+def test_archive_pre_firing_id_legacy_migration(tmp_path: Path):
+    """The 20260427_archive_pre_firing_id_legacy migration moves rows
+    with NULL firing_id into ab_outcomes_pre_firing_id_legacy and
+    deletes them from ab_outcomes — closing the gap window between the
+    v2026.5.5 wipe and the firing_id idempotency fix that left ~60
+    biased rows in production."""
+    # Seed the DB pre-migration: open store, add a legacy NULL row +
+    # a clean post-fix row, then mark the new migration as not-yet-run
+    # so the next reopen executes it.
+    store = AnalyticsStore(path=tmp_path / "legacy.db")
+    try:
+        store.record_ab_outcome(
+            agent_family="cc", pattern="bash_retry", arm="treatment",
+            pressure_before=0.5, pressure_after=0.4,
+        )  # legacy: NULL firing_id
+        store.record_ab_outcome(
+            agent_family="cc", pattern="bash_retry", arm="control",
+            pressure_before=0.5, pressure_after=0.6,
+            firing_id="cc-1|bash_retry|1",
+        )  # clean
+        store._conn.execute(
+            "DELETE FROM schema_migrations WHERE id = ?",
+            ("20260427_archive_pre_firing_id_legacy",),
+        )
+        store._conn.commit()
+    finally:
+        store.close()
+
+    # Reopen → migration runs.
+    store = AnalyticsStore(path=tmp_path / "legacy.db")
+    try:
+        live = store._conn.execute(
+            "SELECT COUNT(*) FROM ab_outcomes WHERE firing_id IS NULL"
+        ).fetchone()[0]
+        archived = store._conn.execute(
+            "SELECT COUNT(*) FROM ab_outcomes_pre_firing_id_legacy"
+        ).fetchone()[0]
+        clean = store._conn.execute(
+            "SELECT COUNT(*) FROM ab_outcomes WHERE firing_id IS NOT NULL"
+        ).fetchone()[0]
+        assert live == 0, "legacy NULL rows must be removed from live table"
+        assert archived == 1, "legacy row must land in archive table"
+        assert clean == 1, "post-fix rows must remain untouched"
+    finally:
+        store.close()
+
+
+def test_archive_pre_firing_id_legacy_migration_idempotent(tmp_path: Path):
+    """Running the migration twice must not double-archive or fail."""
+    store = AnalyticsStore(path=tmp_path / "idem.db")
+    try:
+        store.record_ab_outcome(
+            agent_family="cc", pattern="bash_retry", arm="treatment",
+            pressure_before=0.5, pressure_after=0.4,
+        )
+        store._conn.execute(
+            "DELETE FROM schema_migrations WHERE id = ?",
+            ("20260427_archive_pre_firing_id_legacy",),
+        )
+        store._conn.commit()
+    finally:
+        store.close()
+    AnalyticsStore(path=tmp_path / "idem.db").close()  # first run
+    AnalyticsStore(path=tmp_path / "idem.db").close()  # second run, no-op
+    store = AnalyticsStore(path=tmp_path / "idem.db")
+    try:
+        archived = store._conn.execute(
+            "SELECT COUNT(*) FROM ab_outcomes_pre_firing_id_legacy"
+        ).fetchone()[0]
+        assert archived == 1
+    finally:
+        store.close()
+
+
 def test_get_ab_outcomes_excludes_legacy_null_firing_id(tmp_path: Path):
     """Pre-firing_id legacy rows (NULL firing_id) carry the should_inject
     re-entry bias and must be invisible to validate-patterns. Migration

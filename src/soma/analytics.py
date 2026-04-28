@@ -171,6 +171,10 @@ class AnalyticsStore:
             "20260426_multi_definition_guidance_outcomes",
             self._add_multi_definition_columns,
         )
+        self._apply_migration(
+            "20260427_archive_pre_firing_id_legacy",
+            self._archive_pre_firing_id_legacy,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -343,6 +347,48 @@ class AnalyticsStore:
                 )
                 added += 1
         return added
+
+    def _archive_pre_firing_id_legacy(self) -> int:
+        """Move NULL-firing_id rows out of ab_outcomes into archive.
+
+        The 20260424_archive_biased_ab_outcomes migration wiped pre-
+        v2026.5.5 rows. But the gap window between that wipe and the
+        should_inject idempotency fix (commit 2378faa, 2026-04-25) left
+        ~60 rows with NULL firing_id in production. They carry the same
+        re-entry rebias the firing_id work was meant to kill: pre/post
+        hook re-consultations bumped the counter without recording, so
+        the visible split is statistically broken.
+
+        get_ab_outcomes / list_ab_patterns already filter NULL
+        firing_id at read time (B1). This migration is the belt-and-
+        suspenders cleanup so the table itself is honest and the
+        archive preserves the rows for forensics.
+        """
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS ab_outcomes_pre_firing_id_legacy (
+                timestamp REAL NOT NULL,
+                agent_family TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                arm TEXT NOT NULL,
+                pressure_before REAL,
+                pressure_after REAL,
+                followed INTEGER,
+                archived_at REAL NOT NULL
+            )
+        """)
+        now = time.time()
+        self._conn.execute(
+            "INSERT INTO ab_outcomes_pre_firing_id_legacy "
+            "(timestamp, agent_family, pattern, arm, pressure_before, "
+            "pressure_after, followed, archived_at) "
+            "SELECT timestamp, agent_family, pattern, arm, pressure_before, "
+            f"pressure_after, followed, {now} FROM ab_outcomes "
+            "WHERE firing_id IS NULL"
+        )
+        cursor = self._conn.execute(
+            "DELETE FROM ab_outcomes WHERE firing_id IS NULL"
+        )
+        return cursor.rowcount
 
     def _archive_biased_ab_outcomes(self) -> int:
         """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.
