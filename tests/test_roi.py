@@ -279,7 +279,8 @@ def ab_outcomes_db(tmp_path):
     conn.execute("""
         CREATE TABLE ab_outcomes (
             timestamp REAL, agent_family TEXT, pattern TEXT, arm TEXT,
-            pressure_before REAL, pressure_after REAL, followed INTEGER
+            pressure_before REAL, pressure_after REAL, followed INTEGER,
+            firing_id TEXT
         )
     """)
     conn.execute("""
@@ -301,10 +302,16 @@ def ab_outcomes_db(tmp_path):
     # the "collecting" bucket. Treatment reliably drops pressure more.
     rows = []
     for i in range(40):
-        rows.append((now - i, "cc", "bash_retry", "treatment", 0.6, 0.3))
-        rows.append((now - i, "cc", "bash_retry", "control", 0.6, 0.55))
+        rows.append((
+            now - i, "cc", "bash_retry", "treatment", 0.6, 0.3,
+            f"cc-1|bash_retry|t{i}",
+        ))
+        rows.append((
+            now - i, "cc", "bash_retry", "control", 0.6, 0.55,
+            f"cc-1|bash_retry|c{i}",
+        ))
     conn.executemany(
-        "INSERT INTO ab_outcomes VALUES (?, ?, ?, ?, ?, ?, 0)", rows,
+        "INSERT INTO ab_outcomes VALUES (?, ?, ?, ?, ?, ?, 0, ?)", rows,
     )
     # A few helped rows so the legacy field isn't all zero.
     conn.execute(

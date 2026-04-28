@@ -13,19 +13,21 @@ def _seed_treatment_vs_control(store: AnalyticsStore, pattern: str):
     """Seed 35 treatment (Δp≈0.30) vs 35 control (Δp≈0.05) rows."""
     import random
     rng = random.Random(2026)
-    for _ in range(35):
+    for i in range(35):
         before = 0.8
         store.record_ab_outcome(
             agent_family="cc", pattern=pattern, arm="treatment",
             pressure_before=before,
             pressure_after=before - rng.gauss(0.30, 0.05),
+            firing_id=f"cc-1|{pattern}|t{i}",
         )
-    for _ in range(35):
+    for i in range(35):
         before = 0.8
         store.record_ab_outcome(
             agent_family="cc", pattern=pattern, arm="control",
             pressure_before=before,
             pressure_after=before - rng.gauss(0.05, 0.05),
+            firing_id=f"cc-1|{pattern}|c{i}",
         )
 
 
@@ -87,10 +89,11 @@ def test_validate_patterns_filters_by_family(tmp_path):
     store = AnalyticsStore(path=soma_dir / "analytics.db")
     _seed_treatment_vs_control(store, pattern="entropy_drop")
     # Add noise for a different family that shouldn't appear.
-    for _ in range(5):
+    for i in range(5):
         store.record_ab_outcome(
             agent_family="swe", pattern="noise_pattern", arm="treatment",
             pressure_before=0.1, pressure_after=0.0,
+            firing_id=f"swe-1|noise_pattern|{i}",
         )
     store.close()
 
@@ -195,6 +198,7 @@ def test_validate_patterns_definition_pressure_drop_annotates_report(tmp_path):
     store.record_ab_outcome(
         agent_family="cc", pattern="bash_retry", arm="treatment",
         pressure_before=0.7, pressure_after=0.3,
+        firing_id="cc-1|bash_retry|1",
     )
     # And matching guidance_outcomes rows with helped_pressure_drop set.
     for helped in (1, 1, 1, 0):

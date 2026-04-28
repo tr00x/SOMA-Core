@@ -656,6 +656,7 @@ class TestRecordAbOutcomeWriteGuard:
             store.record_ab_outcome(
                 agent_family="test", pattern="entropy_drop", arm="treatment",
                 pressure_before=0.5, pressure_after=0.4, source="test",
+                firing_id="test-1|entropy_drop|1",
             )
             rows = store.get_ab_outcomes("entropy_drop")
             assert len(rows) == 1
@@ -669,6 +670,7 @@ class TestRecordAbOutcomeWriteGuard:
             store.record_ab_outcome(
                 agent_family="cc", pattern="entropy_drop", arm="treatment",
                 pressure_before=0.5, pressure_after=0.4,
+                firing_id="cc-1|entropy_drop|1",
             )
             assert len(store.get_ab_outcomes("entropy_drop")) == 1
         finally:
@@ -782,5 +784,58 @@ def test_record_guidance_outcome_persists_multi_definition(tmp_path: Path):
         ).fetchall()
         assert rows[0] == (1, 1, 0, 1)
         assert rows[1] == (0, None, None, None)
+    finally:
+        store.close()
+
+
+def test_get_ab_outcomes_excludes_legacy_null_firing_id(tmp_path: Path):
+    """Pre-firing_id legacy rows (NULL firing_id) carry the should_inject
+    re-entry bias and must be invisible to validate-patterns. Migration
+    20260424_archive_biased_ab_outcomes wiped pre-v2026.5.5 rows, but
+    rows recorded between that wipe and the firing_id idempotency fix
+    (commit 2378faa) still sit in ab_outcomes with NULL firing_id and
+    poison every Welch's t-test if not filtered at read time."""
+    store = AnalyticsStore(path=tmp_path / "legacy.db")
+    try:
+        # Legacy biased row (NULL firing_id).
+        store.record_ab_outcome(
+            agent_family="cc", pattern="blind_edit", arm="treatment",
+            pressure_before=0.5, pressure_after=0.4,
+        )
+        # Post-fix clean row (firing_id present).
+        store.record_ab_outcome(
+            agent_family="cc", pattern="blind_edit", arm="control",
+            pressure_before=0.5, pressure_after=0.6,
+            firing_id="cc-1|blind_edit|1777300000000000000",
+        )
+        rows = store.get_ab_outcomes("blind_edit")
+        assert len(rows) == 1
+        assert rows[0]["arm"] == "control"
+        assert rows[0]["firing_id"] is not None
+    finally:
+        store.close()
+
+
+def test_list_ab_patterns_excludes_legacy_only_patterns(tmp_path: Path):
+    """A retired pattern (entropy_drop, context) whose only remaining
+    rows are NULL-firing_id legacy must not appear in list_ab_patterns —
+    otherwise the dashboard and CLI offer validation for patterns the
+    code already removed."""
+    store = AnalyticsStore(path=tmp_path / "list.db")
+    try:
+        # entropy_drop only has legacy rows.
+        store.record_ab_outcome(
+            agent_family="cc", pattern="entropy_drop", arm="treatment",
+            pressure_before=0.5, pressure_after=0.4,
+        )
+        # blind_edit has at least one post-fix row.
+        store.record_ab_outcome(
+            agent_family="cc", pattern="blind_edit", arm="control",
+            pressure_before=0.5, pressure_after=0.6,
+            firing_id="cc-2|blind_edit|1777300000000000001",
+        )
+        patterns = store.list_ab_patterns()
+        assert "blind_edit" in patterns
+        assert "entropy_drop" not in patterns
     finally:
         store.close()

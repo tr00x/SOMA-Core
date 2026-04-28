@@ -723,6 +723,7 @@ class AnalyticsStore:
             cursor = self._conn.execute(
                 f"{select}FROM ab_outcomes WHERE pattern = ? "
                 "AND pressure_after IS NOT NULL "
+                "AND firing_id IS NOT NULL "
                 "ORDER BY timestamp DESC",
                 (pattern,),
             )
@@ -730,6 +731,7 @@ class AnalyticsStore:
             cursor = self._conn.execute(
                 f"{select}FROM ab_outcomes WHERE pattern = ? "
                 "AND agent_family = ? AND pressure_after IS NOT NULL "
+                "AND firing_id IS NOT NULL "
                 "ORDER BY timestamp DESC",
                 (pattern, agent_family),
             )
@@ -745,12 +747,15 @@ class AnalyticsStore:
         if agent_family is None:
             cursor = self._conn.execute(
                 "SELECT DISTINCT pattern FROM ab_outcomes "
-                "WHERE pressure_after IS NOT NULL ORDER BY pattern"
+                "WHERE pressure_after IS NOT NULL "
+                "AND firing_id IS NOT NULL "
+                "ORDER BY pattern"
             )
         else:
             cursor = self._conn.execute(
                 "SELECT DISTINCT pattern FROM ab_outcomes "
                 "WHERE agent_family = ? AND pressure_after IS NOT NULL "
+                "AND firing_id IS NOT NULL "
                 "ORDER BY pattern",
                 (agent_family,),
             )

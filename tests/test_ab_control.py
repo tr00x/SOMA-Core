@@ -330,10 +330,12 @@ def test_record_and_fetch_ab_outcome(tmp_path):
     store.record_ab_outcome(
         agent_family="cc", pattern="bash_retry", arm="treatment",
         pressure_before=0.7, pressure_after=0.4, followed=True,
+        firing_id="cc-1|bash_retry|1",
     )
     store.record_ab_outcome(
         agent_family="cc", pattern="bash_retry", arm="control",
         pressure_before=0.7, pressure_after=0.65, followed=False,
+        firing_id="cc-1|bash_retry|2",
     )
     rows = store.get_ab_outcomes(pattern="bash_retry", agent_family="cc")
     assert len(rows) == 2
@@ -351,10 +353,11 @@ def test_invalid_arm_raises(tmp_path):
 
 def test_list_ab_patterns_distinct(tmp_path):
     store = AnalyticsStore(path=tmp_path / "list.db")
-    for pattern in ("a", "a", "b", "c"):
+    for i, pattern in enumerate(("a", "a", "b", "c")):
         store.record_ab_outcome(
             agent_family="cc", pattern=pattern, arm="treatment",
             pressure_before=0.5, pressure_after=0.3,
+            firing_id=f"cc-1|{pattern}|{i}",
         )
     assert store.list_ab_patterns() == ["a", "b", "c"]
 
@@ -365,10 +368,12 @@ def test_get_ab_outcomes_excludes_null_after(tmp_path):
     store.record_ab_outcome(
         agent_family="cc", pattern="x", arm="treatment",
         pressure_before=0.5, pressure_after=None,
+        firing_id="cc-1|x|1",
     )
     store.record_ab_outcome(
         agent_family="cc", pattern="x", arm="control",
         pressure_before=0.5, pressure_after=0.3,
+        firing_id="cc-1|x|2",
     )
     rows = store.get_ab_outcomes(pattern="x", agent_family="cc")
     assert len(rows) == 1
@@ -530,6 +535,7 @@ def test_record_ab_outcome_at_horizon_writes_once(tmp_path):
     pending = {
         "pattern": "bash_retry", "actions_since": 2,
         "ab_arm": "treatment", "pressure_at_injection": 0.7,
+        "firing_id": "cc-horizon|bash_retry|1",
     }
     ok = _record_ab_outcome_at_horizon(
         agent_id="cc-horizon",
@@ -554,6 +560,7 @@ def test_record_ab_outcome_at_horizon_marks_not_followed_when_pressure_flat(tmp_
     pending = {
         "pattern": "context", "actions_since": 2,
         "ab_arm": "control", "pressure_at_injection": 0.6,
+        "firing_id": "cc-flat|context|1",
     }
     _record_ab_outcome_at_horizon(
         agent_id="cc-flat",
@@ -570,10 +577,12 @@ def test_get_ab_outcomes_no_family_filter(tmp_path):
     store.record_ab_outcome(
         agent_family="cc", pattern="x", arm="treatment",
         pressure_before=0.5, pressure_after=0.3,
+        firing_id="cc-1|x|1",
     )
     store.record_ab_outcome(
         agent_family="swe", pattern="x", arm="control",
         pressure_before=0.6, pressure_after=0.5,
+        firing_id="swe-1|x|1",
     )
     rows = store.get_ab_outcomes(pattern="x")
     families = {r["agent_family"] for r in rows}
@@ -882,9 +891,13 @@ def test_i1_firing_id_uses_nanosecond_timestamp_not_action_log_len(
     is clamped at ACTION_LOG_MAX. Verifies _firing_id includes a ns
     timestamp by checking that two same-pattern firings produce
     distinct ids."""
-    # Build two firing ids the way post_tool_use.py does it.
+    # Build two firing ids the way post_tool_use.py does it. Two
+    # back-to-back time.time_ns() calls can return the same value on
+    # macOS (sub-µs resolution clamped by the syscall) — sleep one
+    # microsecond between samples to mirror real firing cadence.
     import time
     fid1 = f"cc-i1|bash_retry|{time.time_ns()}"
+    time.sleep(1e-6)
     fid2 = f"cc-i1|bash_retry|{time.time_ns()}"
     assert fid1 != fid2, "ns-precision firing_ids must be unique"
     # Tail must be ns-scale digits — anything < 1e9 means the old
