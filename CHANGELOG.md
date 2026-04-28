@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026.6.0
+
+Released April 27, 2026.
+
+The first release where the A/B verdict pipeline is statistically
+honest end to end. v2026.5.5 fixed the assignment side; this release
+fixes the *recording* side, the *measurement* side, and cleans up the
+contaminated rows that sat between the two fixes. Treat any A/B
+verdict produced by 2026.5.x as provisional — re-run
+`soma validate-patterns` after upgrading.
+
+### Features
+
+- **Multi-horizon A/B recording.** `ab_outcomes` now carries
+  `pressure_after_h1`, `pressure_after_h5`, `pressure_after_h10` plus
+  the legacy `pressure_after` (h=2). The hook INSERTs at h=2 carrying
+  the buffered h=1 sample, then UPDATEs the same row by `firing_id` at
+  h=5 and h=10. Migrations `20260426_multi_horizon_ab_outcomes` and
+  `20260426_multi_definition_guidance_outcomes` run on first open.
+
+- **Multi-definition guidance helped.** `guidance_outcomes` now
+  records three orthogonal "helped" definitions per row:
+  `helped_pressure_drop`, `helped_tool_switch`,
+  `helped_error_resolved`. The legacy `helped` column stays for
+  backward compat but is demoted to a secondary metric on the
+  dashboard.
+
+- **`validate-patterns` gains `--horizon` and `--definition`.** Pick
+  any of `1`, `2`, `5`, `10`, or `all` for horizon, and any of the
+  three orthogonal definitions for the helped column.
+
+- **Dashboard pattern cards surface the multi-helped breakdown.**
+  A/B verdict stays primary; the three definitions render as a triple
+  underneath so reviewers can see whether the pressure drop, the tool
+  switch, and the error resolution all agree.
+
+### Fixes
+
+- **`should_inject` is idempotent.** A `firing_id` (deterministic per
+  agent × pattern × ns timestamp) lets pre/post hook re-consultations
+  and replay re-runs return the *same* arm without bumping the
+  counter. The prior code silently rebiased the A/B split toward
+  whichever arm a pattern's re-entry rate happened to favour.
+
+- **C1/I1/I2/I3 review batch.** Pre-firing slice in `next_actions`
+  now uses a `firing_ts` timestamp filter instead of a count-based
+  index that could include pre-firing actions. `firing_id`
+  construction switched from `len(cg_action_log)` (collisions on
+  truncation) to `time.time_ns()`. The followthrough RMW block runs
+  inside `circuit_transaction` so a mid-mutation exception rolls
+  back. Timeout-forced h=2 INSERT now uses the buffered pressure
+  sample instead of reading current pressure.
+
+- **Pre-firing_id legacy purge.** Migration
+  `20260427_archive_pre_firing_id_legacy` moves rows with
+  `firing_id IS NULL` (the gap window between v2026.5.5 and the
+  idempotency fix) into `ab_outcomes_pre_firing_id_legacy`.
+  `get_ab_outcomes` and `list_ab_patterns` already filter NULL
+  firing_id at read time as belt-and-suspenders.
+
+- **Retired patterns: `context`, `entropy_drop`.** Both produced
+  noisy fires without a measurable behavioural delta across two
+  validation windows.
+
+- **Hardening.** Atomic writes for predictor / quality /
+  fingerprint / task_tracker state. `flock` around the
+  `circuit_{agent_id}.json` read-modify-write block.
+  Double-wrap guard in `soma.wrap`. Cost-spiral signal unblocked by
+  removing the silent budget-spend clamp. Setup refuses to overwrite
+  a corrupt `settings.json` and writes a `.bak`.
+
 ## 2026.5.5
 
 Released April 23, 2026.
