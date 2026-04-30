@@ -133,7 +133,7 @@ Until the gate is met, the pattern lives under the **"In active iteration"** lab
 
 ### 3. Retiring a pattern is a respectable PR
 
-If a pattern is shipping but the data says it's not helping (or is making things worse), opening a PR to retire it is welcome. Include the firing count, the helped %, and the reason in the commit body. See the `entropy_drop` and `context` retirements in `2026.6.0` for the template.
+If a pattern is shipping but the data says it's not helping (or is making things worse), opening a PR to retire it is welcome. Include the firing count, the helped %, and the reason in the commit body. See the `entropy_drop` and `context` retirements (originally in the now-withdrawn `2026.6.0`, preserved on `main`) for the template.
 
 ### 4. No marketing copy
 

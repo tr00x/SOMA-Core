@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soma-ai"
-version = "2026.6.2"
+version = "2026.4.30"
 description = "Behavioral monitoring and directive control for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -63,7 +63,7 @@ ignore = ["E501"]  # line length handled by formatter
 [tool.hatch.build.targets.wheel]
 packages = ["src/soma"]
 
-# v2026.6.x: skills/ directory was removed in commit 804b365
+# Note: skills/ directory was removed in commit 804b365
 # (deprecated slash-command bundle). _install_skills in
 # cli/setup_claude.py returns False gracefully when no source exists,
 # so the build doesn't need a force-include mapping anymore.

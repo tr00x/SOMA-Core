@@ -1,25 +1,45 @@
 # Changelog
 
-All notable changes to SOMA. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions from `2026.4.0` onward use [CalVer](https://calver.org/) (`YYYY.M.PATCH`); pre-CalVer versions used SemVer.
+All notable changes to SOMA. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## Versioning
 
-Post-`2026.6.2` work-in-progress, not yet released:
+SOMA uses [CalVer](https://calver.org/) in **`YYYY.M.D`** form, where each segment is the date of release (no zero-padding — PEP 440 canonicalizes leading zeros away anyway). Multiple releases on the same date append `.N`: `2026.4.30`, `2026.4.30.1`, `2026.4.30.2`, ….
+
+Versions before `2026.4.30` used a `YYYY.M.PATCH` counter where the middle segment was a sequential minor, *not* a month — confusing, and abandoned in favor of the date scheme. Historic CHANGELOG entries (`2026.6.x`, `2026.5.x`, `2026.4.x` pre-30) reflect that older numbering and are left as-is.
+
+## [2026.4.30] — 2026-04-30
+
+First release under the new date-based CalVer scheme. Aggregates everything done since the deleted `2026.6.2` artifacts.
 
 ### Added
 - `tools/hook_bench.py` — hook-latency benchmark scaffold.
+- `dashboard`: `SOMA_DASHBOARD_TOKEN` env-gated bearer-token auth on every API endpoint. Off by default for backwards compatibility; banner on stderr at startup announces the state.
+- `calibration`: `schema_version` migration framework. Older profiles run through registered migrators; newer-than-build profiles refuse to overwrite and log under `SOMA_DEBUG=1`.
+- `persistence`: `update_engine_state` one-shot helper around the existing `engine_state_transaction` (load → mutate → save under `flock`).
+
+### Changed
+- `versioning`: switch to date-based CalVer (this entry).
 
 ### Fixed
 - `analytics`: SQLite trigger rejects `NULL firing_id` inserts into `ab_outcomes` (defense in depth for the firing-id contract).
 - `analytics`: hot-path indexes on `guidance_outcomes(pattern_key, ts)` and partial `ab_outcomes(pattern, arm)`.
 - `ab`: purge orphaned `ab_counters.json.tmp.*` files on `reset_counters` (left behind by hook subprocesses that crashed between `fsync` and `os.replace`).
 - `cli`: friendly error on invalid `mode` argument; restore wheel build path.
-- `errors`: `log_silent_failure` helper wired into 8 swallow sites in data-integrity / write paths. Gated on `SOMA_DEBUG=1`, silent by default.
+- `errors`: `log_silent_failure` helper wired into ~14 swallow sites in data-integrity / write paths. Gated on `SOMA_DEBUG=1`, silent by default.
 - `config`: moved `config_loader` from `cli/` to top-level `soma.config` (no public API change).
+- `audit`: prune rotated audit logs past `retain_rotated`.
+- `guidance`: 1-hour TTL on the healing-transition cache, on `time.monotonic()` so NTP corrections can't freeze it.
+- `dashboard`: token comparison via `hmac.compare_digest` (closes timing oracle).
+- `persistence`: prune stale agents from `engine_state.json` on load.
+- `tunables`: behavioral thresholds centralized in `soma.tunables`.
 
 ### Removed
 - Deprecated `packages/soma-ai/` TypeScript stub.
 - All in-repo markdown docs (re-authored from scratch).
+
+### Notes
+- All historic GitHub Releases and PyPI artifacts (`2026.4.x`–`2026.6.2`) were withdrawn before this release. Tags and remote releases are gone; the codebase carries forward.
 
 ---
 

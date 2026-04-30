@@ -28,14 +28,15 @@ If you prefer end-to-end encrypted mail, the same address works on Proton's brid
 
 ## Supported versions
 
-| Version line       | Status                                |
-|--------------------|---------------------------------------|
-| `2026.6.x`         | **Supported** — fixes in latest patch |
-| `2026.5.x`         | Critical fixes only                   |
-| `2026.4.x`         | End of life                           |
-| `0.7.x` and older  | Unsupported                           |
+| Version line              | Status                                          |
+|---------------------------|--------------------------------------------------|
+| `2026.4.30` and newer     | **Supported** — fixes in the next dated release |
+| `2026.6.x` (counter-style)| Withdrawn — all artifacts deleted from PyPI     |
+| `2026.5.x`                | Withdrawn                                        |
+| `2026.4.x` (pre-30)       | Withdrawn                                        |
+| `0.7.x` and older         | Unsupported                                      |
 
-The CalVer scheme means a security release is `YYYY.M.PATCH+1` on the current line. There is no separate LTS.
+SOMA uses date-based CalVer (`YYYY.M.D[.N]`). A security release is published as a same-day `.N` bump (e.g. `2026.4.30.1`) or, if the next day, the next dated version. There is no separate LTS.
 
 ---
 
@@ -83,7 +84,7 @@ Tracked here so the security history is auditable. Commit references are stable 
 | 2026-04-29  | Medium   | `cli`            | SQL identifier injection guard for `validate-patterns --definition` (function-level allowlist). |
 | 2026-04-29  | Medium   | `hooks`          | Hook subprocess argument injection via dash-prefixed `file_path` (added rejection + `--` separator). |
 
-These were both shipped in `2026.6.1`. There is no embargoed advisory at the time of writing.
+Both fixes are present in `2026.4.30` (and were originally shipped in the withdrawn `2026.6.1`). There is no embargoed advisory at the time of writing.
 
 ---
 
