@@ -122,21 +122,17 @@ flowchart LR
 One agent gets one pressure scalar. **A graph of agents gets a propagating one.** When `research` shows distress, the pressure flows to whoever owns it — a planner, an orchestrator, a parent session — across trust-weighted directed edges. The orchestrator reacts to a sub-agent's retry storm even when the sub-agent's transcript never reaches it.
 
 ```mermaid
-flowchart TB
-    O([orchestrator]) -.->|p=0.18| Plan
-    O -.->|p=0.18| Scribe
-    Plan([planner])
-    Scribe([scribe])
-    Plan -->|trust 0.9| O
-    Scribe -->|trust 1.0| O
-    Sub([claude_sub<br/>p=0.71]) -->|trust 0.4| Plan
+flowchart BT
+    Sub["claude_sub<br/>p = 0.71"] -->|trust 0.4| Plan["planner<br/>p = 0.28"]
+    Plan -->|trust 0.9| Orch["orchestrator<br/>p = 0.25"]
+    Scribe["scribe<br/>p = 0.05"] -->|trust 1.0| Orch
 
-    classDef calm fill:#0a0a0a,stroke:#333,color:#fff
-    classDef warm fill:#1a1015,stroke:#ff66b3,color:#ff99cc
-    classDef hot  fill:#1a0010,stroke:#ff0080,color:#ff66b3
-    class O,Scribe calm
-    class Plan warm
+    classDef calm fill:#0a0a0a,stroke:#444,color:#fff
+    classDef warm fill:#1a1015,stroke:#ff66b3,color:#ffb3d9
+    classDef hot  fill:#330018,stroke:#ff0080,color:#ff66b3
     class Sub hot
+    class Plan warm
+    class Orch,Scribe calm
 ```
 
 ```python
