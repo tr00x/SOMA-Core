@@ -42,8 +42,10 @@ def soma_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("soma.state.SOMA_DIR", fake_soma)
     # Pre-seed a calibrated profile so the statusline doesn't print
     # the warmup override — tests of the normal line expect real output.
+    # v2026.6.x: family is "cc" (post-alias) since calibration_family
+    # now collapses 'claude-code' → 'cc'.
     from soma.calibration import CalibrationProfile, save_profile
-    save_profile(CalibrationProfile(family="claude-code", action_count=200))
+    save_profile(CalibrationProfile(family="cc", action_count=200))
     # Pin agent ID to "claude-code" in tests so all existing tests work
     monkeypatch.setattr("soma.hooks.common._get_session_agent_id", lambda: "claude-code")
     return fake_soma

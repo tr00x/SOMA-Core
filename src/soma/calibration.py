@@ -78,18 +78,30 @@ LEGACY_FLOORS: dict[str, float | int] = {
 # the same user's next cc-* session inherits calibration.
 _AGENT_FAMILY_RE = re.compile(r"^(?P<family>.+?)[-_][0-9]+$")
 
+# v2026.6.x: explicit alias map for non-session-style ids that
+# conceptually belong to a known family. Without this, the CLI default
+# ``agent_id="claude-code"`` writes ~/.soma/calibration_claude-code.json
+# while hook sessions (``cc-12345``) write ~/.soma/calibration_cc.json
+# — two profiles for the same agent.
+_AGENT_FAMILY_ALIASES = {
+    "claude-code": "cc",
+}
+
 SCHEMA_VERSION = 1
 
 
 def calibration_family(agent_id: str) -> str:
     """Collapse ephemeral session ids into a stable calibration key.
 
-    ``cc-92331`` → ``cc``; ``swe-bench-48`` → ``swe-bench``. Falls back
-    to the full id when no numeric tail is present so user-chosen agent
-    ids keep isolated profiles.
+    ``cc-92331`` → ``cc``; ``swe-bench-48`` → ``swe-bench``;
+    ``claude-code`` → ``cc`` (explicit alias). Falls back to the full
+    id when neither rule matches so user-chosen agent ids keep
+    isolated profiles.
     """
     if not agent_id:
         return "default"
+    if agent_id in _AGENT_FAMILY_ALIASES:
+        return _AGENT_FAMILY_ALIASES[agent_id]
     m = _AGENT_FAMILY_RE.match(agent_id)
     if m:
         return m.group("family")
@@ -311,6 +323,21 @@ def load_profile(agent_id: str) -> CalibrationProfile:
     """
     family = calibration_family(agent_id)
     path = _profile_path(family)
+    # v2026.6.x: one-shot migration of pre-alias profile files.
+    # Users who ran `soma reset`/`soma config` etc. before the
+    # claude-code → cc alias landed have a calibration_claude-code.json
+    # sitting next to (or instead of) their hook-session
+    # calibration_cc.json. Rename it into place so they don't lose
+    # accumulated calibration.
+    if not path.exists():
+        for stale_id in (sid for sid, alias in _AGENT_FAMILY_ALIASES.items() if alias == family):
+            stale_path = _profile_path(stale_id)
+            if stale_path.exists():
+                try:
+                    stale_path.rename(path)
+                    break
+                except OSError:
+                    pass
     if path.exists():
         try:
             data = json.loads(path.read_text())
