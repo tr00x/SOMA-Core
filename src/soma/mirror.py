@@ -332,8 +332,9 @@ class Mirror:
                 return self._call_anthropic(httpx, system, user)
             elif provider == "openai":
                 return self._call_openai(httpx, system, user)
-        except Exception:
-            pass
+        except Exception as e:
+            from soma.errors import log_silent_failure
+            log_silent_failure("mirror._call_provider", e)
         return None
 
     def _detect_provider(self) -> str | None:
@@ -532,8 +533,9 @@ class Mirror:
                 pressure_at_injection=pressure_at_injection,
                 pressure_after=pressure_after,
             )
-        except Exception:
-            pass  # Never crash for analytics
+        except Exception as e:
+            from soma.errors import log_silent_failure
+            log_silent_failure("mirror.record_guidance_outcome", e)
 
         # Prune ineffective patterns
         if record.total >= MIN_ATTEMPTS_FOR_PRUNE and record.success_rate < PRUNE_THRESHOLD:
@@ -603,8 +605,9 @@ class Mirror:
                     "budget_warning",
                     f"{pct}% of token budget used — prioritize remaining work",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            from soma.errors import log_silent_failure
+            log_silent_failure("mirror.check_budget", e)
 
         # ── error_cascade: 3+ errors in last 5 actions ──
         recent = actions[-5:] if len(actions) >= 5 else actions
@@ -710,8 +713,9 @@ class Mirror:
             self._semantic_threshold = float(
                 mirror_cfg.get("semantic_threshold", SEMANTIC_THRESHOLD)
             )
-        except Exception:
-            pass
+        except Exception as e:
+            from soma.errors import log_silent_failure
+            log_silent_failure("mirror._load_semantic_config", e)
 
     # ------------------------------------------------------------------
     # Pattern DB persistence

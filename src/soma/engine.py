@@ -158,15 +158,19 @@ class SOMAEngine:
                 if self._agents[agent_id].action_count > 0:
                     report = generate_session_report(self, agent_id)
                     save_report(report, agent_id)
-        except Exception:
-            pass  # Never crash on shutdown — report generation is best-effort
+        except Exception as e:
+            from soma.errors import log_silent_failure
+            log_silent_failure("engine.shutdown (session_report)", e)
 
         # Flush exporters
         for exporter in self._exporters:
             try:
                 exporter.shutdown()
-            except Exception:
-                pass  # Never crash on shutdown
+            except Exception as e:
+                from soma.errors import log_silent_failure
+                log_silent_failure(
+                    f"engine.shutdown (exporter={type(exporter).__name__})", e
+                )
 
     def register_agent(
         self,
