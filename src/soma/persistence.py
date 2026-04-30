@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import time as _time
+from contextlib import contextmanager
 from pathlib import Path
 
 try:
@@ -15,6 +16,158 @@ except ImportError:
 from soma.engine import SOMAEngine
 from soma.baseline import Baseline
 from soma.budget import MultiBudget
+
+
+@contextmanager
+def engine_state_transaction(
+    path: str | None = None,
+    *,
+    default_budget: dict | None = None,
+):
+    """Atomic read-modify-write of engine_state.json under flock EX.
+
+    v2026.6.x: ``save_engine_state`` and ``load_engine_state`` each
+    take a per-call flock, but they don't cover the
+    read-mutate-write *cycle*. Two concurrent hooks can both load
+    (SH locks are compatible), both mutate in memory, then race to
+    save — last writer wins and the first writer's updates are
+    silently lost.
+
+    This context manager holds flock EX for the entire cycle: load
+    inside the lock, yield the engine for mutation, save inside the
+    same lock, then release. Concurrent callers serialize cleanly.
+
+    On entry: yields an engine reconstituted from disk, or a fresh
+    one if the state file doesn't exist (using ``default_budget``).
+    On exit: writes the engine state back, atomically.
+
+    Falls back to non-locking RMW on systems without ``fcntl`` —
+    same Windows-compat compromise as the rest of persistence.py.
+    """
+    if path is None:
+        path = str(Path.home() / ".soma" / "engine_state.json")
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = target.with_suffix(".lock")
+
+    lock_fh = None
+    if _HAS_FLOCK:
+        lock_fh = open(lock_path, "w")
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+    try:
+        if target.exists():
+            engine = _load_engine_from_path(target)
+            if engine is None:
+                engine = SOMAEngine(
+                    budget=default_budget or {"tokens": 100000},
+                )
+        else:
+            engine = SOMAEngine(
+                budget=default_budget or {"tokens": 100000},
+            )
+        yield engine
+        # Save while still holding the lock — no race window.
+        _save_engine_to_path(engine, target)
+    finally:
+        if lock_fh is not None:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            lock_fh.close()
+
+
+def _load_engine_from_path(p: Path) -> SOMAEngine | None:
+    """Internal helper: parse engine state JSON without taking the lock."""
+    try:
+        state = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return _engine_from_state(state)
+
+
+def _save_engine_to_path(engine: SOMAEngine, target: Path) -> None:
+    """Internal helper: atomic write without taking the lock."""
+    state = _engine_to_state(engine)
+    data = json.dumps(state, indent=2, default=str).encode("utf-8")
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(target.parent), suffix=".tmp", prefix=".soma_state_"
+    )
+    closed = False
+    try:
+        os.write(fd, data)
+        os.fsync(fd)
+        os.close(fd)
+        closed = True
+        os.rename(tmp_path, str(target))
+    except BaseException:
+        if not closed:
+            os.close(fd)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def _engine_to_state(engine: SOMAEngine) -> dict:
+    """Build the JSON-serialisable state dict from an engine."""
+    state = {
+        "agents": {},
+        "budget": engine.budget.to_dict(),
+        "graph": engine._graph.to_dict(),
+        "learning": engine._learning.to_dict(),
+        "custom_weights": engine._custom_weights,
+        "custom_thresholds": engine._custom_thresholds,
+    }
+    for agent_id, s in engine._agents.items():
+        if agent_id == "default":
+            continue
+        state["agents"][agent_id] = {
+            "baseline": s.baseline.to_dict(),
+            "action_count": s.action_count,
+            "known_tools": s.known_tools,
+            "baseline_vector": s.baseline_vector,
+            "level": s.mode.name,
+            "last_active": s._last_active,
+        }
+    return state
+
+
+def _engine_from_state(state: dict) -> SOMAEngine:
+    """Build an engine from a state dict."""
+    budget_data = state.get("budget", {})
+    engine = SOMAEngine(
+        budget=budget_data.get("limits", {"tokens": 100000}),
+        custom_weights=state.get("custom_weights"),
+        custom_thresholds=state.get("custom_thresholds"),
+    )
+    engine._budget = MultiBudget.from_dict(budget_data)
+
+    from soma.graph import PressureGraph
+    graph_data = state.get("graph")
+    if graph_data:
+        engine._graph = PressureGraph.from_dict(graph_data)
+
+    from soma.learning import LearningEngine
+    learning_data = state.get("learning")
+    if learning_data:
+        engine._learning = LearningEngine.from_dict(learning_data)
+
+    for agent_id, agent_state in state.get("agents", {}).items():
+        engine.register_agent(agent_id)
+        s = engine._agents[agent_id]
+        s.baseline = Baseline.from_dict(agent_state.get("baseline", {}))
+        s.action_count = agent_state.get("action_count", 0)
+        s.known_tools = agent_state.get("known_tools", [])
+        s.baseline_vector = agent_state.get("baseline_vector")
+        s._last_active = agent_state.get("last_active", _time.time())
+        from soma.types import ResponseMode
+        level_name = agent_state.get("level", "OBSERVE")
+        try:
+            s.mode = ResponseMode[level_name]
+        except (KeyError, ValueError):
+            s.mode = ResponseMode.OBSERVE
+    return engine
 
 
 def save_engine_state(engine: SOMAEngine, path: str | None = None) -> None:
