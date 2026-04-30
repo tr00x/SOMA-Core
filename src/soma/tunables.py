@@ -74,3 +74,14 @@ SILENCE_MIN_FIRES: int = 20
 #: from analytics.db. Decoupled from silence refresh because
 #: validation is heavier (Welch's t-test over all outcome rows).
 REFUTED_REFRESH_INTERVAL: int = 100
+
+
+# ── Persistence retention ──────────────────────────────────────────
+
+#: Drop agents from engine_state.json whose ``last_active`` is older
+#: than this. Each Claude Code PID becomes an agent_id; without
+#: pruning ``cc-12345`` entries accumulate indefinitely as users
+#: open and close sessions. 168 hours = 7 days, plenty for legit
+#: long-lived sessions to keep their state, short enough that a
+#: month of dead PIDs doesn't bloat the state file.
+AGENT_RETENTION_HOURS: float = 168.0

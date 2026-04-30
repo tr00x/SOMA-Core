@@ -161,14 +161,26 @@ def _engine_from_state(state: dict) -> SOMAEngine:
     if learning_data:
         engine._learning = LearningEngine.from_dict(learning_data)
 
+    # v2026.6.x: prune stale agents at load time. Each Claude Code PID
+    # becomes a unique agent_id; without this, engine_state.json grows
+    # unboundedly as users open and close sessions. Threshold lives in
+    # tunables (default 168h = 7 days). Agents missing last_active
+    # (legacy state files from before that field was added) are kept
+    # so an upgrade doesn't wipe pre-existing state.
+    from soma.tunables import AGENT_RETENTION_HOURS
+    cutoff = _time.time() - AGENT_RETENTION_HOURS * 3600
+
     for agent_id, agent_state in state.get("agents", {}).items():
+        last_active = agent_state.get("last_active")
+        if last_active is not None and last_active < cutoff:
+            continue  # stale — drop on load, next save reflects the trim
         engine.register_agent(agent_id)
         s = engine._agents[agent_id]
         s.baseline = Baseline.from_dict(agent_state.get("baseline", {}))
         s.action_count = agent_state.get("action_count", 0)
         s.known_tools = agent_state.get("known_tools", [])
         s.baseline_vector = agent_state.get("baseline_vector")
-        s._last_active = agent_state.get("last_active", _time.time())
+        s._last_active = last_active if last_active is not None else _time.time()
         from soma.types import ResponseMode
         level_name = agent_state.get("level", "OBSERVE")
         try:
@@ -296,8 +308,19 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
     if learning_data:
         engine._learning = LearningEngine.from_dict(learning_data)
 
-    # Restore agents
+    # Restore agents — v2026.6.x: prune stale ones at load time.
+    # Each Claude Code PID becomes a unique agent_id; without this,
+    # engine_state.json grows unboundedly. Threshold lives in tunables
+    # (default 168h = 7 days). Agents missing last_active (legacy
+    # state files) are kept so an upgrade doesn't wipe pre-existing
+    # state.
+    from soma.tunables import AGENT_RETENTION_HOURS
+    cutoff = _time.time() - AGENT_RETENTION_HOURS * 3600
+
     for agent_id, agent_state in state.get("agents", {}).items():
+        last_active = agent_state.get("last_active")
+        if last_active is not None and last_active < cutoff:
+            continue
         engine.register_agent(agent_id)
         s = engine._agents[agent_id]
         s.baseline = Baseline.from_dict(agent_state.get("baseline", {}))
@@ -306,7 +329,7 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
         s.baseline_vector = agent_state.get("baseline_vector")
 
         # Restore last_active
-        s._last_active = agent_state.get("last_active", _time.time())
+        s._last_active = last_active if last_active is not None else _time.time()
 
         # Restore mode
         from soma.types import ResponseMode
