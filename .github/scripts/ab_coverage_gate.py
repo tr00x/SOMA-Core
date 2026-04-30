@@ -30,7 +30,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-MIN_PAIRS = 30
+MIN_PAIRS = 15
 TOP_N = 5
 DEFAULT_DB = Path.home() / ".soma" / "analytics.db"
 

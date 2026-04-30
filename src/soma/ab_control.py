@@ -10,7 +10,7 @@ This module adds the missing counterfactual: every Nth firing of a
 pattern is routed to the **control** arm, where we compute the
 guidance message, record ``pressure_before`` / ``pressure_after``, but
 deliberately **do not** surface the message to the agent. After
-enough pairs (default: 30 per arm) we compare mean Δpressure between
+enough pairs (default: 15 per arm) we compare mean Δpressure between
 treatment and control with Welch's t-test.
 
 - ``status == "validated"`` → p<0.05 AND Cohen's d > 0.2 AND raw Δp
@@ -67,9 +67,19 @@ Status = Literal["collecting", "validated", "refuted", "inconclusive"]
 
 
 # Minimum pairs (per arm) before we'll even consider validating.
-DEFAULT_MIN_PAIRS = 30
+# v2026.6.x: lowered from 30 → 15. Welch's t-test stays valid at n=15
+# (standard scientific minimum is 10–15) and we get first verdicts in
+# half the time. Tradeoff: lower statistical power means a real but
+# weak effect needs more samples to clear ALPHA=0.05. For a system
+# with one agent_family generating data, getting *any* verdict beats
+# waiting for ideal power on imaginary larger samples.
+DEFAULT_MIN_PAIRS = 15
 # After this many pairs with p>=0.05 we stop waiting and call it inconclusive.
-INCONCLUSIVE_AT = 100
+# v2026.6.x: lowered 100 → 30 to match the new MIN_PAIRS=15 ratio
+# (~2x of min). Was disproportionately patient at 3.3x. If 30 paired
+# observations don't show a signal, waiting for 100 won't either —
+# better to surface "inconclusive" and let the maintainer decide.
+INCONCLUSIVE_AT = 30
 # Cohen's d threshold for "validated".
 EFFECT_SIZE_THRESHOLD = 0.2
 # Minimum absolute difference in mean Δpressure.

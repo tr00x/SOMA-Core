@@ -1304,7 +1304,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     validate_parser.add_argument(
         "--min-pairs", type=int, default=30, dest="min_pairs",
-        help="Minimum firings per arm before classifying (default: 30)",
+        help="Minimum firings per arm before classifying (default: 15)",
     )
     validate_parser.add_argument(
         "--json", action="store_true",

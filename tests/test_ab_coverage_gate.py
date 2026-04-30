@@ -79,6 +79,9 @@ def test_passes_when_all_top_patterns_have_30_30(tmp_path):
 
 
 def test_fails_when_one_pattern_short_on_treatment(tmp_path):
+    """v2026.6.x: gate threshold lowered to 15 pairs/arm. Test now
+    seeds (14, 15) instead of (29, 30) to keep the short-vs-meeting
+    distinction tight against the new threshold."""
     db = tmp_path / "analytics.db"
     _make_db(
         db,
@@ -87,15 +90,15 @@ def test_fails_when_one_pattern_short_on_treatment(tmp_path):
             "context": 70, "budget": 60,
         },
         arms={
-            "bash_retry": (29, 30), "cost_spiral": (30, 30),
-            "blind_edit": (30, 30), "context": (30, 30),
-            "budget": (30, 30),
+            "bash_retry": (14, 15), "cost_spiral": (15, 15),
+            "blind_edit": (15, 15), "context": (15, 15),
+            "budget": (15, 15),
         },
     )
     report = gate.build_report(db)
     assert not report.passes
     shorted = next(p for p in report.patterns if p.pattern == "bash_retry")
-    assert shorted.treatment == 29
+    assert shorted.treatment == 14
     assert not shorted.passes
 
 
@@ -104,7 +107,7 @@ def test_fails_when_one_pattern_short_on_control(tmp_path):
     _make_db(
         db,
         fires={"bash_retry": 100},
-        arms={"bash_retry": (30, 29)},
+        arms={"bash_retry": (15, 14)},
     )
     report = gate.build_report(db)
     assert not report.passes
