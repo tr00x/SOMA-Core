@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026.6.1
+
+Released April 29, 2026.
+
+Hotfix release after the 2026-04-28 multi-agent audit. Four code
+fixes plus a deferred housekeeping step (PyPI token rotation, queued
+for after release — no user impact, no urgency).
+
+### Security
+
+- **Hook subprocess argument injection (CVE-class).** `_lint_python_file`
+  and `_validate_js_file` now reject flag-shaped paths and pass `--`
+  before the path so agent-controlled `file_path` cannot be
+  interpreted as a `ruff --config=` or `node --require=` flag. Without
+  the fix, a `Write` or `Edit` with `file_path = "--config=/tmp/evil.toml.py"`
+  would invoke `ruff` with the attacker's TOML, enabling code
+  execution on every PostToolUse hook.
+
+- **Defense-in-depth allowlist for `validate-patterns --definition`.**
+  Argparse already restricts the CLI flag to a known set, but the
+  function-level frozen-set guard ensures programmatic callers
+  (scripts, replay tools, future API endpoints) cannot bypass it and
+  reach the f-string SQL identifier interpolation.
+
+### Correctness
+
+- **Coverage gate now agrees with `validate-patterns`.** `_arm_counts`
+  in `ab_coverage_gate.py` excludes rows with `firing_id IS NULL`,
+  matching the t-test's filter. Gate-pass and verdict-ready can no
+  longer disagree on which rows count.
+
+- **h=2 INSERT requires non-NULL h=1.** Same bias class as the v2026.6.0
+  NULL-`firing_id` fix, now on the `pressure_after_h1` column. If h=1
+  was never buffered (timeout-forced jump from 0 → 2, fast recovery,
+  replayed pending dicts), the row is dropped instead of INSERTed
+  with NULL h1. Losing one paired observation is strictly safer than
+  poisoning the horizon-1 t-test population.
+
+### Housekeeping (post-release)
+
+- PyPI token rotation queued — no user impact, low urgency.
+
 ## 2026.6.0
 
 Released April 27, 2026.
