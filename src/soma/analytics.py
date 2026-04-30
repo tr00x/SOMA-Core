@@ -46,6 +46,15 @@ class AnalyticsStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # v2026.6.2: under concurrent hook subprocesses default
+        # busy_timeout=0 yields instant SQLITE_BUSY, the outer except
+        # swallows it, and the analytics row is silently dropped.
+        # 5000ms is plenty for any realistic write.
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        # WAL + synchronous=NORMAL is the canonical fast+durable combo;
+        # FULL fsyncs every commit (5–15ms on APFS) without buying any
+        # safety we don't already get from WAL.
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS actions (
                 timestamp REAL NOT NULL,
