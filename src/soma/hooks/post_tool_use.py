@@ -468,6 +468,18 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         if engine is None:
             return
 
+        # v2026.6.x: opportunistic GC of stale circuit_*.json files. ~1%
+        # sample so ~100 hooks per session triggers a sweep on average,
+        # which is plenty given mtime-based 48h retention. Best-effort —
+        # failures inside gc_stale_circuit_files never propagate.
+        try:
+            import secrets
+            if secrets.randbelow(100) == 0:
+                from soma.hooks.common import gc_stale_circuit_files
+                gc_stale_circuit_files(max_age_hours=48.0)
+        except Exception:
+            pass
+
         # Lazy-init Mirror once per process
         if _mirror is None:
             try:

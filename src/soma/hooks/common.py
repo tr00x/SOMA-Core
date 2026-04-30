@@ -854,6 +854,50 @@ def _circuit_path(agent_id: str = "") -> Path:
     return SOMA_DIR / f"circuit_{aid}.json"
 
 
+def gc_stale_circuit_files(max_age_hours: float = 48.0) -> int:
+    """Remove circuit_*.json (and matching .lock siblings) older than
+    ``max_age_hours``.
+
+    Each Claude Code invocation writes ``circuit_cc-<pid>.json`` and
+    a paired ``.lock`` file. PIDs are never reused for the same
+    session, and we never GC them — left running, ~/.soma/ accumulates
+    one stale file pair per killed session forever.
+
+    mtime-based pruning is portable (no PID-liveness check needed)
+    and conservative: 48h is long enough for legit long-running
+    sessions to keep their state, short enough that a week of dead
+    sessions doesn't pile up.
+
+    Returns the number of files removed (json + lock both count).
+    Best-effort — failures are silent so this never crashes the hook.
+    """
+    if not SOMA_DIR.exists():
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    try:
+        for path in SOMA_DIR.glob("circuit_*.json"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed += 1
+                    # Also remove the paired .lock if present.
+                    lock = path.with_suffix(".lock")
+                    if lock.exists():
+                        try:
+                            lock.unlink()
+                            removed += 1
+                        except OSError:
+                            pass
+            except OSError:
+                # Race with another process or permission issue —
+                # skip and keep going.
+                continue
+    except OSError:
+        return removed
+    return removed
+
+
 def _read_circuit_data(path: Path) -> dict:
     if not path.exists():
         return {}
