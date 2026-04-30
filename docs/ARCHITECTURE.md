@@ -322,7 +322,7 @@ Hooks let SOMA actually *change* what the agent does next. OTLP only emits — i
 
 ### Why kill patterns instead of accumulating them
 
-Empirically, a high-volume pattern with a weak helped-rate masks the patterns underneath it in the agent's attention budget. The agent doesn't read every guidance message equally — fatigue is real. Removing `_stats` (the highest-firing pattern in v2026.5.0) measurably improved the helped-rate of every other pattern below it.
+Empirically, a high-volume pattern with a weak helped-rate masks the patterns underneath it in the agent's attention budget. The agent doesn't read every guidance message equally — fatigue is real. Removing `_stats` (then the highest-firing pattern, dropped 2026-04-19) measurably improved the helped-rate of every other pattern below it.
 
 ---
 
