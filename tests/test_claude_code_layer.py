@@ -48,6 +48,13 @@ def soma_dir(tmp_path, monkeypatch):
     save_profile(CalibrationProfile(family="cc", action_count=200))
     # Pin agent ID to "claude-code" in tests so all existing tests work
     monkeypatch.setattr("soma.hooks.common._get_session_agent_id", lambda: "claude-code")
+    # v2026.6.x: pin guidance thresholds to the documented defaults so
+    # tests don't pick up the dev-repo's soma.toml (which has block=0.6
+    # and changes the threshold semantics for `test_moderate_pressure_*`).
+    monkeypatch.setattr(
+        "soma.hooks.common.get_guidance_thresholds",
+        lambda: {"guide": 0.25, "warn": 0.50, "block": 0.75},
+    )
     return fake_soma
 
 
