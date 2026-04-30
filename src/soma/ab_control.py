@@ -293,15 +293,16 @@ def _save_persisted(
         })
         # Use a per-pid+thread tmp suffix so two concurrent writers don't
         # stomp each other's tmp file before either gets to os.replace.
-        import os as _os
+        # The fcntl lock in _counter_lock() serializes most writers; the
+        # tmp suffix is belt-and-suspenders for the no-fcntl fallback.
         tmp = _COUNTERS_PATH.with_name(
-            f"{_COUNTERS_PATH.name}.tmp.{_os.getpid()}.{threading.get_ident()}"
+            f"{_COUNTERS_PATH.name}.tmp.{os.getpid()}.{threading.get_ident()}"
         )
         with open(tmp, "w") as f:
             f.write(payload)
             f.flush()
-            _os.fsync(f.fileno())
-        _os.replace(str(tmp), str(_COUNTERS_PATH))
+            os.fsync(f.fileno())
+        os.replace(str(tmp), str(_COUNTERS_PATH))
     except OSError:
         pass
 
