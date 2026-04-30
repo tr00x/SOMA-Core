@@ -175,15 +175,13 @@ class TestSettingsSafety:
 
 
 class TestSkillsPackaging:
-    """P2.10 — slash-command skills must ship inside the wheel."""
+    """v2026.6.x: skills/ directory was removed in commit 804b365.
+    The packaging mapping is gone too. _install_skills in
+    cli/setup_claude.py returns False gracefully when no source
+    exists, so this is now a "no force-include" assertion to keep the
+    invariant pinned in case someone re-adds a stale path."""
 
-    def test_pyproject_force_includes_skills(self):
-        """pyproject.toml must map skills/ into src/soma/_skills in the wheel.
-
-        Without this mapping `pip install soma-ai` leaves /soma:* slash
-        commands uninstallable — `_install_skills` silently no-ops on the
-        bundled-location check and the dev-repo fallback never matches.
-        """
+    def test_pyproject_does_not_force_include_missing_skills(self):
         data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
         fi = (
             data.get("tool", {})
@@ -193,9 +191,10 @@ class TestSkillsPackaging:
             .get("wheel", {})
             .get("force-include", {})
         )
-        assert fi.get("skills") == "src/soma/_skills", (
-            "wheel build must force-include skills/ into src/soma/_skills — "
-            "otherwise pip users have no slash commands"
+        assert "skills" not in fi, (
+            "pyproject.toml force-includes 'skills' but the directory "
+            "was deleted in 804b365. Either restore skills/ or drop "
+            "the mapping."
         )
 
     def test_repo_skills_tree_has_expected_skills(self):

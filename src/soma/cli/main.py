@@ -962,16 +962,26 @@ def _cmd_mode(args: argparse.Namespace) -> None:
     )
 
     if args.mode_name is None:
-        # Show current mode and available modes
+        # Show current preset and available presets.
         config = load_config()
         current = config.get("soma", {}).get("mode", "relaxed")
-        print(f"  Current mode: {current}")
+        # `soma.mode` in config can hold either a *preset* name
+        # (strict/relaxed/autonomous) or an *engine* mode
+        # (observe/guide/reflex). Disambiguate so the user doesn't
+        # see "Current mode: guide" then try `soma mode guide` and
+        # crash.
+        is_preset = current in MODE_PRESETS
+        if is_preset:
+            print(f"  Current preset: {current}")
+        else:
+            print(f"  Current engine mode: {current}")
+            print("  (no preset applied — pick one below)")
         print()
         for name, preset in MODE_PRESETS.items():
             autonomy = preset["agents"]["claude-code"]["autonomy"]
             block_threshold = preset["thresholds"]["block"]
             verbosity = preset["hooks"]["verbosity"]
-            marker = " <--" if name == current else ""
+            marker = " <--" if (is_preset and name == current) else ""
             print(f"  {name:<12} autonomy={autonomy}, block={block_threshold:.0%}, verbosity={verbosity}{marker}")
         print()
         print("  Usage: soma mode <strict|relaxed|autonomous>")
@@ -979,7 +989,14 @@ def _cmd_mode(args: argparse.Namespace) -> None:
 
     mode_name = args.mode_name
     config = load_config()
-    config = apply_mode(config, mode_name)
+    try:
+        config = apply_mode(config, mode_name)
+    except ValueError as e:
+        # v2026.6.x: don't crash with a traceback; print the helpful
+        # message and exit non-zero so scripts can detect failure.
+        print(f"  Error: {e}")
+        print(f"  Usage: soma mode <{' | '.join(MODE_PRESETS)}>")
+        sys.exit(1)
     config.setdefault("soma", {})["mode"] = mode_name
     save_config(config)
     print(f"  Mode set to: {mode_name}")
