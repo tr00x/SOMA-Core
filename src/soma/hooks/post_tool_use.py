@@ -54,13 +54,15 @@ def _is_real_production_agent(agent_id: str) -> bool:
 # treatment-vs-control comparison: the old design recorded treatment
 # at +1 action (fast resolution on recovery signal) and control at +5
 # (timeout fallback), which let pressure decay alone make control
-# look better than treatment. Fixed at 2 to match _PRESSURE_FALSE_ACTIONS.
-_AB_MEASUREMENT_HORIZON = 2
-
-# Simple pressure-drop threshold used as the A/B "recovered" flag. We
-# deliberately do NOT use the strict followthrough semantic here —
-# that would re-introduce the same timing bias via a different door.
-_AB_RECOVERED_DELTA = 0.15
+# look better than treatment.
+#
+# v2026.6.x: AB_MEASUREMENT_HORIZON / AB_RECOVERED_DELTA moved to
+# soma.tunables. Module-level underscore aliases preserved for the
+# internal callers that referenced them by their private name.
+from soma.tunables import (  # noqa: E402
+    AB_MEASUREMENT_HORIZON as _AB_MEASUREMENT_HORIZON,
+    AB_RECOVERED_DELTA as _AB_RECOVERED_DELTA,
+)
 
 
 def _record_guidance_outcome(

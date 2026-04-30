@@ -32,24 +32,24 @@ from soma.state import SOMA_DIR
 Phase = Literal["warmup", "calibrated", "adaptive"]
 
 # Phase boundaries. Exposed as module constants so tests and dashboard
-# can reference the same source of truth. Lowered in v2026.5.3 to match
-# real-world session-length distribution (median ~50 actions).
-WARMUP_EXIT_ACTIONS = 30
+# can reference the same source of truth.
+# v2026.6.x: WARMUP_EXIT_ACTIONS, SILENCE_MIN_FIRES, REFUTED_REFRESH_INTERVAL
+# moved to soma.tunables — re-exported below for backward compatibility.
+from soma.tunables import (  # noqa: F401, E402
+    REFUTED_REFRESH_INTERVAL,
+    SILENCE_MIN_FIRES,
+    WARMUP_EXIT_ACTIONS,
+)
+
 CALIBRATED_EXIT_ACTIONS = 200
 
 # Auto-silence gate (adaptive phase).
-SILENCE_MIN_FIRES = 20
 SILENCE_HELPED_RATE = 0.20
 UNSILENCE_HELPED_RATE = 0.40
 # How often (in actions) to re-query analytics and refresh the silence
 # list during the adaptive phase. Query is indexed by pattern so it's
 # cheap, but we still only pay it once per N actions.
 SILENCE_REFRESH_INTERVAL = 100
-
-# How often to re-run A/B validation and refresh the refuted-pattern
-# list. Decoupled from silence refresh because validation is heavier
-# (Welch's t-test over all outcome rows per pattern).
-REFUTED_REFRESH_INTERVAL = 100
 
 # Patterns we track for auto-silence. Keep in sync with _PATTERN_PRIORITY
 # in contextual_guidance — hardcoded here to avoid a circular import.

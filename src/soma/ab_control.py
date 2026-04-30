@@ -66,35 +66,16 @@ Arm = Literal["treatment", "control"]
 Status = Literal["collecting", "validated", "refuted", "inconclusive"]
 
 
-# Minimum pairs (per arm) before we'll even consider validating.
-# v2026.6.x: lowered from 30 → 15. Welch's t-test stays valid at n=15
-# (standard scientific minimum is 10–15) and we get first verdicts in
-# half the time.
-#
-# Achieved power numbers (so the next maintainer doesn't relitigate):
-#   d=0.2 (small effect): ~22% — most weak-but-real effects exit as
-#     `inconclusive` at INCONCLUSIVE_AT=30 rather than `validated`.
-#   d=0.5 (medium effect): ~50% — coin-flip on whether n=15 catches it;
-#     ~95% by n=30, so the inconclusive branch will catch real medium
-#     effects at the second checkpoint.
-#   d=0.8 (large effect): ~85% at n=15.
-#
-# Tradeoff is honest: we exchange power for time-to-first-signal. For
-# a system with one agent_family generating data, getting *any*
-# verdict beats waiting for ideal power on imaginary larger samples.
-DEFAULT_MIN_PAIRS = 15
-# After this many pairs with p>=0.05 we stop waiting and call it inconclusive.
-# v2026.6.x: lowered 100 → 30 to match the new MIN_PAIRS=15 ratio
-# (~2x of min). Was disproportionately patient at 3.3x. If 30 paired
-# observations don't show a signal, waiting for 100 won't either —
-# better to surface "inconclusive" and let the maintainer decide.
-INCONCLUSIVE_AT = 30
-# Cohen's d threshold for "validated".
-EFFECT_SIZE_THRESHOLD = 0.2
-# Minimum absolute difference in mean Δpressure.
-DELTA_DIFFERENCE_THRESHOLD = 0.1
-# Two-sided alpha.
-ALPHA = 0.05
+# v2026.6.x: thresholds moved to soma.tunables (single source of
+# truth). Re-exported here so existing callers
+# (`from soma.ab_control import DEFAULT_MIN_PAIRS`) keep working.
+from soma.tunables import (  # noqa: F401, E402
+    ALPHA,
+    DEFAULT_MIN_PAIRS,
+    DELTA_DIFFERENCE_THRESHOLD,
+    EFFECT_SIZE_THRESHOLD,
+    INCONCLUSIVE_AT,
+)
 
 # Block-randomization: when |T−C| ≥ this many, the next firing is forced
 # into the minority arm. 2 keeps bursts within ±1 pair of each other
