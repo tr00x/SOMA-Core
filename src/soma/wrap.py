@@ -20,13 +20,20 @@ import functools
 from typing import Any
 
 from soma.engine import SOMAEngine
+from soma.errors import SOMAError
 from soma.types import Action, ResponseMode
 from soma.recorder import SessionRecorder
 from soma.models import get_context_window
 
 
-class SomaBlocked(Exception):
-    """Raised when SOMA blocks an API call due to high pressure."""
+class SomaBlocked(SOMAError):
+    """Raised when SOMA blocks an API call due to high pressure.
+
+    v2026.6.2: now inherits from SOMAError (was raw Exception) so SDK
+    consumers can `except SOMAError` and catch the entire SOMA family
+    in one clause. proxy.SOMABlockError already followed this pattern
+    — the two classes are now consistent.
+    """
     def __init__(self, agent_id: str, level: ResponseMode, pressure: float):
         self.agent_id = agent_id
         self.level = level
@@ -37,8 +44,11 @@ class SomaBlocked(Exception):
         )
 
 
-class SomaBudgetExhausted(Exception):
-    """Raised when SOMA blocks an API call due to exhausted budget."""
+class SomaBudgetExhausted(SOMAError):
+    """Raised when SOMA blocks an API call due to exhausted budget.
+
+    v2026.6.2: SOMAError parent (was raw Exception).
+    """
     def __init__(self, dimension: str):
         self.dimension = dimension
         super().__init__(f"SOMA budget exhausted: {dimension}")

@@ -59,8 +59,10 @@ def test_save_persisted_no_partial_file_on_concurrent_writes(tmp_path: Path) -> 
 
         threads = [threading.Thread(target=reader_loop) for _ in range(2)]
         threads += [threading.Thread(target=writer_loop, args=(n,)) for n in range(4)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         assert not torn, (
             f"reader observed {len(torn)} torn-JSON snapshots — "
