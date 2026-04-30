@@ -184,6 +184,10 @@ class AnalyticsStore:
             "20260427_archive_pre_firing_id_legacy",
             self._archive_pre_firing_id_legacy,
         )
+        self._apply_migration(
+            "20260429_hotpath_indexes",
+            self._add_hotpath_indexes,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -398,6 +402,43 @@ class AnalyticsStore:
             "DELETE FROM ab_outcomes WHERE firing_id IS NULL"
         )
         return cursor.rowcount
+
+    def _add_hotpath_indexes(self) -> int:
+        """v2026.6.x: indexes that match the live read patterns.
+
+        Two queries dominated the dashboard / release-gate hot path:
+
+        - ``SELECT … FROM guidance_outcomes WHERE pattern_key IN (…)``
+          plus ``GROUP BY pattern_key`` — 5+ dashboard call sites and
+          ``ab_coverage_gate.py`` use this. Without an index it's a
+          full-table scan, fine at 80 rows but lethal at 80k.
+
+        - ``SELECT arm, COUNT(*) FROM ab_outcomes
+          WHERE pattern = ? AND firing_id IS NOT NULL GROUP BY arm`` —
+          identical filter shape in validate-patterns and the gate.
+          A *partial* index on (pattern, arm) WHERE firing_id IS NOT
+          NULL is the exact match: smaller than a full index, and the
+          planner can use it to satisfy GROUP BY arm without a temp
+          b-tree.
+
+        Returns the number of indexes created (0 if both already
+        existed).
+        """
+        created = 0
+        for stmt in (
+            "CREATE INDEX IF NOT EXISTS idx_guidance_outcomes_pattern_key "
+            "ON guidance_outcomes(pattern_key, timestamp DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_outcomes_pattern_arm "
+            "ON ab_outcomes(pattern, arm) WHERE firing_id IS NOT NULL",
+        ):
+            before = self._conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND sql=?",
+                (stmt.replace("CREATE INDEX IF NOT EXISTS ", "CREATE INDEX "),),
+            ).fetchone()[0]
+            self._conn.execute(stmt)
+            if not before:
+                created += 1
+        return created
 
     def _archive_biased_ab_outcomes(self) -> int:
         """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.
