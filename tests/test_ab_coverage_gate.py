@@ -34,7 +34,8 @@ def _make_db(path: Path, fires: dict[str, int], arms: dict[str, tuple[int, int]]
         "CREATE TABLE ab_outcomes ("
         "timestamp REAL NOT NULL, agent_family TEXT NOT NULL, "
         "pattern TEXT NOT NULL, arm TEXT NOT NULL, "
-        "pressure_before REAL, pressure_after REAL, followed INTEGER)"
+        "pressure_before REAL, pressure_after REAL, followed INTEGER, "
+        "firing_id TEXT)"
     )
     ts = 1_000_000.0
     for pattern, n in fires.items():
@@ -46,13 +47,13 @@ def _make_db(path: Path, fires: dict[str, int], arms: dict[str, tuple[int, int]]
     for pattern, (t, c) in arms.items():
         for i in range(t):
             conn.execute(
-                "INSERT INTO ab_outcomes VALUES (?, 'cc', ?, 'treatment', 0, 0, 0)",
-                (ts + i, pattern),
+                "INSERT INTO ab_outcomes VALUES (?, 'cc', ?, 'treatment', 0, 0, 0, ?)",
+                (ts + i, pattern, f"fid-{pattern}-t-{i}"),
             )
         for i in range(c):
             conn.execute(
-                "INSERT INTO ab_outcomes VALUES (?, 'cc', ?, 'control', 0, 0, 0)",
-                (ts + i, pattern),
+                "INSERT INTO ab_outcomes VALUES (?, 'cc', ?, 'control', 0, 0, 0, ?)",
+                (ts + i, pattern, f"fid-{pattern}-c-{i}"),
             )
     conn.commit()
     conn.close()
@@ -167,7 +168,8 @@ def test_reset_ts_filter_ignores_pre_reset_fires(tmp_path):
         "CREATE TABLE ab_outcomes ("
         "timestamp REAL NOT NULL, agent_family TEXT NOT NULL, "
         "pattern TEXT NOT NULL, arm TEXT NOT NULL, "
-        "pressure_before REAL, pressure_after REAL, followed INTEGER)"
+        "pressure_before REAL, pressure_after REAL, followed INTEGER, "
+        "firing_id TEXT)"
     )
     # Stale, pre-reset pattern with lots of fires but no A/B data — the
     # filter must skip it so it doesn't poison the top-5.
@@ -180,12 +182,14 @@ def test_reset_ts_filter_ignores_pre_reset_fires(tmp_path):
         conn.execute(
             "INSERT INTO guidance_outcomes VALUES (2000.0, 'cc', 's', 'bash_retry', 0, 0, 0, 'hook')"
         )
-    for _ in range(30):
+    for i in range(30):
         conn.execute(
-            "INSERT INTO ab_outcomes VALUES (2000.0, 'cc', 'bash_retry', 'treatment', 0, 0, 0)"
+            "INSERT INTO ab_outcomes VALUES (2000.0, 'cc', 'bash_retry', 'treatment', 0, 0, 0, ?)",
+            (f"fid-bash_retry-t-{i}",),
         )
         conn.execute(
-            "INSERT INTO ab_outcomes VALUES (2000.0, 'cc', 'bash_retry', 'control', 0, 0, 0)"
+            "INSERT INTO ab_outcomes VALUES (2000.0, 'cc', 'bash_retry', 'control', 0, 0, 0, ?)",
+            (f"fid-bash_retry-c-{i}",),
         )
     conn.commit()
     conn.close()
@@ -279,3 +283,39 @@ def test_verify_reevaluates_thresholds(tmp_path):
     }))
     rc = gate.main(["verify", str(snapshot)])
     assert rc == 1
+
+
+def test_arm_counts_excludes_null_firing_id(tmp_path):
+    """v2026.6.1 fix #2 — gate must agree with the t-test on which rows count.
+
+    validate-patterns filters firing_id IS NOT NULL (analytics.py); the
+    gate must apply the same filter so a future bias-class row written
+    without a firing_id can't inflate the gate while being silently
+    excluded from the t-test population.
+    """
+    db = tmp_path / "analytics.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE ab_outcomes ("
+        "timestamp REAL NOT NULL, agent_family TEXT NOT NULL, "
+        "pattern TEXT NOT NULL, arm TEXT NOT NULL, "
+        "pressure_before REAL, pressure_after REAL, followed INTEGER, "
+        "firing_id TEXT)"
+    )
+    # Two clean rows with firing_id, plus one legacy row with NULL.
+    conn.execute(
+        "INSERT INTO ab_outcomes VALUES (1.0, 'cc', 'budget', 'treatment', 0, 0, 0, 'fid-1')"
+    )
+    conn.execute(
+        "INSERT INTO ab_outcomes VALUES (2.0, 'cc', 'budget', 'control', 0, 0, 0, 'fid-2')"
+    )
+    conn.execute(
+        "INSERT INTO ab_outcomes VALUES (3.0, 'cc', 'budget', 'treatment', 0, 0, 0, NULL)"
+    )
+    conn.commit()
+    t, c = gate._arm_counts(conn, "budget")
+    conn.close()
+    assert (t, c) == (1, 1), (
+        f"NULL firing_id row leaked into gate counts: got T={t} C={c}, "
+        f"expected T=1 C=1 (only rows with firing_id)"
+    )

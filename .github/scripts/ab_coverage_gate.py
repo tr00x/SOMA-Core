@@ -112,10 +112,14 @@ def _top_patterns(conn: sqlite3.Connection, reset_ts: float, limit: int) -> list
 
 
 def _arm_counts(conn: sqlite3.Connection, pattern: str) -> tuple[int, int]:
-    # ab_outcomes is already post-reset (the migration truncates the live
-    # table at v2026.5.5), so no timestamp filter is needed here.
+    # Keep gate aligned with validate-patterns: only count rows that
+    # carry a firing_id. Rows without one are bias-class legacy
+    # (pre-v2026.6.0) or future bugs leaking through unsanctioned
+    # call paths — neither should inflate the release gate.
     rows = conn.execute(
-        "SELECT arm, COUNT(*) FROM ab_outcomes WHERE pattern = ? GROUP BY arm",
+        "SELECT arm, COUNT(*) FROM ab_outcomes "
+        "WHERE pattern = ? AND firing_id IS NOT NULL "
+        "GROUP BY arm",
         (pattern,),
     ).fetchall()
     counts = {arm: int(n) for arm, n in rows}
