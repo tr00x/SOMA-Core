@@ -70,13 +70,32 @@ def test_legacy_calibration_file_migrated_on_load(tmp_path, monkeypatch) -> None
         "schema_version": 1,
     }))
 
-    from soma.calibration import load_profile
+    from soma.calibration import load_profile, save_profile
     profile = load_profile("cc-12345")
 
-    # Family is the alias target.
-    assert profile.family == "claude-code"  # the legacy file's stored value
+    # Family is COERCED to the canonical alias target after migration.
+    # Otherwise the next save_profile would re-create the legacy
+    # calibration_claude-code.json file we just migrated away from.
+    assert profile.family == "cc"
     # action_count survived the rename — 250, not 0.
     assert profile.action_count == 250
     # File now lives at the canonical path.
     assert (tmp_path / "calibration_cc.json").exists()
     assert not legacy.exists()
+
+    # Sanity: saving the profile back lands on calibration_cc.json,
+    # not calibration_claude-code.json — migration is durable.
+    save_profile(profile)
+    assert (tmp_path / "calibration_cc.json").exists()
+    assert not (tmp_path / "calibration_claude-code.json").exists()
+
+
+def test_alias_applies_after_regex_strip(tmp_path, monkeypatch) -> None:
+    """A wrapper sending agent_id='claude-code-12345' (numeric tail)
+    must collapse via the regex AND alias map together: regex strips
+    tail → 'claude-code', alias maps → 'cc'. Otherwise the same bug
+    class re-opens for any future wrapper that adds a numeric suffix
+    to the literal id."""
+    assert calibration_family("claude-code-12345") == "cc"
+    assert calibration_family("claude-code-1") == "cc"
+    assert calibration_family("claude-code_77") == "cc"

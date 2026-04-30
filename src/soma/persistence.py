@@ -53,8 +53,16 @@ def engine_state_transaction(
 
     lock_fh = None
     if _HAS_FLOCK:
-        lock_fh = open(lock_path, "w")
-        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        # Defensive: if we can't open the lock file (read-only FS,
+        # exhausted FDs), proceed without locking rather than crash —
+        # mirrors save_engine_state's resilience contract.
+        try:
+            lock_fh = open(lock_path, "w")
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            if lock_fh is not None:
+                lock_fh.close()
+            lock_fh = None
     try:
         if target.exists():
             engine = _load_engine_from_path(target)

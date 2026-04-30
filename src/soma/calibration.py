@@ -94,18 +94,22 @@ def calibration_family(agent_id: str) -> str:
     """Collapse ephemeral session ids into a stable calibration key.
 
     ``cc-92331`` → ``cc``; ``swe-bench-48`` → ``swe-bench``;
-    ``claude-code`` → ``cc`` (explicit alias). Falls back to the full
-    id when neither rule matches so user-chosen agent ids keep
-    isolated profiles.
+    ``claude-code`` → ``cc`` (explicit alias);
+    ``claude-code-12345`` → ``cc`` (regex strip → alias). Falls back
+    to the full id when no rule matches so user-chosen agent ids
+    keep isolated profiles.
+
+    v2026.6.x review fix: alias map is consulted *after* the
+    numeric-tail regex too, so wrappers that send
+    ``claude-code-<pid>`` collapse correctly into the same family
+    as the bare literal — same bug class we already closed for the
+    pure literal case.
     """
     if not agent_id:
         return "default"
-    if agent_id in _AGENT_FAMILY_ALIASES:
-        return _AGENT_FAMILY_ALIASES[agent_id]
     m = _AGENT_FAMILY_RE.match(agent_id)
-    if m:
-        return m.group("family")
-    return agent_id
+    family = m.group("family") if m else agent_id
+    return _AGENT_FAMILY_ALIASES.get(family, family)
 
 
 def _profile_path(family: str) -> Path:
@@ -329,19 +333,36 @@ def load_profile(agent_id: str) -> CalibrationProfile:
     # sitting next to (or instead of) their hook-session
     # calibration_cc.json. Rename it into place so they don't lose
     # accumulated calibration.
+    #
+    # Race-safe: hold profile_lock(family) around the migration so two
+    # concurrent hooks can't both rename the stale file (which silently
+    # succeeds on POSIX but loses the second mutation cycle).
     if not path.exists():
-        for stale_id in (sid for sid, alias in _AGENT_FAMILY_ALIASES.items() if alias == family):
-            stale_path = _profile_path(stale_id)
-            if stale_path.exists():
-                try:
-                    stale_path.rename(path)
-                    break
-                except OSError:
-                    pass
+        with profile_lock(family):
+            # Re-check under the lock — another hook may have raced
+            # us to the migration.
+            if not path.exists():
+                for stale_id in (sid for sid, alias in _AGENT_FAMILY_ALIASES.items() if alias == family):
+                    stale_path = _profile_path(stale_id)
+                    if stale_path.exists():
+                        try:
+                            stale_path.rename(path)
+                            break
+                        except OSError:
+                            pass
     if path.exists():
         try:
             data = json.loads(path.read_text())
-            return CalibrationProfile.from_dict(data)
+            profile = CalibrationProfile.from_dict(data)
+            # v2026.6.x: post-migration the file holds the *legacy*
+            # family value ("claude-code") in its `family` field. The
+            # next save_profile would write back to
+            # _profile_path("claude-code") and recreate the file we
+            # just migrated away from. Coerce family to the canonical
+            # alias target.
+            if profile.family != family:
+                profile.family = family
+            return profile
         except (json.JSONDecodeError, OSError):
             try:
                 backup = path.with_suffix(path.suffix + ".corrupt")

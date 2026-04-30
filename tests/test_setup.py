@@ -197,39 +197,17 @@ class TestSkillsPackaging:
             "the mapping."
         )
 
-    def test_repo_skills_tree_has_expected_skills(self):
-        """Repo skills/ dir must contain the canonical four skills so the
-        force-include mapping actually ships something."""
-        skills_root = REPO_ROOT / "skills"
-        assert skills_root.is_dir()
-        names = {
-            p.name for p in skills_root.iterdir()
-            if p.is_dir() and p.name.startswith("soma-")
-        }
-        expected = {"soma-status", "soma-config", "soma-control", "soma-help"}
-        missing = expected - names
-        assert not missing, f"missing skill dirs: {sorted(missing)}"
+    # v2026.6.x: test_repo_skills_tree_has_expected_skills and
+    # test_install_skills_copies_bundled_layout removed — the skills/
+    # directory was deleted in 804b365. _install_skills now always
+    # returns False at runtime (no source dir), and the wheel build
+    # no longer force-includes anything. Pinning that contract via
+    # test_pyproject_does_not_force_include_missing_skills above.
 
-    def test_install_skills_copies_bundled_layout(self, tmp_path, monkeypatch):
-        """Simulate the pip-install layout (`<soma_pkg>/_skills/soma-*`) and
-        verify _install_skills writes SKILL.md into ~/.claude/skills."""
-        # Fake soma package location with skills bundled alongside it.
-        fake_pkg = tmp_path / "soma_pkg"
-        fake_pkg.mkdir()
-        (fake_pkg / "__init__.py").write_text("")
-        skill_src = fake_pkg / "_skills" / "soma-status"
-        skill_src.mkdir(parents=True)
-        (skill_src / "SKILL.md").write_text("---\nname: soma:status\n---\nbody")
-
-        # Monkeypatch Path.home so skills_target lands in tmp, and point
-        # soma.__file__ at the fake layout so the bundled-check wins.
-        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
-        import soma as soma_mod
-        monkeypatch.setattr(
-            soma_mod, "__file__", str(fake_pkg / "__init__.py"), raising=True,
-        )
-
-        assert _install_skills() is True
-        installed = tmp_path / "home" / ".claude" / "skills" / "soma-status" / "SKILL.md"
-        assert installed.exists()
-        assert "soma:status" in installed.read_text()
+    # _install_skills runtime behavior is hard to test cleanly:
+    # the function falls through to `Path(__file__).parent.parent.parent.parent
+    # / "skills"` which resolves to wherever pytest happens to run from
+    # (an arbitrary site-packages tree on CI, the repo root on dev box).
+    # The contract that matters — "no skills bundled in the wheel,
+    # build still succeeds" — is captured by
+    # test_pyproject_does_not_force_include_missing_skills above.
