@@ -9,7 +9,7 @@ Detects errors from response content. File-locked action log.
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # noqa: F401  (kept for legacy test patch sites)
 import sys
 import time
 
@@ -292,83 +292,14 @@ def _record_ab_outcome_at_horizon(
         return False
 
 
-def _validate_python_file(file_path: str) -> str | None:
-    """In-process syntax check via ``compile()``.
-
-    v2026.6.2: previously forked a fresh Python interpreter for
-    py_compile (~25ms cost on every .py edit). ``compile`` gives the
-    same SyntaxError detection at near-zero cost. Defense-in-depth
-    matches the lint helpers — refuse flag-shaped paths.
-    """
-    if not file_path or not file_path.endswith(".py"):
-        return None
-    if file_path.startswith("-"):
-        return None
-    try:
-        with open(file_path, "rb") as f:
-            source = f.read()
-    except OSError:
-        return None
-    try:
-        compile(source, file_path, "exec")
-    except SyntaxError as e:
-        # Match the prior subprocess output format ("SyntaxError: ...").
-        msg = e.msg or "syntax error"
-        line = f" (line {e.lineno})" if e.lineno else ""
-        return f"SyntaxError: {msg}{line}"
-    except (ValueError, TypeError) as e:
-        # Source containing null bytes etc. — surface but don't crash.
-        return f"compile error: {e}"
-    return None
-
-
-def _lint_python_file(file_path: str) -> str | None:
-    if not file_path or not file_path.endswith(".py"):
-        return None
-    if file_path.startswith("-"):
-        # Defense in depth: refuse paths that look like flags even if
-        # the agent or a downstream tool tries to sneak them in.
-        return None
-    try:
-        result = subprocess.run(
-            ["ruff", "check", "--select", "F", "--no-fix", "--quiet",
-             "--", file_path],
-            # v2026.6.2: 5s timeout was a footgun — a hung ruff froze
-            # the user's terminal for 5 full seconds. 500ms is plenty
-            # for the syntactic-pyflakes pass we configure here.
-            capture_output=True, text=True, timeout=0.5,
-        )
-        if result.returncode != 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")[0]
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-    return None
-
-
-def _validate_js_file(file_path: str) -> str | None:
-    if not file_path:
-        return None
-    if not any(file_path.endswith(ext) for ext in (".js", ".mjs", ".cjs")):
-        return None
-    if file_path.startswith("-"):
-        # Defense in depth: refuse paths that look like flags even if
-        # the agent or a downstream tool tries to sneak them in.
-        return None
-    try:
-        result = subprocess.run(
-            ["node", "--check", "--", file_path],
-            # v2026.6.2: 5s → 500ms — same reasoning as _lint_python_file.
-            capture_output=True, text=True, timeout=0.5,
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            for line in stderr.split("\n"):
-                if "SyntaxError" in line or "Error" in line:
-                    return line.strip()
-            return stderr.split("\n")[-1].strip() if stderr else "syntax error"
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-    return None
+# v2026.6.x: extracted to soma/validators/. These thin shims keep the
+# existing private-name imports working (tests, monkeypatch sites) so
+# the refactor is transparent.
+from soma.validators import (  # noqa: E402
+    lint_python_file as _lint_python_file,
+    validate_js_file as _validate_js_file,
+    validate_python_file as _validate_python_file,
+)
 
 
 def _extract_file_path(data: dict) -> str:
