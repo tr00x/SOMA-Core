@@ -26,9 +26,21 @@ _LIVE_INSERT_RE = re.compile(
 )
 
 
+def _strip_comment(line: str) -> str:
+    """Remove `# ...` tail so a comment mentioning the SQL doesn't
+    false-positive. Crude — won't handle `#` inside string literals,
+    but the only callers are SQL strings or pure comments, not both."""
+    idx = line.find("#")
+    if idx < 0:
+        return line
+    return line[:idx]
+
+
 def _scan_for_live_inserts() -> dict[Path, list[int]]:
     """Return {file: [line_numbers]} of every `INSERT INTO ab_outcomes`
-    that targets the live table (not an archive)."""
+    that targets the live table (not an archive). Strips ``#`` comments
+    first so a future maintainer's comment about historical INSERT
+    sites doesn't break the build."""
     hits: dict[Path, list[int]] = {}
     for py in SRC.rglob("*.py"):
         try:
@@ -36,7 +48,8 @@ def _scan_for_live_inserts() -> dict[Path, list[int]]:
         except OSError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if _LIVE_INSERT_RE.search(line):
+            scanned = _strip_comment(line)
+            if _LIVE_INSERT_RE.search(scanned):
                 hits.setdefault(py, []).append(lineno)
     return hits
 
