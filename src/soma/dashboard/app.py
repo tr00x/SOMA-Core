@@ -1,7 +1,9 @@
 """SOMA Dashboard — modular FastAPI application."""
 from __future__ import annotations
 
+import hmac
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -12,12 +14,10 @@ from fastapi.responses import FileResponse, JSONResponse
 def _token_auth_middleware_factory(token: str):
     """Build a middleware that rejects requests without
     ``Authorization: Bearer <token>`` or a ``?token=<token>`` query
-    param. Health checks (``/healthz``) and the SPA index/static
-    bundle bypass auth so a wrong token doesn't lock the user out
-    of the login UI.
+    param. Static assets (``/static/*``, ``/favicon.svg``) and health
+    probes (``/healthz``) bypass auth.
     """
     async def middleware(request: Request, call_next):
-        # Allow static assets and health probes through.
         path = request.url.path
         if (
             path == "/healthz"
@@ -25,14 +25,13 @@ def _token_auth_middleware_factory(token: str):
             or path == "/favicon.svg"
         ):
             return await call_next(request)
-        # Accept either Authorization header or token query param.
         auth = request.headers.get("authorization", "")
         provided: str | None = None
         if auth.lower().startswith("bearer "):
             provided = auth[7:].strip()
         elif "token" in request.query_params:
             provided = request.query_params["token"]
-        if provided != token:
+        if not hmac.compare_digest(provided or "", token):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "missing or invalid SOMA_DASHBOARD_TOKEN"},
@@ -56,6 +55,9 @@ def create_app() -> FastAPI:
     token = os.environ.get("SOMA_DASHBOARD_TOKEN", "").strip()
     if token:
         app.middleware("http")(_token_auth_middleware_factory(token))
+        print("[SOMA] dashboard auth: enabled (SOMA_DASHBOARD_TOKEN)", file=sys.stderr)
+    else:
+        print("[SOMA] dashboard auth: disabled (open) — set SOMA_DASHBOARD_TOKEN to require a bearer token", file=sys.stderr)
 
     app.add_middleware(
         CORSMiddleware,

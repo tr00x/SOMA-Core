@@ -194,7 +194,8 @@ def _healing_table(use_analytics: bool = True) -> dict[str, tuple[str, str]]:
     if not use_analytics:
         return dict(_HEALING_TRANSITIONS)
     import time as _time
-    now = _time.time()
+    # Monotonic so NTP corrections / clock jumps can't freeze the cache.
+    now = _time.monotonic()
     if _HEALING_CACHE is None or (now - _HEALING_CACHE_TS) >= HEALING_CACHE_TTL_SECONDS:
         _HEALING_CACHE = _load_healing_from_analytics()
         _HEALING_CACHE_TS = now
