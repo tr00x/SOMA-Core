@@ -25,8 +25,10 @@ import tempfile
 from pathlib import Path
 
 
-REPO = Path("/Users/timur/projectos/SOMA")
-HOOK_BIN = REPO / ".venv" / "bin" / "soma-hook"
+# Resolve relative to this script: tools/phantom_smoke.py → repo root.
+# Override via SOMA_REPO / SOMA_HOOK_BIN env vars if running from a wheel.
+REPO = Path(os.environ.get("SOMA_REPO", Path(__file__).resolve().parent.parent))
+HOOK_BIN = Path(os.environ.get("SOMA_HOOK_BIN", REPO / ".venv" / "bin" / "soma-hook"))
 
 
 def _hook(home: Path, hook_type: str, payload: dict) -> tuple[int, str, str]:
