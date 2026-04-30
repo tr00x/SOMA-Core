@@ -371,10 +371,21 @@ def test_archive_migration_moves_biased_rows_to_archive_table(tmp_path: Path, mo
     store.close()
 
 
-def test_retired_pattern_rows_dropped(tmp_path: Path):
-    """Legacy `_stats` / `drift` rows must be removed — the patterns
-    no longer emit so their history only confuses direct-SQL audits.
-    The dashboard filter was a belt; this migration is the braces."""
+def test_retired_pattern_rows_dropped(tmp_path: Path, monkeypatch):
+    """Legacy retired-pattern rows must be removed on AnalyticsStore
+    init — the patterns no longer emit so their history only confuses
+    direct-SQL audits. The dashboard filter was a belt; this migration
+    is the braces.
+
+    ``RETIRED_PATTERN_KEYS`` is empty as of 2026-04-30 (everything was
+    resurrected), so this test simulates a future retirement by
+    patching the set, then confirms the migration deletes the matching
+    rows.
+    """
+    from soma import contextual_guidance as cg
+    monkeypatch.setattr(
+        cg, "RETIRED_PATTERN_KEYS", frozenset({"old_a", "old_b"}),
+    )
     import sqlite3
     db_path = tmp_path / "retired.db"
     conn = sqlite3.connect(str(db_path))
@@ -385,7 +396,7 @@ def test_retired_pattern_rows_dropped(tmp_path: Path):
             pressure_at_injection REAL, pressure_after REAL
         )
     """)
-    for key in ("_stats", "drift", "bash_retry", "error_cascade"):
+    for key in ("old_a", "old_b", "bash_retry", "error_cascade"):
         conn.execute(
             "INSERT INTO guidance_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
             (1.0, "cc", "s", key, 0, 0.5, 0.5),

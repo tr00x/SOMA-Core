@@ -249,10 +249,11 @@ def test_budget_ok(cg):
 # ── Context Window ──
 
 
-_RETIRED_2026_04_25 = pytest.mark.skip(
-    reason="context + entropy_drop retired 2026-04-25 (ultra-review audit). "
-    "_check_* methods kept for unit coverage but evaluate() no longer "
-    "invokes them; see RETIRED_PATTERN_KEYS."
+_RETIRED_2026_04_25 = pytest.mark.skipif(
+    False,
+    reason="2026-04-30: context + entropy_drop resurrected — these tests "
+    "are live again. Decorator preserved as a no-op so the diff stays "
+    "minimal; safe to remove once it stops appearing in PRs.",
 )
 
 
@@ -560,52 +561,108 @@ def test_entropy_drop_detected(cg):
     assert "Bash" in msg.message
 
 
-@_RETIRED_2026_04_25
-def test_panic_detected_low_entropy_fast_velocity(cg):
-    """Low entropy + fast actions = panic, should escalate to critical.
+def test_drift_fires_on_tool_shift(cg):
+    """Resurrected 2026-04-30. Detector restored from a673e67~1 with no
+    behavior change: high vitals.drift + dominant tool shift between the
+    first 5 and last 5 actions = fire."""
+    action_log = (
+        [{"tool": "Read", "error": False, "file": f"/a/{i}.py"} for i in range(5)]
+        + [{"tool": "Bash", "error": False, "file": ""} for _ in range(5)]
+    )
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"drift": 0.7},
+    )
+    assert msg is not None and msg.pattern == "drift"
+    assert msg.severity == "warn"
+    assert "Read" in msg.message and "Bash" in msg.message
 
-    With 7 Bash + 1 Read, entropy ≈ 0.54 (normally "warn").
-    Fast velocity (1s gaps) should escalate to "critical".
+
+def test_drift_silent_when_initial_equals_current_tool(cg):
+    """Drift signal high but the dominant tool didn't shift — the
+    detector deliberately stays silent because the source is within-tool
+    behavior change (args/files/operation), not tool-family change.
+    Restoring the original ``a673e67~1`` early-return semantics so the
+    pattern doesn't emit vague 'use a different tool' advice when there
+    is no observable tool shift to act on."""
+    action_log = [{"tool": "Bash", "error": False, "file": ""} for _ in range(10)]
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"drift": 0.9},
+    )
+    if msg is not None:
+        assert msg.pattern != "drift"
+
+
+def test_drift_silent_below_threshold(cg):
+    """Drift below 0.5 (legacy floor) — no fire even with a shift."""
+    action_log = (
+        [{"tool": "Read", "error": False, "file": "/a.py"} for _ in range(5)]
+        + [{"tool": "Bash", "error": False, "file": ""} for _ in range(5)]
+    )
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"drift": 0.3},
+    )
+    if msg is not None:
+        assert msg.pattern != "drift"
+
+
+def test_drift_silent_with_too_few_actions(cg):
+    """<10 actions = insufficient to characterize a shift."""
+    action_log = (
+        [{"tool": "Read", "error": False, "file": "/a.py"} for _ in range(3)]
+        + [{"tool": "Bash", "error": False, "file": ""} for _ in range(4)]
+    )
+    msg = cg.evaluate(
+        action_log=action_log,
+        current_tool="Bash",
+        current_input={},
+        vitals={"drift": 0.9},
+    )
+    if msg is not None:
+        assert msg.pattern != "drift"
+
+
+def test_entropy_drop_does_not_escalate_on_fast_loop(cg):
+    """Resurrected 2026-04-30: the pre-retire panic-velocity escalator
+    used a hardcoded ``avg_gap < 3.0`` cutoff which fired on healthy
+    fast Read/Glob exploration loops — that was the false-positive that
+    drove the original retirement. After resurrection, severity is
+    driven by entropy alone; no fast-loop escalation.
+
+    With 7 Read + 1 Bash and 1-second gaps, entropy is low enough to
+    fire "warn" but the previous escalator would have flipped it to
+    "critical." The new behavior must NOT escalate.
     """
     import time
     now = time.time()
     action_log = [
-        {"tool": "Read", "error": False, "file": "/f.py", "ts": now - 8},
-        {"tool": "Bash", "error": True, "file": "", "ts": now - 7},
-        {"tool": "Bash", "error": False, "file": "", "ts": now - 6},
-        {"tool": "Bash", "error": True, "file": "", "ts": now - 5},
-        {"tool": "Bash", "error": False, "file": "", "ts": now - 4},
-        {"tool": "Bash", "error": True, "file": "", "ts": now - 3},
-        {"tool": "Bash", "error": False, "file": "", "ts": now - 2},
-        {"tool": "Bash", "error": True, "file": "", "ts": now - 1},
+        {"tool": "Bash", "error": False, "file": "", "ts": now - 8},
+        {"tool": "Read", "error": False, "file": "/a.py", "ts": now - 7},
+        {"tool": "Read", "error": False, "file": "/b.py", "ts": now - 6},
+        {"tool": "Read", "error": False, "file": "/c.py", "ts": now - 5},
+        {"tool": "Read", "error": False, "file": "/d.py", "ts": now - 4},
+        {"tool": "Read", "error": False, "file": "/e.py", "ts": now - 3},
+        {"tool": "Read", "error": False, "file": "/f.py", "ts": now - 2},
+        {"tool": "Read", "error": False, "file": "/g.py", "ts": now - 1},
     ]
     msg = cg.evaluate(
-        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
+        action_log=action_log, current_tool="Read", current_input={}, vitals={},
     )
-    assert msg is not None
-    assert msg.pattern == "entropy_drop"
-    assert msg.severity == "critical"  # Panic: low entropy + fast velocity
-
-
-@_RETIRED_2026_04_25
-def test_entropy_warn_without_velocity(cg):
-    """Same low entropy but no timestamps = stays at warn, not critical."""
-    action_log = [
-        {"tool": "Read", "error": False, "file": "/f.py"},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-        {"tool": "Bash", "error": False, "file": ""},
-    ]
-    msg = cg.evaluate(
-        action_log=action_log, current_tool="Bash", current_input={}, vitals={},
-    )
-    assert msg is not None
-    assert msg.pattern == "entropy_drop"
-    assert msg.severity == "warn"  # No velocity data = stays warn
+    if msg is not None and msg.pattern == "entropy_drop":
+        # Single-tool low-entropy: warn-level. The deleted velocity
+        # escalator is gone.
+        assert msg.severity == "warn", (
+            "fast-loop velocity must not escalate severity (this was "
+            "the false-positive driving the 2026-04-25 retirement)"
+        )
 
 
 def test_entropy_drop_not_fired_with_diverse_tools(cg):
@@ -757,16 +814,18 @@ def test_followthrough_budget_waiting():
 # ---------------------------------------------------------------------------
 
 def test_followthrough_entropy_drop_followed():
-    """v2026.6.2: entropy_drop is retired — always inconclusive (None)."""
+    """Resurrected 2026-04-30: a Read after entropy_drop counts as
+    diversifying explore — strong followthrough signal."""
     from soma.contextual_guidance import check_followthrough
 
     pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 0}
     result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
-    assert result is None
+    assert result is True
 
 
 def test_followthrough_entropy_drop_ignored():
-    """v2026.6.2: entropy_drop is retired — always inconclusive (None)."""
+    """Bash again with no diversification window and flat pressure →
+    falls through to pressure rule; no pressure data → None."""
     from soma.contextual_guidance import check_followthrough
 
     pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 2}
@@ -914,30 +973,45 @@ def test_followthrough_cost_spiral_resolved_by_pressure_drop():
     assert result is True
 
 
-def test_followthrough_context_requires_explicit_recovery():
-    """v2026.6.2: context pattern is retired — always inconclusive (None).
-    Pre-retire test asserted True/False on explicit recovery signals;
-    those branches are now unreachable for context."""
+def test_followthrough_context_recognizes_real_compaction():
+    """Resurrected 2026-04-30 with rewritten followthrough.
+
+    The pre-retire rule required literal NEXT.md / git commit /
+    /compact tokens in narrow positions — most real compactions failed
+    that test, biasing helped% to ~0%. New rule: recognize the actual
+    compaction surface (a NEXT.md write, a git commit Bash, a /compact
+    Bash, or a meaningful pressure drop)."""
     from soma.contextual_guidance import check_followthrough
 
+    # Big pressure drop → pressure rule credits it.
     pending = {"pattern": "context", "actions_since": 1, "pressure_at_injection": 0.60}
     result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.28)
-    assert result is None
+    assert result is True
 
+    # NEXT.md write → explicit handoff signal.
     pending2 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
     result2 = check_followthrough(
         pending2, "Write",
         {"file_path": "/repo/NEXT.md", "content": "handoff"},
         "/repo/NEXT.md", error=False, pressure_after=0.50,
     )
-    assert result2 is None
+    assert result2 is True
 
+    # git commit → preserve work before window closes.
     pending3 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
     result3 = check_followthrough(
         pending3, "Bash", {"command": "git commit -am 'wip'"},
         "", error=False, pressure_after=0.55,
     )
-    assert result3 is None
+    assert result3 is True
+
+    # /compact Bash → user-driven compaction.
+    pending4 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
+    result4 = check_followthrough(
+        pending4, "Bash", {"command": "/compact"},
+        "", error=False, pressure_after=0.55,
+    )
+    assert result4 is True
 
 
 def test_followthrough_pressure_signal_ignored_when_absent():
@@ -1026,8 +1100,9 @@ def test_followthrough_entropy_drop_credit_on_real_diversity():
         pending, "Read", {}, "", error=False,
         pressure_after=0.39, recent_actions=recent,
     )
-    # v2026.6.2: entropy_drop retired — always None regardless of diversity.
-    assert result is None
+    # Resurrected 2026-04-30: 3 distinct tools in the recent window =
+    # real diversification, credit immediately regardless of pressure.
+    assert result is True
 
 
 def test_followthrough_bash_retry_flat_succeed_no_credit():

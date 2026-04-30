@@ -28,6 +28,7 @@ from soma.types import Action
 
 PATTERN_DB_PATH = Path.home() / ".soma" / "patterns.json"
 PENDING_DB_PATH = Path.home() / ".soma" / "mirror_pending.json"
+STATS_LAST_EMIT_PATH = Path.home() / ".soma" / "mirror_stats_emit.json"
 
 # Pressure below this threshold → no context injected (agent is healthy)
 SILENCE_THRESHOLD = 0.25
@@ -50,6 +51,14 @@ PRUNE_THRESHOLD = 0.3        # below after MIN_ATTEMPTS → delete
 
 # How far back a Read must be to count as "stale" for VBD detection
 VBD_READ_STALENESS = 5
+
+# Resurrected 2026-04-30: minimum seconds between `_stats` fallback
+# emissions per agent_id. The original retirement was driven by
+# guidance fatigue at 242 firings (every fallback path emitted on
+# every action). 5 minutes is a deliberately conservative ceiling —
+# users with action-rich sessions feel one stats line per quiet zone,
+# not every action.
+STATS_COOLDOWN_SECONDS = 300.0
 
 # LLM config
 _LLM_MAX_TOKENS = 80
@@ -123,8 +132,16 @@ class Mirror:
         self._semantic_enabled: bool = True
         self._semantic_provider: str = "auto"
         self._semantic_threshold: float = SEMANTIC_THRESHOLD
+        # Per-agent last-emit timestamp for the resurrected `_stats`
+        # fallback. Persisted to ``STATS_LAST_EMIT_PATH`` so the
+        # cooldown survives short-lived hook subprocesses — without
+        # disk persistence each fresh process would slip its first
+        # emit through and the original 2026-04-19 fatigue surface
+        # would silently regress.
+        self._stats_last_emit: dict[str, float] = {}
         self._load_pattern_db()
         self._load_pending()
+        self._load_stats_last_emit()
         self._load_mirror_config()
 
     # ------------------------------------------------------------------
@@ -165,11 +182,18 @@ class Mirror:
                 pattern_key, pattern_desc = detected
                 self.track_injection(agent_id, pattern_key, pattern_desc, pressure)
                 return self._wrap(pattern_desc)
-            # 2026-04-19: drop `_stats` user-facing emission. It fatigued
-            # users (31% helped on 242 firings — largest noise source) and
-            # reference data shows mirror raw stats don't change agent
-            # behavior. Keep internal tracking off too so analytics stop
-            # receiving a row that nobody acts on.
+            # Resurrected 2026-04-30 with a per-agent cooldown gate.
+            # The original retirement (2026-04-19) was guidance fatigue
+            # from emitting `_stats` on every fallback action; the
+            # cooldown caps to one emission per ``STATS_COOLDOWN_SECONDS``
+            # per agent, keeping the 31%-helped lift while removing the
+            # noise floor.
+            if self._stats_cooldown_ready(agent_id):
+                stats_text = self._format_stats(agent_id, action)
+                self.track_injection(agent_id, "_stats", stats_text, pressure)
+                self._stats_last_emit[agent_id] = time.time()
+                self._save_stats_last_emit()
+                return self._wrap(stats_text)
             return None
 
         # High pressure (>= semantic_threshold): check if semantic is warranted
@@ -198,9 +222,15 @@ class Mirror:
             self.track_injection(agent_id, pattern_key, context_text, pressure)
             return self._wrap(context_text)
 
-        # 2026-04-19: same drop at the high-pressure fallback path. No
-        # pattern matched, no semantic override available — prefer
-        # silence over emitting a generic stats block.
+        # Resurrected 2026-04-30: high-pressure fallback path now emits
+        # `_stats` again, behind the same per-agent cooldown that gates
+        # the medium-pressure path. No pattern, no semantic — but the
+        # agent is in trouble and a stats line is better than silence.
+        if self._stats_cooldown_ready(agent_id):
+            stats_text = self._format_stats(agent_id, action)
+            self.track_injection(agent_id, "_stats", stats_text, pressure)
+            self._stats_last_emit[agent_id] = time.time()
+            return self._wrap(stats_text)
         return None
 
     # ------------------------------------------------------------------
@@ -421,6 +451,41 @@ class Mirror:
         if choices:
             return choices[0].get("message", {}).get("content", "").strip()
         return None
+
+    def _stats_cooldown_ready(self, agent_id: str) -> bool:
+        """True when the per-agent `_stats` cooldown window has elapsed.
+
+        Resurrected 2026-04-30 — see ``STATS_COOLDOWN_SECONDS``.
+        """
+        last = self._stats_last_emit.get(agent_id, 0.0)
+        return (time.time() - last) >= STATS_COOLDOWN_SECONDS
+
+    def _load_stats_last_emit(self) -> None:
+        """Load per-agent `_stats` last-emit timestamps from disk.
+
+        The file holds ``{agent_id: last_emit_unix_ts}``. Missing /
+        corrupt → start with an empty dict (degraded behavior is one
+        wasted emit per agent on first call after a fresh install).
+        """
+        try:
+            if STATS_LAST_EMIT_PATH.exists():
+                raw = json.loads(STATS_LAST_EMIT_PATH.read_text())
+                if isinstance(raw, dict):
+                    self._stats_last_emit = {
+                        str(k): float(v)
+                        for k, v in raw.items()
+                        if isinstance(v, (int, float))
+                    }
+        except (json.JSONDecodeError, OSError, ValueError):
+            self._stats_last_emit = {}
+
+    def _save_stats_last_emit(self) -> None:
+        """Persist per-agent cooldown timestamps to disk."""
+        try:
+            STATS_LAST_EMIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            STATS_LAST_EMIT_PATH.write_text(json.dumps(self._stats_last_emit))
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------
     # Self-learning

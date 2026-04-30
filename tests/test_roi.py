@@ -430,4 +430,4 @@ def test_archive_migration_writes_reset_log(tmp_path, monkeypatch):
     assert reset_log.exists(), "migration must write reset log"
     entry = json.loads(reset_log.read_text().strip().splitlines()[-1])
     assert entry["archived_rows"] == 1
-    assert "v2026.5.5" in entry["reason"]
+    assert "MD5 bias purged" in entry["reason"]

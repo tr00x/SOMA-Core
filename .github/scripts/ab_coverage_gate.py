@@ -60,9 +60,14 @@ DEFAULT_DB = Path.home() / ".soma" / "analytics.db"
 # Must stay in sync with ``soma.contextual_guidance.RETIRED_PATTERN_KEYS``.
 # Hardcoded here because the gate runs as a standalone script in CI
 # without the soma package installed.
-RETIRED_PATTERN_KEYS: frozenset[str] = frozenset(
-    {"_stats", "drift", "entropy_drop", "context"}
-)
+#
+# As of 2026-04-30 the set is empty — entropy_drop, context, drift and
+# _stats were resurrected after a fresh look at their failure modes
+# (each had a fixable root cause: magic threshold / measurement bug /
+# tiny sample / fatigue). Kept as a typed frozenset so the SQL
+# placeholder builder and the cross-package drift test don't need to
+# special-case "no retired patterns."
+RETIRED_PATTERN_KEYS: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -149,18 +154,31 @@ def _read_reset_ts(db_path: Path) -> float:
 
 def _top_patterns(conn: sqlite3.Connection, reset_ts: float, limit: int) -> list[tuple[str, int]]:
     # Exclude retired patterns: they can never accumulate new rows so
-    # leaving them in top-N would pin the gate to FAIL forever.
-    placeholders = ",".join("?" * len(RETIRED_PATTERN_KEYS))
-    rows = conn.execute(
-        f"SELECT pattern_key, COUNT(*) AS fires "
-        f"FROM guidance_outcomes "
-        f"WHERE timestamp >= ? "
-        f"AND pattern_key NOT IN ({placeholders}) "
-        f"GROUP BY pattern_key "
-        f"ORDER BY fires DESC, pattern_key ASC "
-        f"LIMIT ?",
-        (reset_ts, *sorted(RETIRED_PATTERN_KEYS), limit),
-    ).fetchall()
+    # leaving them in top-N would pin the gate to FAIL forever. When
+    # the retired set is empty (current state) the NOT IN clause is
+    # omitted entirely — SQLite rejects ``NOT IN ()`` as a syntax error.
+    if RETIRED_PATTERN_KEYS:
+        placeholders = ",".join("?" * len(RETIRED_PATTERN_KEYS))
+        rows = conn.execute(
+            f"SELECT pattern_key, COUNT(*) AS fires "
+            f"FROM guidance_outcomes "
+            f"WHERE timestamp >= ? "
+            f"AND pattern_key NOT IN ({placeholders}) "
+            f"GROUP BY pattern_key "
+            f"ORDER BY fires DESC, pattern_key ASC "
+            f"LIMIT ?",
+            (reset_ts, *sorted(RETIRED_PATTERN_KEYS), limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT pattern_key, COUNT(*) AS fires "
+            "FROM guidance_outcomes "
+            "WHERE timestamp >= ? "
+            "GROUP BY pattern_key "
+            "ORDER BY fires DESC, pattern_key ASC "
+            "LIMIT ?",
+            (reset_ts, limit),
+        ).fetchall()
     return [(r[0], int(r[1])) for r in rows]
 
 

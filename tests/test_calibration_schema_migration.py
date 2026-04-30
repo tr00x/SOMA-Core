@@ -82,9 +82,50 @@ def test_missing_migrator_falls_through():
     """If we're at v3 but nobody registered v0→v1, from_dict must not
     crash — it falls through and lets the dataclass dropper handle
     unknown fields."""
-    # No migrators registered for v0. Construct v0 data.
-    v0_data = _base_dict(schema_version=0)
+    # No migrators registered for v-1. Construct pre-v0 data.
+    bad_data = _base_dict(schema_version=-1)
     # Should NOT raise.
-    p = CalibrationProfile.from_dict(v0_data)
+    p = CalibrationProfile.from_dict(bad_data)
     # Old fields still loaded.
     assert p.family == "cc"
+
+
+def test_v1_to_v2_strips_resurrected_patterns_from_silenced():
+    """Resurrected 2026-04-30: a v1 profile that auto-silenced or
+    auto-refuted any of {_stats, drift, entropy_drop, context} under
+    the old behavior must NOT carry that state forward — otherwise
+    ``evaluate()`` would silently drop the resurrected candidates and
+    the resurrection would ship dead-on-arrival.
+    """
+    v1_data = _base_dict(
+        schema_version=1,
+        silenced_patterns=["entropy_drop", "blind_edit", "context"],
+        refuted_patterns=["drift", "_stats"],
+        validated_patterns=["bash_retry", "context"],
+    )
+    p = CalibrationProfile.from_dict(v1_data)
+    assert p.schema_version == 2
+    # Resurrected keys stripped, foreign keys preserved.
+    assert "entropy_drop" not in p.silenced_patterns
+    assert "context" not in p.silenced_patterns
+    assert "blind_edit" in p.silenced_patterns
+    assert "drift" not in p.refuted_patterns
+    assert "_stats" not in p.refuted_patterns
+    assert "context" not in p.validated_patterns
+    assert "bash_retry" in p.validated_patterns
+
+
+def test_v1_to_v2_no_op_when_lists_already_clean():
+    """Profiles that never silenced/refuted resurrected patterns get
+    upgraded with empty migrations — no field corruption."""
+    v1_data = _base_dict(
+        schema_version=1,
+        silenced_patterns=["blind_edit"],
+        refuted_patterns=[],
+        validated_patterns=["bash_retry"],
+    )
+    p = CalibrationProfile.from_dict(v1_data)
+    assert p.schema_version == 2
+    assert p.silenced_patterns == ["blind_edit"]
+    assert p.refuted_patterns == []
+    assert p.validated_patterns == ["bash_retry"]

@@ -36,36 +36,42 @@ _PATTERN_PRIORITY = {
     "budget": 5,
     "bash_retry": 4,
     "error_cascade": 2,
+    "context": 1,
     "blind_edit": 1,
+    "entropy_drop": 1,
+    "drift": 0,
 }
 
 # Canonical list of pattern keys that real production guidance paths emit.
 # Dashboard ROI whitelisting and any future analytics filter should import
 # this tuple rather than re-declare the set — single source of truth.
 #
-# Retired patterns (do not re-add without evidence):
-#   - `_stats` — dropped in 2026-04-19 (largest fatigue source, 31% helped).
-#   - `drift`  — dropped after 2026-04-18 P0 fix failed to move the needle
-#                (9 firings, 0% helped). The underlying drift signal still
-#                feeds pressure aggregation; only the guidance message was
-#                retired.
-#   - `entropy_drop` — retired 2026-04-25 after ultra-review audit. Panic
-#                detector used a hardcoded `avg_gap < 3.0` threshold — a
-#                magic number with no per-user calibration that fired
-#                during fast Read/Glob exploration loops (the opposite of
-#                panic). Historical precision <20%. Underlying entropy
-#                signal stays in vitals; only the guidance message retired.
-#   - `context`     — retired 2026-04-25 after ultra-review audit. The
-#                check_followthrough math required the agent to literally
-#                write `next.md`/`handoff` or run `git commit/compact` to
-#                count as "helped" — almost no real session does this
-#                verbatim, so helped% was structurally biased toward 0%
-#                regardless of whether the message actually changed
-#                behaviour. Underlying context_usage signal stays in
-#                vitals; only the guidance message retired.
-RETIRED_PATTERN_KEYS: frozenset[str] = frozenset(
-    {"_stats", "drift", "entropy_drop", "context"}
-)
+# Resurrected 2026-04-30:
+#   - `entropy_drop` — was retired 2026-04-25 because the panic-velocity
+#                escalator used a hardcoded ``avg_gap < 3.0`` cutoff that
+#                fired on healthy fast Read/Glob loops. The escalator is
+#                gone; severity is now driven by entropy alone (relative
+#                to the user's calibrated ``entropy_p25`` floor).
+#   - `context`     — was retired 2026-04-25 because the followthrough
+#                check required literal "next.md"/"git commit" tokens, so
+#                helped% was structurally pinned at 0%. Followthrough is
+#                rewritten to detect actual compaction behavior (``/compact``
+#                Bash, git commit, summary writes, or pressure drop).
+#   - `drift`       — was retired 2026-04-18 after a 9-firing/0%-helped
+#                window. Detector body restored from commit a673e67~1
+#                with no behavior change. Sample was statistically too
+#                small for a verdict — re-collecting from zero.
+#   - `_stats`      — was retired 2026-04-19 as the "largest fatigue
+#                source" at 242 firings/31% helped. Restored in
+#                ``mirror.py`` behind a cooldown so the fallback emits at
+#                most once per N actions per agent — addresses the
+#                fatigue cause without losing the 31% lift signal.
+#
+# Reaching ``collecting`` status under the A/B harness; any "helped %"
+# claim waits until MIN_PAIRS. Empty set today, but kept as a typed
+# constant so downstream code (gate, dashboard) doesn't need to special-
+# case "no retired patterns" vs "set missing."
+RETIRED_PATTERN_KEYS: frozenset[str] = frozenset()
 REAL_PATTERN_KEYS: tuple[str, ...] = tuple(_PATTERN_PRIORITY.keys())
 
 
@@ -461,13 +467,11 @@ def check_followthrough(
     pattern = pending.get("pattern", "")
     actions_since = pending.get("actions_since", 0) + 1
 
-    # 2026-04-29: short-circuit retired patterns. They were retired
-    # 2026-04-25 and never re-fire — but circuit_*.json files written
-    # before the retire date can still carry pending rows for them,
-    # and the legacy per-pattern resolution logic below would silently
-    # mark them True/False instead of letting them age out as
-    # inconclusive. Returning None preserves data integrity by keeping
-    # them out of the helped/not-helped accounting entirely.
+    # Truly-retired patterns short-circuit to None so legacy circuit_*.json
+    # entries don't pollute helped/not-helped accounting. As of 2026-04-30
+    # the set is empty (entropy_drop / context / drift / _stats were
+    # resurrected). Keep the guard — it's the contract for any future
+    # retirement.
     if pattern in RETIRED_PATTERN_KEYS:
         return None
 
@@ -520,8 +524,31 @@ def check_followthrough(
             return False
         return None
 
-    # `context` branch was here pre-2026-04-29; pattern is retired and the
-    # guard at the top of this function already returns None for it.
+    if pattern == "context":
+        # Resurrected 2026-04-30. The pre-retire rule required literal
+        # ``next.md`` / ``handoff`` / ``git commit`` tokens, so any agent
+        # that wrapped up via different mechanics was scored as "did not
+        # help." New rule: any *real* compaction signal counts —
+        #   1. ``/compact`` Bash invocation (user-driven compaction);
+        #   2. ``git commit`` / ``git add`` (preserve work before window);
+        #   3. Write/Edit of a markdown summary handoff (NEXT.md, HANDOFF
+        #      .md, summary.md, or any file with "summary" in the path);
+        #   4. A meaningful pressure drop after the message (passive
+        #      recovery — credited only via the pressure rule, not on its
+        #      own behavior).
+        if tool_name == "Bash" and isinstance(tool_input, dict):
+            cmd = (tool_input.get("command", "") or "").lower()
+            if "/compact" in cmd or "git commit" in cmd or "git add" in cmd:
+                return True
+        if tool_name in ("Write", "Edit", "NotebookEdit"):
+            lower_path = (file_path or "").lower()
+            if any(
+                marker in lower_path
+                for marker in ("next.md", "handoff", "summary")
+            ):
+                return True
+        # Fall through to the pressure-only rule for everything else.
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "budget":
         # Did they commit/wrap up?
@@ -534,8 +561,34 @@ def check_followthrough(
     if pattern == "cost_spiral":
         return _resolve_via_pressure(pressure_delta, actions_since)
 
-    # `entropy_drop` branch was here pre-2026-04-29; pattern is retired and
-    # the guard at the top of this function already returns None for it.
+    if pattern == "entropy_drop":
+        # Resurrected 2026-04-30. Tunnel-vision recovery wants a real
+        # diversification signal: ≥3 distinct tools in the last 5
+        # actions. The wider window (5 vs the original 3) lets
+        # realistic recoveries like Read→Edit→Read→Grep→Bash count
+        # as diversification — a strict 3-of-3 rule biases helped%
+        # downward in the same way the old `context` literal-token
+        # rule did. When ``recent_actions`` is absent (legacy callers)
+        # we credit Read/Grep/Glob as a diversifying explore. Otherwise
+        # fall through to the pressure rule.
+        if recent_actions:
+            window = recent_actions[-5:]
+            distinct = {a.get("tool", "?") for a in window}
+            if len(distinct) >= 3:
+                return True
+        elif tool_name in ("Read", "Grep", "Glob"):
+            return True
+        return _resolve_via_pressure(pressure_delta, actions_since)
+
+    if pattern == "drift":
+        # Resurrected 2026-04-30. Drift = "started with X, drifted to
+        # Y." Followthrough = the agent re-anchored on the original
+        # task: a Read of the task spec, a Grep for the keyword, or a
+        # tool family change away from the drifted-to tool. Without
+        # those signals we resolve via pressure.
+        if tool_name in ("Read", "Grep", "Glob"):
+            return True
+        return _resolve_via_pressure(pressure_delta, actions_since)
 
     if pattern == "bash_retry":
         # Required recovery = Read OR a different command family (not
@@ -623,11 +676,24 @@ class ContextualGuidance:
         if msg:
             candidates.append(msg)
 
-        # context + entropy_drop retired 2026-04-25 (see RETIRED_PATTERN_KEYS).
-        # The underlying signals (context_usage, tool entropy) still feed
-        # vitals and pressure; only the guidance messages were dropped.
-        # _check_context_window and _check_entropy_drop methods are kept
-        # for unit-test coverage but no longer wired into evaluate().
+        # context + entropy_drop resurrected 2026-04-30. Both ship as
+        # ``collecting`` — A/B harness runs from zero and the public
+        # README does not credit them with verdicts until pairs cross
+        # MIN_PAIRS. Resurrection rationale documented in CHANGELOG.
+        msg = self._check_context_window(vitals)
+        if msg:
+            candidates.append(msg)
+
+        msg = self._check_entropy_drop(action_log)
+        if msg:
+            candidates.append(msg)
+
+        # drift resurrected 2026-04-30 — restored detector body from the
+        # pre-retire history (commit a673e67~1) with the original
+        # signal/threshold and tool-shift heuristic. Status: collecting.
+        msg = self._check_drift(action_log, vitals)
+        if msg:
+            candidates.append(msg)
 
         if not candidates:
             return None
@@ -939,15 +1005,11 @@ class ContextualGuidance:
         pct = tools[dominant] * 100 // len(recent)
 
         severity = "critical" if entropy < 0.5 else "warn"
-
-        # Panic detection: low entropy + high velocity = critical
-        recent_ts = [e.get("ts", 0) for e in recent if e.get("ts")]
-        if len(recent_ts) >= 3:
-            gaps = [recent_ts[i] - recent_ts[i - 1] for i in range(1, len(recent_ts)) if recent_ts[i - 1] > 0]
-            if gaps:
-                avg_gap = sum(gaps) / len(gaps)
-                if avg_gap < 3.0:  # Less than 3 seconds between actions
-                    severity = "critical"  # Panic: monotool + fast = disaster
+        # NOTE: previous implementation escalated to "critical" when
+        # ``avg_gap < 3.0`` seconds — a hardcoded threshold that fired on
+        # healthy fast Read/Glob exploration loops, which was the false-
+        # positive that triggered the 2026-04-25 retirement. Velocity
+        # escalation removed; severity is now driven by entropy alone.
 
         return GuidanceMessage(
             pattern="entropy_drop",
@@ -961,7 +1023,69 @@ class ContextualGuidance:
             suggestion=f"diversify — use Read or Grep before continuing with {dominant}",
         )
 
-    # ── Pattern 9: Bash Retry Intercept ──
+    # ── Pattern 9: Drift (resurrected 2026-04-30) ──
+
+    def _check_drift(
+        self, action_log: list[dict], vitals: dict,
+    ) -> GuidanceMessage | None:
+        """Tool-shift drift detector.
+
+        Restored 2026-04-30 from commit ``a673e67~1`` with no behavior
+        change. The 9-firing / 0%-helped window that drove the original
+        retirement was statistically too small for a verdict, and the
+        underlying ``drift`` signal still feeds the pressure aggregator
+        — emitting guidance again gives us A/B data to make a real call.
+
+        Fires when ``vitals.drift > 0.5`` and the dominant tool in the
+        first 5 actions differs from the dominant tool in the last 5.
+        Drift signal is high but tools haven't shifted → silent (we'd be
+        emitting vague advice we can't action on).
+        """
+        drift_threshold = 0.5
+        if (
+            self._profile is not None
+            and not self._profile.is_warmup()
+        ):
+            drift_threshold = self._profile.drift_threshold()
+        drift = vitals.get("drift", 0)
+        if drift < drift_threshold:
+            return None
+
+        if len(action_log) < 10:
+            return None
+
+        early = action_log[:5]
+        recent = action_log[-5:]
+
+        from collections import Counter
+        early_tools = Counter(e.get("tool", "?") for e in early)
+        recent_tools = Counter(e.get("tool", "?") for e in recent)
+
+        initial = early_tools.most_common(1)[0][0] if early_tools else "?"
+        current = recent_tools.most_common(1)[0][0] if recent_tools else "?"
+
+        if initial == current:
+            # Drift signal is high but the dominant tool hasn't shifted
+            # — the source is *within-tool* behavior change (args, file
+            # paths, operation type). There's no actionable advice we
+            # can prescribe here, so stay silent rather than emitting
+            # vague "use a different tool" copy. This early-return is
+            # the original 2026-04-18 semantics and is the reason the
+            # mode-blind ``most_common(1)`` view is acceptable.
+            return None
+
+        return GuidanceMessage(
+            pattern="drift",
+            severity="warn",
+            message=(
+                f"[SOMA] You started with mostly {initial} but shifted to {current}. "
+                f"Re-read the original task spec or grep for the main keyword to refocus."
+            ),
+            evidence=(f"Tool shift: {initial} → {current}",),
+            suggestion="Read or Grep the original task spec",
+        )
+
+    # ── Pattern 10: Bash Retry Intercept ──
 
     def _check_bash_error_streak(
         self, action_log: list[dict], current_tool: str,

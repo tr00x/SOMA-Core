@@ -87,23 +87,46 @@ _AGENT_FAMILY_ALIASES = {
     "claude-code": "cc",
 }
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Schema migration registry. Each entry maps from_version → callable
 # that takes a raw dict at that version and returns a dict at
-# from_version+1. Empty today (we're at v=1 since day one); adding an
-# upgrader looks like:
-#
-#   def _migrate_v1_to_v2(d: dict) -> dict:
-#       d = dict(d)
-#       d["new_field"] = compute_default(d)
-#       d["schema_version"] = 2
-#       return d
-#   _SCHEMA_MIGRATORS[1] = _migrate_v1_to_v2
-#
-# Then bump SCHEMA_VERSION to 2 in the same commit.
+# from_version+1.
 from typing import Callable as _Callable  # noqa: E402
-_SCHEMA_MIGRATORS: dict[int, _Callable[[dict], dict]] = {}
+
+
+# Patterns whose silenced/refuted state should not survive the
+# 2026-04-30 resurrection. These were retired between 2026-04-18 and
+# 2026-04-25 and many user profiles persisted them in
+# ``silenced_patterns`` or ``refuted_patterns``. Carrying that state
+# forward would silently kill the resurrection for anyone with a
+# pre-existing profile.
+_RESURRECTED_2026_04_30: frozenset[str] = frozenset(
+    {"_stats", "drift", "entropy_drop", "context"}
+)
+
+
+def _migrate_v1_to_v2(d: dict) -> dict:
+    """Strip resurrected pattern keys from silenced/refuted lists.
+
+    The resurrection (2026-04-30) reactivated four patterns that some
+    pre-existing user profiles had auto-silenced or auto-refuted under
+    their pre-fix behavior. Without this migration ``evaluate()`` would
+    drop the resurrected candidates on load and the resurrection would
+    ship dead-on-arrival.
+    """
+    d = dict(d)
+    for key in ("silenced_patterns", "refuted_patterns", "validated_patterns"):
+        existing = d.get(key) or []
+        if existing:
+            d[key] = [p for p in existing if p not in _RESURRECTED_2026_04_30]
+    d["schema_version"] = 2
+    return d
+
+
+_SCHEMA_MIGRATORS: dict[int, _Callable[[dict], dict]] = {
+    1: _migrate_v1_to_v2,
+}
 
 
 def _apply_schema_migrators(

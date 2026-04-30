@@ -169,17 +169,24 @@ def test_gate_retired_set_matches_soma_source_of_truth():
     )
 
 
-def test_retired_patterns_excluded_from_top_n(tmp_path):
+def test_retired_patterns_excluded_from_top_n(tmp_path, monkeypatch):
     """Retired patterns can never accumulate new rows; they must not
     appear in the gate's top-N list or they'd pin the gate to FAIL
     forever after retirement.
+
+    The current ``RETIRED_PATTERN_KEYS`` is empty (everything was
+    resurrected 2026-04-30), so this test simulates a future retirement
+    by patching the set, then confirms the SQL exclusion still works.
     """
+    monkeypatch.setattr(
+        gate, "RETIRED_PATTERN_KEYS", frozenset({"old_a", "old_b", "old_c"}),
+    )
     db = tmp_path / "analytics.db"
     _make_db(
         db,
         fires={
-            # Retired (high historical fire count) — must be filtered out.
-            "entropy_drop": 500, "context": 400, "drift": 300,
+            # Simulated-retired (high historical fire count) — filtered out.
+            "old_a": 500, "old_b": 400, "old_c": 300,
             # Active patterns with valid coverage.
             "bash_retry": 100, "budget": 90, "blind_edit": 80,
             "cost_spiral": 70, "error_cascade": 60,
@@ -192,9 +199,7 @@ def test_retired_patterns_excluded_from_top_n(tmp_path):
     )
     report = gate.build_report(db)
     pattern_names = [p.pattern for p in report.patterns]
-    assert "entropy_drop" not in pattern_names
-    assert "context" not in pattern_names
-    assert "drift" not in pattern_names
+    assert set(pattern_names).isdisjoint(gate.RETIRED_PATTERN_KEYS)
     assert pattern_names == [
         "bash_retry", "budget", "blind_edit", "cost_spiral", "error_cascade",
     ]

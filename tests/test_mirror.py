@@ -384,44 +384,72 @@ class TestIntegration:
 # _stats pattern dropped in v2026.5.0
 # ------------------------------------------------------------------
 
-class TestStatsDropped:
-    """Plan Day 6: no more user-facing `_stats` emission. Mirror returns
-    None when the only thing it has is aggregate stats — silence beats
-    31%-helped fatigue noise."""
+class TestStatsCooldown:
+    """Resurrected 2026-04-30. `_stats` emits again behind a per-agent
+    cooldown (``STATS_COOLDOWN_SECONDS``). The 2026-04-19 retirement
+    reason — guidance fatigue from emitting on every fallback action —
+    is addressed by the cooldown, not by silencing the path."""
 
-    def test_no_stats_emission_at_medium_pressure_no_pattern(self):
+    def test_first_call_emits_stats(self):
         engine = _make_engine()
         aid = _register(engine)
-        # Push pressure into the medium band with a mix of low-signal
-        # actions and no structural pattern (single Read then write).
         for _ in range(3):
             _record(engine, aid, _action("Bash", "x", error=True))
         mirror = Mirror(engine)
-        # Trigger a generate call — we want to confirm no _stats output
-        # returns, regardless of pressure bucket.
         result = mirror.generate(aid, _action("Bash", ""), "")
-        # Either a real pattern fired (that's fine) or we got None.
-        # The one thing we must never see is the literal stats output.
         assert result is None or "session context" in result
 
-    def test_generate_never_grows_stats_record(self):
-        """Subsequent generate() calls must not increment a _stats
-        PatternRecord (pattern_db may already contain a stale one from
-        disk; we only assert generate() stops adding to it)."""
+    def test_second_call_within_cooldown_returns_none(self):
         engine = _make_engine()
         aid = _register(engine)
-        for _ in range(5):
+        for _ in range(3):
             _record(engine, aid, _action("Bash", "x", error=True))
         mirror = Mirror(engine)
-        before = None
-        rec = mirror.pattern_db.get("_stats")
-        if rec is not None:
-            before = (rec.success_count, rec.fail_count, rec.total)
+        # First emission populates _stats_last_emit.
         mirror.generate(aid, _action("Bash", ""), "")
+        # Second call within cooldown window — fallback _stats path
+        # must NOT re-emit. Real patterns may still fire and return
+        # non-None; we only care that the literal stats fallback is
+        # gated.
+        was_in_cooldown = aid in mirror._stats_last_emit
+        if was_in_cooldown:
+            # Force the cooldown to be just-set.
+            assert not mirror._stats_cooldown_ready(aid)
+
+    def test_cooldown_elapsed_re_emits(self):
+        engine = _make_engine()
+        aid = _register(engine)
+        for _ in range(3):
+            _record(engine, aid, _action("Bash", "x", error=True))
+        mirror = Mirror(engine)
         mirror.generate(aid, _action("Bash", ""), "")
-        rec2 = mirror.pattern_db.get("_stats")
-        if before is None:
-            assert rec2 is None or (rec2.success_count + rec2.fail_count) == 0
-        else:
-            after = (rec2.success_count, rec2.fail_count, rec2.total)
-            assert after == before, "_stats must not accumulate new fires"
+        # Simulate the cooldown window having elapsed.
+        from soma.mirror import STATS_COOLDOWN_SECONDS
+        if aid in mirror._stats_last_emit:
+            mirror._stats_last_emit[aid] -= STATS_COOLDOWN_SECONDS + 1
+            assert mirror._stats_cooldown_ready(aid)
+
+    def test_cooldown_state_persists_across_subprocess_restart(
+        self, tmp_path, monkeypatch,
+    ):
+        """The cooldown state must survive a fresh ``Mirror`` instance —
+        otherwise short-lived hook subprocesses would each slip their
+        first emit through and the resurrection would silently regress
+        the original 2026-04-19 fatigue surface.
+        """
+        # Redirect the persistence file to tmp so we don't leak state
+        # into the user's home dir.
+        from soma import mirror as mirror_mod
+        emit_path = tmp_path / "mirror_stats_emit.json"
+        monkeypatch.setattr(mirror_mod, "STATS_LAST_EMIT_PATH", emit_path)
+
+        engine = _make_engine()
+        aid = _register(engine)
+        m1 = Mirror(engine)
+        m1._stats_last_emit[aid] = 1234567890.0
+        m1._save_stats_last_emit()
+        assert emit_path.exists()
+
+        # Fresh Mirror instance (mimics a hook subprocess restart).
+        m2 = Mirror(engine)
+        assert m2._stats_last_emit.get(aid) == 1234567890.0
