@@ -80,8 +80,9 @@ def collect(
                         priority=2, category="quality",
                         message=f"grade={report.grade}",
                     ))
-        except Exception:
-            pass
+        except Exception as _findings_exc:
+            from soma.errors import log_silent_failure
+            log_silent_failure("findings.collect", _findings_exc)
 
     # ── Prediction ──
     if hook_config.get("predict", True):
@@ -106,14 +107,15 @@ def collect(
                             priority=1, category="predict",
                             message=f"escalation in ~{pred.actions_ahead} actions, trigger={reason}, confidence={pred.confidence:.0%} — {context}",
                         ))
-        except Exception:
-            pass
+        except Exception as _findings_exc:
+            from soma.errors import log_silent_failure
+            log_silent_failure("findings.collect", _findings_exc)
 
     # ── Workflow mode ──
     try:
         from soma.context import detect_workflow_mode
         workflow_mode = detect_workflow_mode()
-    except Exception:
+    except Exception as _findings_exc:
         workflow_mode = ""
 
     # ── Patterns (via core module) ──
@@ -147,8 +149,9 @@ def collect(
                     priority=1, category="pattern",
                     message=msg,
                 ))
-    except Exception:
-        pass
+    except Exception as _findings_exc:
+        from soma.errors import log_silent_failure
+        log_silent_failure("findings.collect", _findings_exc)
 
     # ── Scope drift (suppressed during planning) ──
     if hook_config.get("task_tracking", True) and workflow_mode not in ("plan", "discuss"):
@@ -166,8 +169,9 @@ def collect(
                     priority=2, category="scope",
                     message=f"scope_drift={ctx.scope_drift:.2f}, {ctx.drift_explanation}",
                 ))
-        except Exception:
-            pass
+        except Exception as _findings_exc:
+            from soma.errors import log_silent_failure
+            log_silent_failure("findings.collect", _findings_exc)
 
     # ── Fingerprint divergence ──
     if hook_config.get("fingerprint", True):
@@ -180,8 +184,9 @@ def collect(
                     priority=2, category="fingerprint",
                     message=explanation,
                 ))
-        except Exception:
-            pass
+        except Exception as _findings_exc:
+            from soma.errors import log_silent_failure
+            log_silent_failure("findings.collect", _findings_exc)
 
     # ── RCA ──
     try:
@@ -193,8 +198,9 @@ def collect(
                 priority=priority, category="rca",
                 message=rca,
             ))
-    except Exception:
-        pass
+    except Exception as _findings_exc:
+        from soma.errors import log_silent_failure
+        log_silent_failure("findings.collect", _findings_exc)
 
     findings.sort(key=lambda f: f.priority)
     return findings

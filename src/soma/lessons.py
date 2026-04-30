@@ -40,6 +40,7 @@ class LessonStore:
     def _save(self) -> None:
         import os
         import tempfile
+        from soma.errors import log_silent_failure
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=str(self._path.parent), suffix=".tmp")
@@ -47,13 +48,14 @@ class LessonStore:
                 with os.fdopen(fd, "w") as f:
                     json.dump(self._lessons, f, indent=2)
                 os.replace(tmp, str(self._path))
-            except Exception:
+            except Exception as e:
+                log_silent_failure("lessons._save (write)", e)
                 try:
                     os.unlink(tmp)
                 except OSError:
                     pass
-        except Exception:
-            pass
+        except Exception as e:
+            log_silent_failure("lessons._save (outer)", e)
 
     def record(self, pattern: str, error_text: str, fix_text: str, tool: str = "") -> None:
         """Record a lesson: this error was fixed by this action."""
