@@ -129,9 +129,16 @@ class VitalsSnapshot:
     context_burn_rate: float = 0.0             # rolling avg tokens per action (last 10)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class AgentConfig:
-    """Configuration for a monitored agent."""
+    """Configuration for a monitored agent.
+
+    v2026.6.x: frozen+slots like the other value-object dataclasses in
+    this module (Action, VitalsSnapshot, PressureVector). Was mutable;
+    no caller ever rebound a field, but the loose contract was a
+    footgun. Use ``dataclasses.replace(cfg, ...)`` to derive a modified
+    config.
+    """
     agent_id: str
     display_name: str = ""
     autonomy: AutonomyMode = AutonomyMode.HUMAN_ON_THE_LOOP
@@ -139,3 +146,7 @@ class AgentConfig:
     tools_allowed: list[str] = field(default_factory=list)
     expensive_tools: list[str] = field(default_factory=list)
     minimal_tools: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.agent_id:
+            raise ValueError("AgentConfig.agent_id must be a non-empty string")
