@@ -14,7 +14,6 @@ SOMA changes the transcript *while* the agent is writing it.**
 [![PyPI](https://img.shields.io/pypi/v/soma-ai.svg?style=for-the-badge&label=pypi&color=ff0080&labelColor=0a0a0a)](https://pypi.org/project/soma-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/soma-ai.svg?style=for-the-badge&color=ff0080&labelColor=0a0a0a)](https://pypi.org/project/soma-ai/)
 [![License](https://img.shields.io/badge/license-MIT-ff0080.svg?style=for-the-badge&labelColor=0a0a0a)](LICENSE)
-[![CalVer](https://img.shields.io/badge/calver-2026.6.2-ff0080.svg?style=for-the-badge&labelColor=0a0a0a)](#)
 
 <br>
 
@@ -118,6 +117,43 @@ flowchart LR
     class A,X,M act
 ```
 
+### Multi-agent — the trust graph
+
+One agent gets one pressure scalar. **A graph of agents gets a propagating one.** When `research` shows distress, the pressure flows to whoever owns it — a planner, an orchestrator, a parent session — across trust-weighted directed edges. The orchestrator reacts to a sub-agent's retry storm even when the sub-agent's transcript never reaches it.
+
+```mermaid
+flowchart TB
+    O([orchestrator]) -.->|p=0.18| Plan
+    O -.->|p=0.18| Scribe
+    Plan([planner])
+    Scribe([scribe])
+    Plan -->|trust 0.9| O
+    Scribe -->|trust 1.0| O
+    Sub([claude_sub<br/>p=0.71]) -->|trust 0.4| Plan
+
+    classDef calm fill:#0a0a0a,stroke:#333,color:#fff
+    classDef warm fill:#1a1015,stroke:#ff66b3,color:#ff99cc
+    classDef hot  fill:#1a0010,stroke:#ff0080,color:#ff66b3
+    class O,Scribe calm
+    class Plan warm
+    class Sub hot
+```
+
+```python
+import soma
+
+eng = soma.SOMAEngine()
+eng.register_agent("orchestrator")
+eng.register_agent("planner")
+eng.register_agent("claude_sub")
+
+# Directional edge: when source struggles, target picks up a fraction.
+eng.add_edge("claude_sub", "planner", trust_weight=0.4)
+eng.add_edge("planner",    "orchestrator", trust_weight=0.9)
+```
+
+`trust_weight ∈ [0, 1]` controls how much pressure leaks per propagation step. Three damping iterations converge fast and never amplify — cycles decay rather than oscillate. The whole reason SOMA isn't *just* a single-session monitor: real agentic systems are ensembles, and one sub-agent retry-storming inside a sub-task should be a signal the parent acts on, not noise lost in a tree.
+
 ---
 
 ## Guidance — experimental, in active testing
@@ -130,14 +166,26 @@ Six patterns ship today:
 
 | Pattern              |   n  | Status                                           |
 |:---------------------|-----:|:-------------------------------------------------|
-| `bash_retry`         |   57 | **Primary signal** — 91 % helped, ~46 % drop     |
-| `budget`             |   56 | In active iteration                              |
-| `blind_edit`         |   55 | In active iteration                              |
+| `bash_retry`         |   60 | Highest-volume — `collecting`                    |
+| `budget`             |   56 | `collecting`                                     |
+| `blind_edit`         |   55 | `collecting`                                     |
 | `bash_error_streak`  |    2 | New — sampling                                   |
 | `cost_spiral`        |    1 | New — sampling                                   |
 | `error_cascade`      |    0 | Active — awaiting first firing                   |
 
-`bash_retry` is the strongest pattern in production: when the agent enters a retry storm, surfacing the loop back into its own context breaks it out 91 % of the time. Other patterns run with full instrumentation while their messages are iterated on outcome data.
+`bash_retry` is the highest-volume pattern: 55 of 60 treatment firings (91.7 %, Wilson 95 % CI [82, 96]) end with pressure below the firing-time baseline at the next action. That is a *descriptive* recovery rate — not a treatment effect. The matched A/B comparison hasn't yet produced a verdict for any pattern: every row above is status `collecting` until the gate clears. The methodology, not the verdict, is what's stable today.
+
+### What got retired
+
+Three patterns that shipped earlier no longer fire. Listing them publicly because the methodology only matters if the gate works in both directions:
+
+| Pattern         | Why retired                                                             |
+|:----------------|:------------------------------------------------------------------------|
+| `entropy_drop`  | Vitals signal kept; guidance message under-helped on outcome data.      |
+| `context`       | Wrong abstraction — too vague to produce actionable healing.            |
+| `drift`         | Detector too noisy without per-agent calibration. Vitals signal kept.   |
+
+Killing a pattern uses the same lever as adding one. The bus is governed by data, not author preference.
 
 <details>
 <summary><b>How outcomes are measured</b></summary>
@@ -169,6 +217,20 @@ The methodology is the durable part. Patterns get refined, replaced, or retired 
 <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings view" /><br><sub align="center"><i>Settings — thresholds, mode boundaries, pattern toggles.</i></sub></td>
 </tr>
 </table>
+
+---
+
+## Where it fits
+
+**Long-running coding agents.** SOMA was built on my own Claude Code workflow and that's where the production data comes from. Retry storms, blind edits, runaway bash loops — `bash_retry` is the primary signal.
+
+**CI gates for agent behaviour.** `pytest-soma` lets you assert that an agent stays below a pressure threshold on a fixed prompt. Useful for catching prompt regressions before merge.
+
+**Cost containment.** `cost_spiral` and `budget` patterns escalate to BLOCK when token velocity diverges from baseline. Stops the agent before the bill, not after.
+
+**Multi-agent orchestration** *(no production data yet — fleet is one human).* The trust graph propagates pressure across connected agents. See the [Multi-agent](#multi-agent--the-trust-graph) section above.
+
+**Adversarial probing** *(open research direction).* The `drift` signal is sensitive to session-intent divergence, which includes some classes of prompt injection. Unverified — if you're researching this, reach out.
 
 ---
 
@@ -218,7 +280,7 @@ client.messages.create(...)
 `soma status` in the terminal:
 
 ```
-SOMA v2026.6.2 — 3 agents monitored
+SOMA — 3 agents monitored
 
   cc-34596      OBSERVE       p=0.14  u=0.23  d=0.03  e=0.01   #2
   cc-1384       OBSERVE       p=0.16  u=0.23  d=0.05  e=0.01   #2
@@ -229,12 +291,73 @@ SOMA v2026.6.2 — 3 agents monitored
 
 ---
 
+## Memory across sessions
+
+**Lessons store.** Errors that get fixed once turn into hints when a similar shape comes back later. Trigram-similarity matching means a `ModuleNotFoundError: pkg_resources` in this session pulls the fix you wrote two weeks ago. On-disk JSON, capped at 100 lessons with LRU eviction.
+
+```python
+from soma.lessons import LessonStore
+
+store = LessonStore()
+store.record(
+    pattern="ModuleNotFound",
+    error_text="ModuleNotFoundError: No module named 'pkg_resources'",
+    fix_text="pip install setuptools",
+    tool="Bash",
+)
+
+# Later, in a different session…
+store.query("pkg_resources is missing", tool="Bash")
+# → [{'similarity': 0.71, 'fix_text': 'pip install setuptools', ...}]
+```
+
+**Replay.** Sessions are recorded action-by-action. Replay the recording back into a fresh engine and you get bit-identical pressure trajectories — required for debugging "why did SOMA fire there?" weeks after the fact, and for shipping bias-class regressions as recorded sessions instead of one-off tests.
+
+```bash
+soma replay ~/.soma/sessions/2026-04-29.jsonl
+```
+
+---
+
+## Auditability
+
+The analytics aren't a black box. They're a SQLite database — `sqlite3 ~/.soma/analytics.db` and audit it yourself.
+
+- **Source tagging.** Every row in `guidance_outcomes` and `ab_outcomes` carries `source ∈ {hook, wrap, test}`. Test-fixture writes are dropped from production stats; replay tooling cannot pollute live data.
+- **SQL-trigger invariants.** A `BEFORE INSERT` trigger refuses any `ab_outcomes` row with a NULL `firing_id`. The bias class is enforced by the database, not by Python convention.
+- **Audit log.** Rotating JSONL (`~/.soma/audit.*.jsonl`) records every guidance firing, every block, every silent failure. Bounded retention; rotation automatic.
+- **Schema migrations.** Engine state and calibration carry a `schema_version` and migrate forward on load. Old state survives breaking math changes.
+
+When a pattern claims to have helped, you can re-derive that claim from raw rows on disk.
+
+---
+
+## Calibration
+
+Per-agent EMA baselines update on every action. Cold-start blending keeps the first ~10 actions of a fresh session from over-reacting — defaults dominate until enough data accumulates.
+
+The math is the same shape across agents; the *constants* aren't. Each agent's baseline drifts toward that agent's own normal. Mode boundaries (`0.25 / 0.50 / 0.75`) and the sigmoid shift (`σ_clamp` shifted by 3) are global today; per-agent thresholds are the next calibration target. A schema-versioned migration framework already ships so future calibration changes don't crash existing engine state.
+
+---
+
+## Observability
+
+Pressure events optionally export to OpenTelemetry. `pip install soma-ai[otel]` adds the exporter; every pressure update, guidance firing, and block decision becomes a span. Plug into Grafana / Prometheus / any OTel collector — agent vitals end up next to service vitals on the same dashboard.
+
+```bash
+soma statusline      # one-line vitals, drop in your shell prompt
+soma dashboard       # full Textual TUI
+soma replay <file>   # deterministic replay of a recorded session
+```
+
+---
+
 ## What's next
 
-1. **Drive three more patterns to gate** (n ≥ 30 paired). Roughly three weeks of session data at the current rate.
-2. **Per-agent calibration of global constants** — the 0.7 / 0.3 mean–max blend, the sigmoid shift, and the mode boundaries should each derive from the agent's own history.
-3. **Forecast `cost_spiral`.** Right now the pattern fires *after* the spike. The trajectory should predict it.
-4. **A learned aggregator.** Replace the hand-tuned blend with a small online model that adjusts signal weights to per-agent error feedback.
+1. **Drive three more patterns to gate** (n ≥ 30 paired). ~3 weeks.
+2. **Per-agent calibration** of the 0.7 / 0.3 mean–max blend, the sigmoid shift, and the mode boundaries — each should derive from the agent's own history. Next.
+3. **Forecast `cost_spiral`** before the spike. The pattern fires *after* the spike today; the trajectory should predict it. After (2).
+4. **A learned aggregator.** Replace the hand-tuned blend with a small online model that adjusts signal weights to per-agent error feedback. Research.
 
 ---
 
