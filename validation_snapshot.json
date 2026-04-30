@@ -1,0 +1,54 @@
+[
+  {
+    "pattern": "bash_error_streak",
+    "agent_family": null,
+    "fires_treatment": 2,
+    "fires_control": 0,
+    "mean_treatment_delta": 0.413735734375,
+    "mean_control_delta": 0.0,
+    "delta_difference": 0.413735734375,
+    "p_value": null,
+    "effect_size": null,
+    "status": "collecting",
+    "horizon": 2
+  },
+  {
+    "pattern": "bash_retry",
+    "agent_family": null,
+    "fires_treatment": 20,
+    "fires_control": 21,
+    "mean_treatment_delta": 0.4856063482584922,
+    "mean_control_delta": 0.5321497053604117,
+    "delta_difference": -0.046543357101919536,
+    "p_value": 0.43004059605475575,
+    "effect_size": -0.25224810499443,
+    "status": "collecting",
+    "horizon": 2
+  },
+  {
+    "pattern": "blind_edit",
+    "agent_family": null,
+    "fires_treatment": 7,
+    "fires_control": 11,
+    "mean_treatment_delta": -0.0005830701953272886,
+    "mean_control_delta": 0.013884362376989106,
+    "delta_difference": -0.014467432572316394,
+    "p_value": null,
+    "effect_size": null,
+    "status": "collecting",
+    "horizon": 2
+  },
+  {
+    "pattern": "budget",
+    "agent_family": null,
+    "fires_treatment": 17,
+    "fires_control": 18,
+    "mean_treatment_delta": 0.006716598717065638,
+    "mean_control_delta": 0.023539220412582922,
+    "delta_difference": -0.016822621695517286,
+    "p_value": 0.4062935777333715,
+    "effect_size": -0.27990075360583,
+    "status": "collecting",
+    "horizon": 2
+  }
+]

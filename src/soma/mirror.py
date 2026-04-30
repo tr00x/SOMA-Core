@@ -18,9 +18,16 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows
+    _HAS_FCNTL = False
 
 from soma.engine import SOMAEngine
 from soma.types import Action
@@ -480,12 +487,60 @@ class Mirror:
             self._stats_last_emit = {}
 
     def _save_stats_last_emit(self) -> None:
-        """Persist per-agent cooldown timestamps to disk."""
+        """Persist per-agent cooldown timestamps to disk.
+
+        Uses the project's canonical atomic-write contract (CONTRIBUTING.md):
+        flock + tmp + fsync + os.replace. Concurrent hook subprocesses
+        share this file; non-atomic write would corrupt the cooldown
+        state and silently regress the fatigue surface that drove the
+        original 2026-04-19 _stats retirement.
+        """
+        target = STATS_LAST_EMIT_PATH
         try:
-            STATS_LAST_EMIT_PATH.parent.mkdir(parents=True, exist_ok=True)
-            STATS_LAST_EMIT_PATH.write_text(json.dumps(self._stats_last_emit))
+            target.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+        lock_path = target.with_suffix(target.suffix + ".lock")
+        lock_fh = None
+        try:
+            if _HAS_FCNTL:
+                lock_fh = open(lock_path, "w")
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            data = json.dumps(self._stats_last_emit).encode("utf-8")
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(target.parent),
+                prefix=".mirror_stats_",
+                suffix=".tmp",
+            )
+            closed = False
+            try:
+                os.write(fd, data)
+                os.fsync(fd)
+                os.close(fd)
+                closed = True
+                os.replace(tmp_path, str(target))
+            except BaseException:
+                if not closed:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                raise
         except OSError:
             pass
+        finally:
+            if lock_fh is not None:
+                try:
+                    if _HAS_FCNTL:
+                        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+                    lock_fh.close()
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     # Self-learning

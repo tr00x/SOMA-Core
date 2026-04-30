@@ -428,6 +428,13 @@ def test_archive_migration_writes_reset_log(tmp_path, monkeypatch):
 
     reset_log = tmp_path / "ab_reset.log"
     assert reset_log.exists(), "migration must write reset log"
-    entry = json.loads(reset_log.read_text().strip().splitlines()[-1])
-    assert entry["archived_rows"] == 1
-    assert "MD5 bias purged" in entry["reason"]
+    # Multiple migrations write to ab_reset.log; find the MD5-bias one
+    # specifically (later additions like the 2026-04-30 resurrection
+    # entry append after this archive migration).
+    entries = [
+        json.loads(line)
+        for line in reset_log.read_text().strip().splitlines()
+    ]
+    archive_entries = [e for e in entries if "MD5 bias purged" in e["reason"]]
+    assert archive_entries, f"archive entry missing in {entries}"
+    assert archive_entries[0]["archived_rows"] == 1

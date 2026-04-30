@@ -1320,8 +1320,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Filter to a single agent family (e.g. 'cc'); default: all",
     )
     validate_parser.add_argument(
-        "--min-pairs", type=int, default=30, dest="min_pairs",
-        help="Minimum firings per arm before classifying (default: 15)",
+        "--min-pairs", type=int, default=None, dest="min_pairs",
+        help="Minimum firings per arm before classifying "
+             "(default: ab_control.DEFAULT_MIN_PAIRS)",
     )
     validate_parser.add_argument(
         "--json", action="store_true",

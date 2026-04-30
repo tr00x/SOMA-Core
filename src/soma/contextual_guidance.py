@@ -840,6 +840,17 @@ class ContextualGuidance:
         if consecutive < streak_floor:
             return None
 
+        # NOTE on production rarity (audited 2026-04-30): error_cascade
+        # logged 0 firings in 16 days of real Claude Code usage even
+        # though the detector is wired into evaluate(). Reason isn't a
+        # bug — the baseline-std suppression below combined with how
+        # rare 3+ consecutive errors are in real sessions (~2.8% Bash
+        # error rate) keeps it dormant. bash_error_streak yields to
+        # this branch at ≥3 errors, so the path is reachable; it just
+        # needs the tail event. Left as-is because tightening the
+        # detector to fire more aggressively would compete with
+        # bash_error_streak rather than complement it.
+
         # If we have a baseline and this error rate is within normal range, suppress
         if self._baseline and self._baseline.get_count("error_rate") >= 3:
             recent_len = len(action_log[-10:])

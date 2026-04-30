@@ -107,19 +107,38 @@ _RESURRECTED_2026_04_30: frozenset[str] = frozenset(
 
 
 def _migrate_v1_to_v2(d: dict) -> dict:
-    """Strip resurrected pattern keys from silenced/refuted lists.
+    """Strip resurrected pattern keys from silenced/refuted lists AND
+    reset the per-pattern precision cache + last_silence_check_action.
 
     The resurrection (2026-04-30) reactivated four patterns that some
     pre-existing user profiles had auto-silenced or auto-refuted under
     their pre-fix behavior. Without this migration ``evaluate()`` would
     drop the resurrected candidates on load and the resurrection would
     ship dead-on-arrival.
+
+    Resetting ``last_silence_check_action`` and the precision cache
+    closes the second-order trap: even after stripping the pattern
+    from ``silenced_patterns``, the next ``update_silence`` call would
+    re-read the *cached* precision (computed under the old broken
+    behavior) and immediately re-silence the resurrected pattern. The
+    reset forces the silence loop to recompute precision from
+    post-resurrection data.
     """
     d = dict(d)
     for key in ("silenced_patterns", "refuted_patterns", "validated_patterns"):
         existing = d.get(key) or []
         if existing:
             d[key] = [p for p in existing if p not in _RESURRECTED_2026_04_30]
+    cache = d.get("pattern_precision_cache") or {}
+    if cache:
+        d["pattern_precision_cache"] = {
+            k: v for k, v in cache.items()
+            if k not in _RESURRECTED_2026_04_30
+        }
+    # Reset both action counters so the next silence/refute check
+    # reads fresh post-resurrection data, not the pre-fix window.
+    d["last_silence_check_action"] = 0
+    d["last_refuted_check_action"] = 0
     d["schema_version"] = 2
     return d
 

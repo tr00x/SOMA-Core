@@ -115,9 +115,40 @@ def test_v1_to_v2_strips_resurrected_patterns_from_silenced():
     assert "bash_retry" in p.validated_patterns
 
 
+def test_v1_to_v2_resets_precision_cache_and_counters():
+    """Stripping silenced_patterns isn't enough: the next
+    update_silence pass re-reads the cached precision (computed under
+    the old broken behavior) and re-silences the resurrected pattern
+    immediately. The migrator must drop cache entries for resurrected
+    keys AND reset the action counters so the silence loop recomputes
+    from post-resurrection data only.
+    """
+    v1_data = _base_dict(
+        schema_version=1,
+        silenced_patterns=["context"],
+        refuted_patterns=["entropy_drop"],
+        pattern_precision_cache={
+            "context": 0.0,           # broken-measurement zero
+            "entropy_drop": 0.15,     # under the 20% silence threshold
+            "blind_edit": 0.02,       # foreign key — preserved
+            "bash_retry": 0.92,       # foreign key — preserved
+        },
+        last_silence_check_action=500,
+        last_refuted_check_action=400,
+    )
+    p = CalibrationProfile.from_dict(v1_data)
+    assert "context" not in p.pattern_precision_cache
+    assert "entropy_drop" not in p.pattern_precision_cache
+    assert p.pattern_precision_cache.get("blind_edit") == 0.02
+    assert p.pattern_precision_cache.get("bash_retry") == 0.92
+    assert p.last_silence_check_action == 0
+    assert p.last_refuted_check_action == 0
+
+
 def test_v1_to_v2_no_op_when_lists_already_clean():
     """Profiles that never silenced/refuted resurrected patterns get
-    upgraded with empty migrations — no field corruption."""
+    upgraded with empty migrations — no field corruption beyond the
+    counter reset (which is intentional and idempotent)."""
     v1_data = _base_dict(
         schema_version=1,
         silenced_patterns=["blind_edit"],

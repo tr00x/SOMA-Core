@@ -192,6 +192,10 @@ class AnalyticsStore:
             "20260429_firing_id_trigger",
             self._add_firing_id_trigger,
         )
+        self._apply_migration(
+            "20260430_resurrection_reset_log",
+            self._write_resurrection_reset_log,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -431,6 +435,47 @@ class AnalyticsStore:
             "END"
         )
         return 1
+
+    def _write_resurrection_reset_log(self) -> int:
+        """2026-04-30: write an ab_reset.log entry so the release gate's
+        ``reset_ts`` filter excludes pre-resurrection rows.
+
+        Four patterns (entropy_drop, context, drift, _stats) were
+        retired between 2026-04-18 and 2026-04-25 for fixable root
+        causes — magic-number panic threshold, structurally-zero
+        followthrough measurement, statistically-too-small refute
+        sample, and emit-fatigue. The 2026-04-30 resurrection fixed
+        each cause but the historical guidance_outcomes / ab_outcomes
+        rows for those patterns were collected under the broken
+        behaviour and shouldn't count toward post-resurrection
+        verdicts. The release gate already filters on
+        ``timestamp >= reset_ts`` (the latest entry in
+        ``ab_reset.log``); writing this entry sets a clean cut-off so
+        new pairs accumulate against the fixed code path only. We do
+        NOT delete the historical rows — they remain for audit /
+        forensic analysis.
+        """
+        try:
+            import json as _json
+            now = time.time()
+            reset_log = self._path.parent / "ab_reset.log"
+            reset_log.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "ts": now,
+                "archived_rows": 0,
+                "reason": (
+                    "2026-04-30 resurrection: entropy_drop / context / "
+                    "drift / _stats reactivated with fixes; "
+                    "pre-resurrection rows excluded from gate"
+                ),
+                "soma_version": self._version(),
+            }
+            with reset_log.open("a") as f:
+                f.write(_json.dumps(entry) + "\n")
+        except Exception as exc:  # pragma: no cover — best effort
+            from soma.errors import log_silent_failure
+            log_silent_failure("analytics._write_resurrection_reset_log", exc)
+        return 0
 
     def _add_hotpath_indexes(self) -> int:
         """2026-04-27 onward: indexes that match the live read patterns.
