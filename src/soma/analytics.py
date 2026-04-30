@@ -188,6 +188,10 @@ class AnalyticsStore:
             "20260429_hotpath_indexes",
             self._add_hotpath_indexes,
         )
+        self._apply_migration(
+            "20260429_firing_id_trigger",
+            self._add_firing_id_trigger,
+        )
 
     def _apply_migration(self, migration_id: str, fn: Any) -> None:
         """Run ``fn`` once; record ``migration_id`` on success."""
@@ -402,6 +406,31 @@ class AnalyticsStore:
             "DELETE FROM ab_outcomes WHERE firing_id IS NULL"
         )
         return cursor.rowcount
+
+    def _add_firing_id_trigger(self) -> int:
+        """v2026.6.x: structural defense against NULL firing_id INSERTs.
+
+        Python-level dropguards in post_tool_use._record_ab_outcome_at_horizon
+        already prevent this at the live writer, but a future code
+        path that bypasses that helper (test fixture, scripted
+        backfill, external tool) would silently re-introduce the B1
+        bias class. The trigger raises sqlite3.IntegrityError before
+        the row lands so the bug is loud, not silent.
+
+        Applies only to ``ab_outcomes`` (the live table). Archive
+        tables (``ab_outcomes_pre_firing_id_legacy``,
+        ``ab_outcomes_biased_pre_v2026_5_5``) intentionally hold
+        NULL-firing_id rows for forensics — they have no trigger.
+        """
+        self._conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS trg_ab_outcomes_firing_id_not_null "
+            "BEFORE INSERT ON ab_outcomes "
+            "FOR EACH ROW WHEN NEW.firing_id IS NULL "
+            "BEGIN "
+            "  SELECT RAISE(ABORT, 'ab_outcomes.firing_id must not be NULL'); "
+            "END"
+        )
+        return 1
 
     def _add_hotpath_indexes(self) -> int:
         """v2026.6.x: indexes that match the live read patterns.

@@ -799,6 +799,9 @@ def test_archive_pre_firing_id_legacy_migration(tmp_path: Path):
     # so the next reopen executes it.
     store = AnalyticsStore(path=tmp_path / "legacy.db")
     try:
+        # v2026.6.x: drop the firing_id NOT NULL trigger so we can
+        # reproduce pre-v2026.6.0 production state (NULL firing_id).
+        store._conn.execute("DROP TRIGGER IF EXISTS trg_ab_outcomes_firing_id_not_null")
         store.record_ab_outcome(
             agent_family="cc", pattern="bash_retry", arm="treatment",
             pressure_before=0.5, pressure_after=0.4,
@@ -839,6 +842,7 @@ def test_archive_pre_firing_id_legacy_migration_idempotent(tmp_path: Path):
     """Running the migration twice must not double-archive or fail."""
     store = AnalyticsStore(path=tmp_path / "idem.db")
     try:
+        store._conn.execute("DROP TRIGGER IF EXISTS trg_ab_outcomes_firing_id_not_null")
         store.record_ab_outcome(
             agent_family="cc", pattern="bash_retry", arm="treatment",
             pressure_before=0.5, pressure_after=0.4,
@@ -871,6 +875,7 @@ def test_get_ab_outcomes_excludes_legacy_null_firing_id(tmp_path: Path):
     poison every Welch's t-test if not filtered at read time."""
     store = AnalyticsStore(path=tmp_path / "legacy.db")
     try:
+        store._conn.execute("DROP TRIGGER IF EXISTS trg_ab_outcomes_firing_id_not_null")
         # Legacy biased row (NULL firing_id).
         store.record_ab_outcome(
             agent_family="cc", pattern="blind_edit", arm="treatment",
@@ -897,6 +902,7 @@ def test_list_ab_patterns_excludes_legacy_only_patterns(tmp_path: Path):
     code already removed."""
     store = AnalyticsStore(path=tmp_path / "list.db")
     try:
+        store._conn.execute("DROP TRIGGER IF EXISTS trg_ab_outcomes_firing_id_not_null")
         # entropy_drop only has legacy rows.
         store.record_ab_outcome(
             agent_family="cc", pattern="entropy_drop", arm="treatment",

@@ -466,6 +466,7 @@ def test_record_ab_outcome_self_marks_pending(tmp_path):
         "pattern": "bash_retry", "actions_since": 2,
         "ab_arm": "treatment", "pressure_at_injection": 0.7,
         "pressure_after_h1": 0.5,  # buffered h=1 (v2026.6.1 dropguard)
+        "firing_id": "cc-mark|bash_retry|1",  # v2026.6.x trigger requires non-NULL
     }
     ok = _record_ab_outcome_at_horizon(
         agent_id="cc-mark",
