@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026.6.2
+
+Released April 29, 2026.
+
+Reliability + performance hotfix after the v2026.6.1 multi-agent audit.
+Five surgical fixes, all TDD, no schema changes.
+
+### Reliability
+
+- **SQLite no longer drops analytics rows under concurrent hooks.**
+  `analytics.py` now sets `PRAGMA busy_timeout=5000` and
+  `synchronous=NORMAL`. Default `busy_timeout=0` produced instant
+  `SQLITE_BUSY` errors when multiple Claude Code sessions ran at
+  once, and the outer `except: pass` swallowed them — silent data
+  loss, not just speed.
+
+- **`ab_counters.json` writes are atomic.** `_save_persisted` now
+  writes to a per-pid+thread tmp file, fsyncs, and `os.replace`s.
+  Concurrent hook subprocesses can no longer produce a torn JSON
+  file (which `_load_persisted` would silently treat as empty,
+  resetting block-randomization counters and rebiasing arm
+  assignments — the C1+I1+I2+I3 corruption class on a different
+  surface).
+
+- **Retired patterns short-circuit in `check_followthrough`.**
+  `context` and `entropy_drop` were retired 2026-04-25 but
+  `circuit_*.json` files written before the retire date still
+  carry pending rows for them. The function now returns `None`
+  for any `pattern in RETIRED_PATTERN_KEYS` so those rows age
+  out as inconclusive instead of leaking through legacy resolution
+  logic.
+
+### Performance
+
+- **In-process `compile()` replaces `py_compile` subprocess.**
+  `_validate_python_file` used to fork a fresh Python interpreter
+  on every `.py` edit (~25ms per call on top of the hook's own
+  boot). `compile(source, file_path, 'exec')` gives identical
+  SyntaxError detection at near-zero cost.
+
+- **Lint subprocess timeouts tightened from 5000ms → 500ms.**
+  A hung `ruff` or `node --check` could freeze the user's
+  terminal for 5 full seconds. 500ms is plenty for the
+  F-only pyflakes pass we configure.
+
+### API hygiene
+
+- **`SomaBlocked` and `SomaBudgetExhausted` now inherit from
+  `SOMAError`.** Previously raw `Exception` subclasses while
+  `proxy.SOMABlockError` already followed the documented pattern.
+  SDK consumers can now `except SOMAError` to catch the whole
+  family in one clause.
+
 ## 2026.6.1
 
 Released April 29, 2026.
