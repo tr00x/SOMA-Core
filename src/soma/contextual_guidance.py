@@ -452,6 +452,16 @@ def check_followthrough(
     pattern = pending.get("pattern", "")
     actions_since = pending.get("actions_since", 0) + 1
 
+    # v2026.6.2: short-circuit retired patterns. They were retired
+    # 2026-04-25 and never re-fire — but circuit_*.json files written
+    # before the retire date can still carry pending rows for them,
+    # and the legacy per-pattern resolution logic below would silently
+    # mark them True/False instead of letting them age out as
+    # inconclusive. Returning None preserves data integrity by keeping
+    # them out of the helped/not-helped accounting entirely.
+    if pattern in RETIRED_PATTERN_KEYS:
+        return None
+
     if actions_since > 5:
         return False  # Gave up waiting
 

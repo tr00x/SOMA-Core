@@ -757,22 +757,21 @@ def test_followthrough_budget_waiting():
 # ---------------------------------------------------------------------------
 
 def test_followthrough_entropy_drop_followed():
-    """Switching to a different tool means agent diversified."""
+    """v2026.6.2: entropy_drop is retired — always inconclusive (None)."""
     from soma.contextual_guidance import check_followthrough
 
     pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 0}
     result = check_followthrough(pending, "Read", {}, "/src/foo.py", error=False)
-    assert result is True
+    assert result is None
 
 
 def test_followthrough_entropy_drop_ignored():
-    """Same tool 3+ actions after guidance means agent ignored it."""
+    """v2026.6.2: entropy_drop is retired — always inconclusive (None)."""
     from soma.contextual_guidance import check_followthrough
 
-    # actions_since will be incremented to 3 inside check_followthrough
     pending = {"pattern": "entropy_drop", "tool": "Bash", "actions_since": 2}
     result = check_followthrough(pending, "Bash", {"command": "ls"}, "", error=False)
-    assert result is False
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -916,33 +915,29 @@ def test_followthrough_cost_spiral_resolved_by_pressure_drop():
 
 
 def test_followthrough_context_requires_explicit_recovery():
-    """v2026.5.3: context pattern no longer accepts a bare pressure drop
-    as 'helped' — transcript-size proxy is too noisy to be causal. The
-    agent must run compact, commit, or write a handoff file.
-    """
+    """v2026.6.2: context pattern is retired — always inconclusive (None).
+    Pre-retire test asserted True/False on explicit recovery signals;
+    those branches are now unreachable for context."""
     from soma.contextual_guidance import check_followthrough
 
-    # No NEXT.md, no git commit, no compact — resolves False after 2 actions.
     pending = {"pattern": "context", "actions_since": 1, "pressure_at_injection": 0.60}
     result = check_followthrough(pending, "Read", {}, "", error=False, pressure_after=0.28)
-    assert result is False
+    assert result is None
 
-    # With NEXT.md handoff → True.
     pending2 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
     result2 = check_followthrough(
         pending2, "Write",
         {"file_path": "/repo/NEXT.md", "content": "handoff"},
         "/repo/NEXT.md", error=False, pressure_after=0.50,
     )
-    assert result2 is True
+    assert result2 is None
 
-    # With explicit compact command → True.
     pending3 = {"pattern": "context", "actions_since": 0, "pressure_at_injection": 0.60}
     result3 = check_followthrough(
         pending3, "Bash", {"command": "git commit -am 'wip'"},
         "", error=False, pressure_after=0.55,
     )
-    assert result3 is True
+    assert result3 is None
 
 
 def test_followthrough_pressure_signal_ignored_when_absent():
@@ -1031,8 +1026,8 @@ def test_followthrough_entropy_drop_credit_on_real_diversity():
         pending, "Read", {}, "", error=False,
         pressure_after=0.39, recent_actions=recent,
     )
-    # 3 distinct tools in the window → genuine diversification.
-    assert result is True
+    # v2026.6.2: entropy_drop retired — always None regardless of diversity.
+    assert result is None
 
 
 def test_followthrough_bash_retry_flat_succeed_no_credit():
