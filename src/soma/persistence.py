@@ -18,6 +18,31 @@ from soma.baseline import Baseline
 from soma.budget import MultiBudget
 
 
+def update_engine_state(
+    mutator,
+    *,
+    path: str | None = None,
+    default_budget: dict | None = None,
+) -> None:
+    """One-shot RMW helper — call ``mutator(engine)`` under the
+    transaction lock. Sugar for the most common pattern:
+
+        update_engine_state(lambda e: e.record_action(...))
+
+    Use this instead of the legacy ``load_engine_state() + … +
+    save_engine_state()`` pair when you can — the legacy pair has a
+    race window where concurrent hooks lose updates.
+
+    Migration note (v2026.6.x): production hook callers in
+    ``hooks/common.py`` still use the legacy pair for performance
+    reasons (the hook process structure assumes load-once-at-start,
+    save-once-at-end). Migrating those is a separate refactor; the
+    primitive is here so new code paths can be safe by construction.
+    """
+    with engine_state_transaction(path, default_budget=default_budget) as engine:
+        mutator(engine)
+
+
 @contextmanager
 def engine_state_transaction(
     path: str | None = None,

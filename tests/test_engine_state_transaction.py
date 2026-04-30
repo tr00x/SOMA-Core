@@ -114,3 +114,29 @@ def test_transaction_creates_engine_when_state_missing(tmp_path: Path) -> None:
     assert state_path.exists()
     reloaded = load_engine_state(str(state_path))
     assert reloaded._agents["first-agent"].action_count == 7
+
+
+def test_update_engine_state_one_shot_helper(tmp_path: Path) -> None:
+    """update_engine_state(mutator) is sugar around the transaction —
+    mutator runs under the lock, save happens automatically."""
+    from soma.persistence import update_engine_state
+    from soma.engine import SOMAEngine
+
+    state_path = tmp_path / "one_shot.json"
+    # Seed with one agent.
+    seed = SOMAEngine(budget={"tokens": 100000})
+    seed.register_agent("agent-1")
+    save_engine_state(seed, str(state_path))
+
+    def bump(engine):
+        try:
+            engine.get_level("agent-1")
+        except Exception:
+            engine.register_agent("agent-1")
+        engine._agents["agent-1"].action_count += 1
+
+    for _ in range(5):
+        update_engine_state(bump, path=str(state_path))
+
+    final = load_engine_state(str(state_path))
+    assert final._agents["agent-1"].action_count == 5
