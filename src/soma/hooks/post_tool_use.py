@@ -292,9 +292,14 @@ def _validate_python_file(file_path: str) -> str | None:
 def _lint_python_file(file_path: str) -> str | None:
     if not file_path or not file_path.endswith(".py"):
         return None
+    if file_path.startswith("-"):
+        # Defense in depth: refuse paths that look like flags even if
+        # the agent or a downstream tool tries to sneak them in.
+        return None
     try:
         result = subprocess.run(
-            ["ruff", "check", "--select", "F", "--no-fix", "--quiet", file_path],
+            ["ruff", "check", "--select", "F", "--no-fix", "--quiet",
+             "--", file_path],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode != 0 and result.stdout.strip():
@@ -309,9 +314,13 @@ def _validate_js_file(file_path: str) -> str | None:
         return None
     if not any(file_path.endswith(ext) for ext in (".js", ".mjs", ".cjs")):
         return None
+    if file_path.startswith("-"):
+        # Defense in depth: refuse paths that look like flags even if
+        # the agent or a downstream tool tries to sneak them in.
+        return None
     try:
         result = subprocess.run(
-            ["node", "--check", file_path],
+            ["node", "--check", "--", file_path],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode != 0:
