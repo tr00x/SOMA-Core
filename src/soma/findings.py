@@ -116,6 +116,8 @@ def collect(
         from soma.context import detect_workflow_mode
         workflow_mode = detect_workflow_mode()
     except Exception as _findings_exc:
+        from soma.errors import log_silent_failure
+        log_silent_failure("findings.collect (workflow_mode)", _findings_exc)
         workflow_mode = ""
 
     # ── Patterns (via core module) ──

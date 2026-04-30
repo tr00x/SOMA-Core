@@ -37,3 +37,25 @@ def test_legacy_cli_config_loader_still_works() -> None:
     assert load_config is new_path.load_config
     assert DEFAULT_CONFIG is new_path.DEFAULT_CONFIG
     assert save_config is new_path.save_config
+
+
+def test_shim_attribute_access_is_live() -> None:
+    """The shim must forward reads to soma.config dynamically — not
+    snapshot at import time. Otherwise a test that patches
+    soma.config.load_config and then imports through the shim sees the
+    pre-patch original. (This was the v2026.6.2 review's NEEDS WORK
+    finding — the previous static `from … import …` shim broke this.)
+    """
+    from soma import config as _cfg
+    from soma.cli import config_loader as _cl
+
+    sentinel = object()
+    original = _cfg.load_config
+    try:
+        _cfg.load_config = sentinel  # type: ignore[assignment]
+        assert _cl.load_config is sentinel, (
+            "shim did not forward attribute access — patches to "
+            "soma.config don't propagate through the legacy shim"
+        )
+    finally:
+        _cfg.load_config = original  # type: ignore[assignment]

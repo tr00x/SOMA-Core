@@ -219,10 +219,14 @@ def test_cli_unblock_rejects_all_plus_pattern(tmp_path, monkeypatch, capsys):
 def test_warmup_forces_observe_mode(tmp_path, monkeypatch):
     """Plan: warmup phase forces mode=observe regardless of soma.toml."""
     from soma.hooks.common import get_soma_mode
-    from soma.cli import config_loader as _cl
+    from soma import config as _cfg
 
-    # Configured mode = guide
-    monkeypatch.setattr(_cl, "load_config", lambda *_a, **_k: {"soma": {"mode": "guide"}})
+    # Configured mode = guide.
+    # v2026.6.x: patch the canonical soma.config path. The
+    # soma.cli.config_loader shim re-exports via __getattr__, so
+    # monkeypatch.setattr on the shim wouldn't propagate to real
+    # callers (which all import from soma.config now).
+    monkeypatch.setattr(_cfg, "load_config", lambda *_a, **_k: {"soma": {"mode": "guide"}})
 
     # Warmup profile
     _cal.save_profile(_cal.CalibrationProfile(family="cc", action_count=10))
