@@ -30,8 +30,13 @@ _BLOCKED_AGENT_IDS = frozenset({"claude-code", "test", "nonexistent-agent"})
 # Patterns that strict mode converts into hard PreToolUse blocks. Kept
 # narrow on purpose — firing `context` or `entropy_drop` shouldn't gate
 # the next tool call; those remain advisory.
+#
+# v2026.6.x: removed "retry_storm" — it's a predictor reason code and a
+# calibration baseline metric, NOT a contextual_guidance pattern.
+# evaluate() never emits a GuidanceMessage with pattern="retry_storm",
+# so its presence here was dead config that could never block anything.
 _STRICT_BLOCK_PATTERNS = frozenset({
-    "retry_storm", "blind_edit", "bash_retry", "error_cascade", "cost_spiral",
+    "blind_edit", "bash_retry", "error_cascade", "cost_spiral",
 })
 
 
