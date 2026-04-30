@@ -465,6 +465,7 @@ def test_record_ab_outcome_self_marks_pending(tmp_path):
     pending = {
         "pattern": "bash_retry", "actions_since": 2,
         "ab_arm": "treatment", "pressure_at_injection": 0.7,
+        "pressure_after_h1": 0.5,  # buffered h=1 (v2026.6.1 dropguard)
     }
     ok = _record_ab_outcome_at_horizon(
         agent_id="cc-mark",
@@ -536,6 +537,7 @@ def test_record_ab_outcome_at_horizon_writes_once(tmp_path):
         "pattern": "bash_retry", "actions_since": 2,
         "ab_arm": "treatment", "pressure_at_injection": 0.7,
         "firing_id": "cc-horizon|bash_retry|1",
+        "pressure_after_h1": 0.55,  # buffered h=1 (v2026.6.1 dropguard)
     }
     ok = _record_ab_outcome_at_horizon(
         agent_id="cc-horizon",
@@ -561,6 +563,7 @@ def test_record_ab_outcome_at_horizon_marks_not_followed_when_pressure_flat(tmp_
         "pattern": "context", "actions_since": 2,
         "ab_arm": "control", "pressure_at_injection": 0.6,
         "firing_id": "cc-flat|context|1",
+        "pressure_after_h1": 0.59,  # buffered h=1 (v2026.6.1 dropguard)
     }
     _record_ab_outcome_at_horizon(
         agent_id="cc-flat",
@@ -667,6 +670,7 @@ class TestMultiHorizonRecording:
             "pattern": "bash_retry", "actions_since": 2,
             "ab_arm": "treatment", "pressure_at_injection": 0.8,
             "firing_id": "cc-h5|bash_retry|300",
+            "pressure_after_h1": 0.6,  # buffered h=1 (v2026.6.1 dropguard)
         }
         _record_ab_outcome_at_horizon(
             agent_id="cc-h5", pending=pending, pressure_after=0.5,
@@ -699,6 +703,7 @@ class TestMultiHorizonRecording:
             "pattern": "bash_retry", "actions_since": 2,
             "ab_arm": "treatment", "pressure_at_injection": 0.8,
             "firing_id": "cc-h10|bash_retry|400",
+            "pressure_after_h1": 0.6,  # buffered h=1 (v2026.6.1 dropguard)
         }
         _record_ab_outcome_at_horizon(
             agent_id="cc-h10", pending=pending, pressure_after=0.5,

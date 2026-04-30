@@ -192,6 +192,15 @@ def _record_ab_outcome_at_horizon(
         pending["pressure_after_h2"] = float(pressure_after)
         if pending.get("ab_recorded"):
             return False
+        if pending.get("pressure_after_h1") is None:
+            # Same bias class as B1/B2 (NULL firing_id), now on the
+            # h=1 column. INSERTing NULL h=1 silently biases the
+            # validate-patterns @h1 population because that filter
+            # drops NULLs. Drop the row instead — losing one paired
+            # observation is strictly safer than poisoning the
+            # horizon-1 t-test.
+            pending["ab_recorded"] = True  # don't retry forever
+            return False
         pressure_before = float(pending.get("pressure_at_injection", 0.0))
         delta = pressure_before - float(pressure_after)
         recovered = delta >= _AB_RECOVERED_DELTA
@@ -223,6 +232,12 @@ def _record_ab_outcome_at_horizon(
             # No h=2 sample was ever buffered — better to drop than to
             # silently write today's pressure into the h=2 column and
             # bias future verdicts. Return False so the caller knows.
+            return False
+        if pending.get("pressure_after_h1") is None:
+            # Same h1 bias guard as the h=2 branch — never INSERT a row
+            # with NULL pressure_after_h1, which would silently bias
+            # validate-patterns @h1 (its filter drops NULLs).
+            pending["ab_recorded"] = True
             return False
         pressure_before = float(pending.get("pressure_at_injection", 0.0))
         delta = pressure_before - float(buffered_h2)
