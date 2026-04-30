@@ -50,6 +50,7 @@ import math
 import os
 import secrets
 import statistics
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -274,15 +275,33 @@ def _load_persisted() -> tuple[dict[str, list[int]], dict[str, str]]:
 def _save_persisted(
     counters: dict[str, list[int]], firings: dict[str, str],
 ) -> None:
-    """Best-effort write of both maps. Failure here must not break guidance."""
+    """Best-effort atomic write of both maps. Failure here must not
+    break guidance.
+
+    v2026.6.2: write to a temp file in the same directory, fsync, then
+    ``os.replace`` so concurrent hook subprocesses can never observe
+    a torn-JSON file (which ``_load_persisted`` would silently treat as
+    empty, resetting counters and rebiasing the next assignment block).
+    """
     try:
         _COUNTERS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # Counters keys sorted for diff-friendliness; firings preserved
         # in insertion order so the FIFO trim contract holds across writes.
-        _COUNTERS_PATH.write_text(json.dumps({
+        payload = json.dumps({
             "_counters": dict(sorted(counters.items())),
             "_firings": firings,
-        }))
+        })
+        # Use a per-pid+thread tmp suffix so two concurrent writers don't
+        # stomp each other's tmp file before either gets to os.replace.
+        import os as _os
+        tmp = _COUNTERS_PATH.with_name(
+            f"{_COUNTERS_PATH.name}.tmp.{_os.getpid()}.{threading.get_ident()}"
+        )
+        with open(tmp, "w") as f:
+            f.write(payload)
+            f.flush()
+            _os.fsync(f.fileno())
+        _os.replace(str(tmp), str(_COUNTERS_PATH))
     except OSError:
         pass
 
