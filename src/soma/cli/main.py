@@ -332,6 +332,28 @@ def _cmd_healing(args: argparse.Namespace) -> None:
             sys.exit(1)
 
 
+_ALLOWED_HELPED_DEFINITIONS = frozenset({
+    "delta", "pressure_drop", "tool_switch", "error_resolved",
+})
+
+
+def _validate_definition(definition: str) -> str:
+    """Defense-in-depth allowlist for the --definition flag.
+
+    The argparse parser already restricts CLI input via ``choices=``,
+    but this function is also reachable from scripts and replay tools
+    that build the args namespace by hand. The f-string interpolation
+    of the column name in the SELECT below makes this a SQL-identifier
+    injection vector for any caller that bypasses argparse.
+    """
+    if not isinstance(definition, str) or definition not in _ALLOWED_HELPED_DEFINITIONS:
+        raise ValueError(
+            f"invalid --definition {definition!r}; "
+            f"allowed: {sorted(_ALLOWED_HELPED_DEFINITIONS)}"
+        )
+    return definition
+
+
 def _cmd_validate_patterns(args: argparse.Namespace) -> None:
     """Run the A/B validation report for contextual-guidance patterns.
 
@@ -352,7 +374,7 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
     min_pairs = int(getattr(args, "min_pairs", ab_control.DEFAULT_MIN_PAIRS) or ab_control.DEFAULT_MIN_PAIRS)
     want_json = bool(getattr(args, "json", False))
     horizon_arg = str(getattr(args, "horizon", "2"))
-    definition = str(getattr(args, "definition", "delta"))
+    definition = _validate_definition(str(getattr(args, "definition", "delta")))
 
     if horizon_arg == "all":
         horizons: list[int] = [1, 2, 5, 10]
