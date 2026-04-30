@@ -1,16 +1,61 @@
 """SOMA Dashboard — modular FastAPI application."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+
+
+def _token_auth_middleware_factory(token: str):
+    """Build a middleware that rejects requests without
+    ``Authorization: Bearer <token>`` or a ``?token=<token>`` query
+    param. Health checks (``/healthz``) and the SPA index/static
+    bundle bypass auth so a wrong token doesn't lock the user out
+    of the login UI.
+    """
+    async def middleware(request: Request, call_next):
+        # Allow static assets and health probes through.
+        path = request.url.path
+        if (
+            path == "/healthz"
+            or path.startswith("/static/")
+            or path == "/favicon.svg"
+        ):
+            return await call_next(request)
+        # Accept either Authorization header or token query param.
+        auth = request.headers.get("authorization", "")
+        provided: str | None = None
+        if auth.lower().startswith("bearer "):
+            provided = auth[7:].strip()
+        elif "token" in request.query_params:
+            provided = request.query_params["token"]
+        if provided != token:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "missing or invalid SOMA_DASHBOARD_TOKEN"},
+            )
+        return await call_next(request)
+
+    return middleware
 
 
 def create_app() -> FastAPI:
-    """Factory function that builds the SOMA Dashboard FastAPI app."""
+    """Factory function that builds the SOMA Dashboard FastAPI app.
+
+    Set ``SOMA_DASHBOARD_TOKEN`` to require ``Authorization: Bearer
+    <token>`` (or ``?token=<token>``) on every endpoint. Without it
+    the dashboard remains open — fine on a localhost-bound socket
+    but a footgun if the user reverse-proxies it. Default off so
+    existing setups keep working.
+    """
     app = FastAPI(title="SOMA Dashboard", version="0.5.0")
+
+    token = os.environ.get("SOMA_DASHBOARD_TOKEN", "").strip()
+    if token:
+        app.middleware("http")(_token_auth_middleware_factory(token))
 
     app.add_middleware(
         CORSMiddleware,

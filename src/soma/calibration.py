@@ -102,7 +102,7 @@ SCHEMA_VERSION = 1
 #   _SCHEMA_MIGRATORS[1] = _migrate_v1_to_v2
 #
 # Then bump SCHEMA_VERSION to 2 in the same commit.
-from typing import Callable as _Callable
+from typing import Callable as _Callable  # noqa: E402
 _SCHEMA_MIGRATORS: dict[int, _Callable[[dict], dict]] = {}
 
 
