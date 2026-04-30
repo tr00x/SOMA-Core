@@ -1,6 +1,6 @@
 """Source validators used by the PostToolUse hook.
 
-v2026.6.x: extracted from hooks/post_tool_use.py — these functions
+2026-04-27 onward: extracted from hooks/post_tool_use.py — these functions
 have nothing to do with hook dispatch and were inflating the
 god-object's surface to 1100+ lines. Now they live under
 ``soma.validators`` where they're reusable and testable in

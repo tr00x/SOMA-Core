@@ -52,7 +52,7 @@ def main():
     if soma_mode == "observe":
         return
 
-    # Strict mode (v2026.5.0): hard PreToolUse gate backed by the
+    # Strict mode (2026-04-19): hard PreToolUse gate backed by the
     # persistent block state. The agent physically cannot execute a
     # (tool, pattern) pair it has just failed on until it takes a
     # recovery action (handled by post_tool_use on the next hook).

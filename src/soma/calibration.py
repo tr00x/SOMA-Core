@@ -11,7 +11,7 @@ writes. Profile "family" collapses the numeric tail of an agent id so
 short-lived ``cc-92331`` → ``cc-47512`` sessions share one learning state
 and don't warm-up forever.
 
-v2026.5.3: boundaries lowered from 100/500 to 30/200 — median session is
+2026-04-19: boundaries lowered from 100/500 to 30/200 — median session is
 ~50 actions, so 30 is the smallest threshold that still yields stable
 P25/P75 percentiles while letting >40% of sessions exit warmup.
 """
@@ -33,7 +33,7 @@ Phase = Literal["warmup", "calibrated", "adaptive"]
 
 # Phase boundaries. Exposed as module constants so tests and dashboard
 # can reference the same source of truth.
-# v2026.6.x: WARMUP_EXIT_ACTIONS, SILENCE_MIN_FIRES, REFUTED_REFRESH_INTERVAL
+# 2026-04-27 onward: WARMUP_EXIT_ACTIONS, SILENCE_MIN_FIRES, REFUTED_REFRESH_INTERVAL
 # moved to soma.tunables — re-exported below for backward compatibility.
 from soma.tunables import (  # noqa: F401, E402
     REFUTED_REFRESH_INTERVAL,
@@ -53,7 +53,7 @@ SILENCE_REFRESH_INTERVAL = 100
 
 # Patterns we track for auto-silence. Keep in sync with _PATTERN_PRIORITY
 # in contextual_guidance — hardcoded here to avoid a circular import.
-# v2026.6.x: dropped retired patterns (`entropy_drop`, `context`,
+# 2026-04-27 onward: dropped retired patterns (`entropy_drop`, `context`,
 # retired 2026-04-25) so silence/refute decisions can't accumulate
 # stats for patterns that never re-fire.
 _SILENCE_TRACKED_PATTERNS = (
@@ -69,7 +69,7 @@ LEGACY_FLOORS: dict[str, float | int] = {
     "entropy_threshold": 0.5,
     "error_cascade_streak": 3,
     # retry_storm_streak retained for backward-compat profile roundtrip
-    # even though the pattern was dropped in v2026.4.4 and no evaluator
+    # even though the pattern was dropped in 2026-04-18 and no evaluator
     # reads it. Removing would break legacy calibration_*.json files.
     "retry_storm_streak": 2,
 }
@@ -78,7 +78,7 @@ LEGACY_FLOORS: dict[str, float | int] = {
 # the same user's next cc-* session inherits calibration.
 _AGENT_FAMILY_RE = re.compile(r"^(?P<family>.+?)[-_][0-9]+$")
 
-# v2026.6.x: explicit alias map for non-session-style ids that
+# 2026-04-27 onward: explicit alias map for non-session-style ids that
 # conceptually belong to a known family. Without this, the CLI default
 # ``agent_id="claude-code"`` writes ~/.soma/calibration_claude-code.json
 # while hook sessions (``cc-12345``) write ~/.soma/calibration_cc.json
@@ -133,7 +133,7 @@ def calibration_family(agent_id: str) -> str:
     to the full id when no rule matches so user-chosen agent ids
     keep isolated profiles.
 
-    v2026.6.x review fix: alias map is consulted *after* the
+    2026-04-27 onward review fix: alias map is consulted *after* the
     numeric-tail regex too, so wrappers that send
     ``claude-code-<pid>`` collapse correctly into the same family
     as the bare literal — same bug class we already closed for the
@@ -331,7 +331,7 @@ class CalibrationProfile:
 
     @classmethod
     def from_dict(cls, data: dict) -> CalibrationProfile:
-        # v2026.6.x: schema migration scaffold. Apply registered
+        # 2026-04-27 onward: schema migration scaffold. Apply registered
         # upgraders for any version below SCHEMA_VERSION before
         # constructing the dataclass. Currently the registry is
         # empty (we're at v=1 from day one) — adding an entry like
@@ -387,7 +387,7 @@ def load_profile(agent_id: str) -> CalibrationProfile:
     """
     family = calibration_family(agent_id)
     path = _profile_path(family)
-    # v2026.6.x: one-shot migration of pre-alias profile files.
+    # 2026-04-27 onward: one-shot migration of pre-alias profile files.
     # Users who ran `soma reset`/`soma config` etc. before the
     # claude-code → cc alias landed have a calibration_claude-code.json
     # sitting next to (or instead of) their hook-session
@@ -414,7 +414,7 @@ def load_profile(agent_id: str) -> CalibrationProfile:
         try:
             data = json.loads(path.read_text())
             profile = CalibrationProfile.from_dict(data)
-            # v2026.6.x: post-migration the file holds the *legacy*
+            # 2026-04-27 onward: post-migration the file holds the *legacy*
             # family value ("claude-code") in its `family` field. The
             # next save_profile would write back to
             # _profile_path("claude-code") and recreate the file we
@@ -435,7 +435,7 @@ def load_profile(agent_id: str) -> CalibrationProfile:
 def clear_stale_silence_cache(soma_dir: Path | None = None) -> int:
     """Zero the auto-silence cache on every calibration profile in ``soma_dir``.
 
-    Paired with the v2026.5.5 ``_archive_biased_ab_outcomes`` migration:
+    Paired with the 2026-04-23 ``_archive_biased_ab_outcomes`` migration:
     that one truncates ab_outcomes, but the per-profile silence cache
     (populated from pre-reset guidance precision) kept suppressing
     half of the tracked patterns. With the cache intact, those patterns
@@ -649,7 +649,7 @@ def maybe_refresh_silence(profile: CalibrationProfile, analytics_store=None) -> 
             return False
 
     try:
-        # Skip pre-v2026.5.5 outcomes: they were generated under MD5
+        # Skip pre-2026-04-23 outcomes: they were generated under MD5
         # A/B assignment whose per-pattern bias skewed helped-rate
         # readings, and keeping them in the precision window kept
         # half the patterns silenced forever after the archive

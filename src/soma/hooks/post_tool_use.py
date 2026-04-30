@@ -31,7 +31,7 @@ _BLOCKED_AGENT_IDS = frozenset({"claude-code", "test", "nonexistent-agent"})
 # narrow on purpose — firing `context` or `entropy_drop` shouldn't gate
 # the next tool call; those remain advisory.
 #
-# v2026.6.x: removed "retry_storm" — it's a predictor reason code and a
+# 2026-04-27 onward: removed "retry_storm" — it's a predictor reason code and a
 # calibration baseline metric, NOT a contextual_guidance pattern.
 # evaluate() never emits a GuidanceMessage with pattern="retry_storm",
 # so its presence here was dead config that could never block anything.
@@ -56,7 +56,7 @@ def _is_real_production_agent(agent_id: str) -> bool:
 # (timeout fallback), which let pressure decay alone make control
 # look better than treatment.
 #
-# v2026.6.x: AB_MEASUREMENT_HORIZON / AB_RECOVERED_DELTA moved to
+# 2026-04-27 onward: AB_MEASUREMENT_HORIZON / AB_RECOVERED_DELTA moved to
 # soma.tunables. Module-level underscore aliases preserved for the
 # internal callers that referenced them by their private name.
 from soma.tunables import (  # noqa: E402
@@ -141,7 +141,7 @@ def _record_ab_outcome_at_horizon(
 ) -> bool:
     """Capture pressure at h=1/2/5/10 horizons; INSERT at h=2, UPDATE later.
 
-    Multi-horizon flow (v2026.6.0):
+    Multi-horizon flow (2026-04-27):
 
     - **h=1**: buffer ``pressure_after`` into ``pending["pressure_after_h1"]``
       and return False (no row yet — h=1 fires before the h=2 INSERT).
@@ -155,7 +155,7 @@ def _record_ab_outcome_at_horizon(
     works. Multi-horizon data is purely additive.
 
     ``followed`` is the simple pressure-drop check at h=2 — *not* the
-    strict v2026.5.3 recovery-action semantic. Mixing in pattern-
+    strict 2026-04-19 recovery-action semantic. Mixing in pattern-
     specific "recovery" semantics here would bias against the control
     arm, which by construction cannot "follow" guidance it never saw.
     The strict semantic still lives in ``guidance_outcomes``.
@@ -190,7 +190,7 @@ def _record_ab_outcome_at_horizon(
     # h=2: INSERT the canonical row. This is the idempotency boundary —
     # ab_recorded gates re-entry from a same-cycle hook re-run.
     #
-    # v2026.6.1 (review I3): we ALWAYS buffer the h=2 sample into
+    # 2026-04-29 (review I3): we ALWAYS buffer the h=2 sample into
     # pending["pressure_after_h2"] so the timeout-path forced INSERT
     # below can use it instead of the (wrong) current pressure. Buffer
     # even on INSERT failure so a transient sqlite hiccup doesn't
@@ -275,7 +275,7 @@ def _record_ab_outcome_at_horizon(
         return False
     if not firing_id:
         # Without firing_id we can't UPDATE — happens for legacy pending
-        # dicts captured pre-v2026.6.0. Skip silently.
+        # dicts captured pre-2026-04-27. Skip silently.
         return False
     try:
         rowcount = store.update_ab_outcome_horizon(
@@ -292,7 +292,7 @@ def _record_ab_outcome_at_horizon(
         return False
 
 
-# v2026.6.x: extracted to soma/validators/. These thin shims keep the
+# 2026-04-27 onward: extracted to soma/validators/. These thin shims keep the
 # existing private-name imports working (tests, monkeypatch sites) so
 # the refactor is transparent.
 from soma.validators import (  # noqa: E402
@@ -406,7 +406,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         if engine is None:
             return
 
-        # v2026.6.x: opportunistic GC of stale circuit_*.json files. ~1%
+        # 2026-04-27 onward: opportunistic GC of stale circuit_*.json files. ~1%
         # sample so ~100 hooks per session triggers a sweep on average,
         # which is plenty given mtime-based 48h retention. Best-effort —
         # failures inside gc_stale_circuit_files never propagate.
@@ -660,7 +660,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
         # The whole read-mutate-write block runs inside circuit_transaction
         # so concurrent subagent hooks can't lose each other's
         # ``actions_since`` increments or ``ab_recorded`` / ``strict_resolved``
-        # flags. Without this lock the v2026.5.5 "1 of 2 increments lost"
+        # flags. Without this lock the 2026-04-23 "1 of 2 increments lost"
         # race produces silent A/B contamination.
         try:
             from soma.hooks.common import circuit_transaction
@@ -678,7 +678,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     # the same ``actions_since`` value.
                     pending["actions_since"] = int(pending.get("actions_since", 0) or 0) + 1
 
-                    # v2026.5.4: A/B and strict-followthrough are tracked
+                    # 2026-04-19: A/B and strict-followthrough are tracked
                     # *independently*. The old code cleared pending as
                     # soon as strict resolved, which meant fast treatment
                     # resolutions (strict True at +1) wrote the A/B row
@@ -718,7 +718,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                                 )
                             except Exception:
                                 pass
-                            # v2026.6.1 (review C1): slice the action
+                            # 2026-04-29 (review C1): slice the action
                             # log by firing_ts instead of by
                             # ``actions_since`` count. The previous
                             # ``_recent_actions[-actions_since:]``
@@ -729,7 +729,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                             # firing. Timestamp filter is robust to log
                             # rotation: entries older than firing_ts
                             # never enter the slice. If firing_ts is
-                            # missing (legacy pending from < v2026.6.1),
+                            # missing (legacy pending from < 2026-04-29),
                             # we pass None and skip multi-helped.
                             _firing_ts = pending.get("firing_ts")
                             if _firing_ts is None:
@@ -776,7 +776,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                         # Timed out. Best-effort close: write whichever
                         # track hasn't landed yet so no row is lost.
                         if not strict_resolved:
-                            # v2026.6.1 (review C1): on timeout we don't
+                            # 2026-04-29 (review C1): on timeout we don't
                             # trust multi-helped — the action log may
                             # have rotated past firing_ts entries we'd
                             # need, and the timeout window itself spans
@@ -984,7 +984,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
             from soma.hooks.common import write_guidance_cooldowns
             write_guidance_cooldowns(cg._last_fired, agent_id)
             if cg_msg:
-                # v2026.5.3 A/B gate. Split 50/50 so we can later measure
+                # 2026-04-19 A/B gate. Split 50/50 so we can later measure
                 # whether injection actually causes a pressure drop vs
                 # just correlates with agent recovery. Warmup stays in
                 # treatment arm — the gate's there to validate patterns,
@@ -996,7 +996,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 # (warmup skips the A/B gate but still records ab_outcomes
                 # in the treatment arm).
                 #
-                # v2026.6.1 (review I1): use time.time_ns() instead of
+                # 2026-04-29 (review I1): use time.time_ns() instead of
                 # len(cg_action_log). The action log is clamped at
                 # ACTION_LOG_MAX=20, so after 20 actions every firing
                 # of pattern X produced the same firing_id — same
@@ -1073,7 +1073,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                     # so a single firing has one stable identifier
                     # across the lifetime of the followthrough.
                     "firing_id": _firing_id,
-                    # v2026.6.1 (review C1): firing timestamp is the
+                    # 2026-04-29 (review C1): firing timestamp is the
                     # marker for slicing the post-firing tail of the
                     # action log. Absolute index doesn't work because
                     # the log is truncated at ACTION_LOG_MAX=20 and
@@ -1084,7 +1084,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
                 elif cg_msg.pattern == "bash_retry":
-                    # v2026.6.x: dropped `entropy_drop` from this branch —
+                    # 2026-04-27 onward: dropped `entropy_drop` from this branch —
                     # the pattern is retired and never reaches followthrough.
                     followthrough_data["tool"] = tool_name
                 elif cg_msg.pattern == "error_cascade":
@@ -1125,7 +1125,7 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
 
     except Exception as _outer_exc:
         # Bare `pass` here silenced a 2-day production regression
-        # (silence-cache stuck post-v2026.5.5). Stderr is safe — Claude
+        # (silence-cache stuck post-2026-04-23). Stderr is safe — Claude
         # Code's hook contract uses stdout for JSON; stderr surfaces in
         # the user-visible debug stream without breaking the protocol.
         # Suppressible via SOMA_HOOK_QUIET=1 for CI / known-noisy runs.

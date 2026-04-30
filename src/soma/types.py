@@ -133,7 +133,7 @@ class VitalsSnapshot:
 class AgentConfig:
     """Configuration for a monitored agent.
 
-    v2026.6.x: frozen+slots like the other value-object dataclasses in
+    2026-04-27 onward: frozen+slots like the other value-object dataclasses in
     this module (Action, VitalsSnapshot, PressureVector). Was mutable;
     no caller ever rebound a field, but the loose contract was a
     footgun. Use ``dataclasses.replace(cfg, ...)`` to derive a modified

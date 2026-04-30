@@ -29,7 +29,7 @@ from soma.models import get_context_window
 class SomaBlocked(SOMAError):
     """Raised when SOMA blocks an API call due to high pressure.
 
-    v2026.6.2: now inherits from SOMAError (was raw Exception) so SDK
+    2026-04-29: now inherits from SOMAError (was raw Exception) so SDK
     consumers can `except SOMAError` and catch the entire SOMA family
     in one clause. proxy.SOMABlockError already followed this pattern
     — the two classes are now consistent.
@@ -47,7 +47,7 @@ class SomaBlocked(SOMAError):
 class SomaBudgetExhausted(SOMAError):
     """Raised when SOMA blocks an API call due to exhausted budget.
 
-    v2026.6.2: SOMAError parent (was raw Exception).
+    2026-04-29: SOMAError parent (was raw Exception).
     """
     def __init__(self, dimension: str):
         self.dimension = dimension

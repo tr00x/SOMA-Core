@@ -1,6 +1,6 @@
 """JavaScript source validator — `node --check` syntax pass.
 
-Extracted from ``hooks/post_tool_use.py`` in v2026.6.x.
+Extracted from ``hooks/post_tool_use.py`` in 2026-04-27 onward.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def validate_js_file(file_path: str) -> str | None:
     try:
         result = subprocess.run(
             ["node", "--check", "--", file_path],
-            # v2026.6.2: 500ms cap (was 5s — froze terminal on a hung
+            # 2026-04-29: 500ms cap (was 5s — froze terminal on a hung
             # node). node --check is sub-millisecond on real files.
             capture_output=True, text=True, timeout=0.5,
         )

@@ -820,7 +820,7 @@ def _circuit_lock(agent_id: str = ""):
     cooldowns) target the same JSON file. Without this, two concurrent
     PostToolUse hooks (parent + subagent, parallel tool calls) lose each
     other's increments — exactly the silent-failure class that
-    masked the v2026.5.5 silence-cache regression for two days.
+    masked the 2026-04-23 silence-cache regression for two days.
 
     Same fcntl pattern as ``append_action_log``: a sibling .lock file
     serves as the lock target so we don't lock the data file itself.

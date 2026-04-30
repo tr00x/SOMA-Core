@@ -1,6 +1,6 @@
 """Backward-compat re-export of soma.config.
 
-v2026.6.x: canonical location for config loading is now ``soma.config``
+2026-04-27 onward: canonical location for config loading is now ``soma.config``
 so core modules (engine, mirror, dashboard.data, hooks/*) don't have
 to reach into ``soma.cli`` and break the documented layer direction
 (core never imports from cli).

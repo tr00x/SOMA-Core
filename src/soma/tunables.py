@@ -1,6 +1,6 @@
 """Single source of truth for all SOMA behavioral thresholds.
 
-v2026.6.x: previously these constants were scattered across
+2026-04-27 onward: previously these constants were scattered across
 ``ab_control``, ``calibration``, and ``hooks/post_tool_use``.
 Centralizing them here means a maintainer wanting to tune a single
 threshold edits one file, not three.
@@ -21,12 +21,12 @@ from __future__ import annotations
 #: Welch's t-test stays valid at n=15 (standard scientific minimum
 #: 10–15). Achieved power: d=0.2 → 22%, d=0.5 → 50%, d=0.8 → 85%.
 #: Tradeoff is honest: faster time-to-signal vs. lower power on weak
-#: effects. Was 30 pre-2026.6.x.
+#: effects. Was 30 pre-2026-04-27 onward.
 DEFAULT_MIN_PAIRS: int = 15
 
 #: After this many pairs without statistical significance we stop
 #: waiting and emit ``inconclusive``. ~2x of MIN_PAIRS so the ratio
-#: stays consistent. Was 100 pre-2026.6.x (3.3x).
+#: stays consistent. Was 100 pre-2026-04-27 onward (3.3x).
 INCONCLUSIVE_AT: int = 30
 
 #: Two-sided alpha for Welch's t-test.

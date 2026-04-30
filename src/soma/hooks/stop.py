@@ -190,7 +190,7 @@ def main():
             ]
             print("\n".join(parts), file=sys.stderr)
 
-        # v2026.5.0 session summary to stdout so Claude Code surfaces
+        # 2026-04-19 session summary to stdout so Claude Code surfaces
         # the report in the model's context — the user sees SOMA work
         # naturally in the assistant's final reply instead of having to
         # open a dashboard.

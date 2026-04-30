@@ -1,6 +1,6 @@
 """Python source validators — syntax check + ruff lint.
 
-Extracted from ``hooks/post_tool_use.py`` in v2026.6.x.
+Extracted from ``hooks/post_tool_use.py`` in 2026-04-27 onward.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def validate_python_file(file_path: str) -> str | None:
     or ``None`` when the file parses cleanly. Non-``.py`` paths and
     flag-shaped paths return ``None`` silently.
 
-    v2026.6.2: previously forked a fresh Python interpreter for
+    2026-04-29: previously forked a fresh Python interpreter for
     py_compile (~25ms cost on every .py edit). ``compile`` gives the
     same SyntaxError detection at near-zero cost.
     """
@@ -58,7 +58,7 @@ def lint_python_file(file_path: str) -> str | None:
         result = subprocess.run(
             ["ruff", "check", "--select", "F", "--no-fix", "--quiet",
              "--", file_path],
-            # v2026.6.2: 500ms cap so a hung ruff doesn't freeze the
+            # 2026-04-29: 500ms cap so a hung ruff doesn't freeze the
             # user's terminal. Pyflakes-F should finish in ms.
             capture_output=True, text=True, timeout=0.5,
         )

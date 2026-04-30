@@ -357,11 +357,11 @@ def _validate_definition(definition: str) -> str:
 def _cmd_validate_patterns(args: argparse.Namespace) -> None:
     """Run the A/B validation report for contextual-guidance patterns.
 
-    v2026.5.3+. Reads from the ``ab_outcomes`` table and prints a
+    2026-04-19+. Reads from the ``ab_outcomes`` table and prints a
     per-pattern classification (treatment Δp / control Δp / p-value /
     effect size / status).
 
-    v2026.6.0 adds ``--horizon`` (1/2/5/10/all) so each pattern can be
+    2026-04-27 adds ``--horizon`` (1/2/5/10/all) so each pattern can be
     validated at the recovery window that fits its dynamics, and
     ``--definition`` which annotates the report with the multi-helped
     breakdown from ``guidance_outcomes`` for the chosen definition.
@@ -473,7 +473,7 @@ def _cmd_validate_patterns(args: argparse.Namespace) -> None:
         scope = f"family={family}" if family else "global"
         print(
             f"  No A/B outcomes recorded yet ({scope}). "
-            f"After install v2026.5.3, let SOMA observe ~30 firings per pattern,\n"
+            f"After install 2026-04-19, let SOMA observe ~30 firings per pattern,\n"
             "  then re-run this command for a classification report."
         )
         return
@@ -992,7 +992,7 @@ def _cmd_mode(args: argparse.Namespace) -> None:
     try:
         config = apply_mode(config, mode_name)
     except ValueError as e:
-        # v2026.6.x: don't crash with a traceback; print the helpful
+        # 2026-04-27 onward: don't crash with a traceback; print the helpful
         # message and exit non-zero so scripts can detect failure.
         print(f"  Error: {e}")
         print(f"  Usage: soma mode <{' | '.join(MODE_PRESETS)}>")
@@ -1232,7 +1232,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "\n"
             "Agent control:\n"
             "  soma reset [agent-id]           Reset agent baseline (default: claude-code)\n"
-            "  soma unblock [--agent id]       Clear strict-mode blocks (v2026.5.0)\n"
+            "  soma unblock [--agent id]       Clear strict-mode blocks (2026-04-19)\n"
             "  soma stop                       Disable SOMA hooks in Claude Code\n"
             "  soma start                      Re-enable SOMA hooks in Claude Code\n"
             "\n"

@@ -33,7 +33,7 @@ def update_engine_state(
     save_engine_state()`` pair when you can — the legacy pair has a
     race window where concurrent hooks lose updates.
 
-    Migration note (v2026.6.x): production hook callers in
+    Migration note (2026-04-27 onward): production hook callers in
     ``hooks/common.py`` still use the legacy pair for performance
     reasons (the hook process structure assumes load-once-at-start,
     save-once-at-end). Migrating those is a separate refactor; the
@@ -51,7 +51,7 @@ def engine_state_transaction(
 ):
     """Atomic read-modify-write of engine_state.json under flock EX.
 
-    v2026.6.x: ``save_engine_state`` and ``load_engine_state`` each
+    2026-04-27 onward: ``save_engine_state`` and ``load_engine_state`` each
     take a per-call flock, but they don't cover the
     read-mutate-write *cycle*. Two concurrent hooks can both load
     (SH locks are compatible), both mutate in memory, then race to
@@ -186,7 +186,7 @@ def _engine_from_state(state: dict) -> SOMAEngine:
     if learning_data:
         engine._learning = LearningEngine.from_dict(learning_data)
 
-    # v2026.6.x: prune stale agents at load time. Each Claude Code PID
+    # 2026-04-27 onward: prune stale agents at load time. Each Claude Code PID
     # becomes a unique agent_id; without this, engine_state.json grows
     # unboundedly as users open and close sessions. Threshold lives in
     # tunables (default 168h = 7 days). Agents missing last_active
@@ -333,7 +333,7 @@ def load_engine_state(path: str | None = None) -> SOMAEngine | None:
     if learning_data:
         engine._learning = LearningEngine.from_dict(learning_data)
 
-    # Restore agents — v2026.6.x: prune stale ones at load time.
+    # Restore agents — 2026-04-27 onward: prune stale ones at load time.
     # Each Claude Code PID becomes a unique agent_id; without this,
     # engine_state.json grows unboundedly. Threshold lives in tunables
     # (default 168h = 7 days). Agents missing last_active (legacy

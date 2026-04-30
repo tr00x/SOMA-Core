@@ -44,8 +44,8 @@ _PATTERN_PRIORITY = {
 # this tuple rather than re-declare the set — single source of truth.
 #
 # Retired patterns (do not re-add without evidence):
-#   - `_stats` — dropped in v2026.5.0 (largest fatigue source, 31% helped).
-#   - `drift`  — dropped after v2026.4.2 P0 fix failed to move the needle
+#   - `_stats` — dropped in 2026-04-19 (largest fatigue source, 31% helped).
+#   - `drift`  — dropped after 2026-04-18 P0 fix failed to move the needle
 #                (9 firings, 0% helped). The underlying drift signal still
 #                feeds pressure aggregation; only the guidance message was
 #                retired.
@@ -123,7 +123,7 @@ def _compute_tool_entropy(action_log: list[dict], window: int = 10) -> float:
 # Data-backed healing transitions from production actions. Used as a
 # fallback when no per-user calibration data is available. These defaults
 # are re-derived from Timur's April 2026 analytics run (measure_transitions
-# results at the time of v2026.5.3).
+# results at the time of 2026-04-19).
 _HEALING_TRANSITIONS: dict[str, tuple[str, str]] = {
     "Bash": ("Read", "Bash→Read reduces pressure by 7%"),
     "Edit": ("Read", "Edit→Read reduces pressure by 5%"),
@@ -308,7 +308,7 @@ def _resolve_via_pressure(pressure_delta: float | None, actions_since: int) -> b
 def _pressure_dropped(pressure_delta: float | None) -> bool:
     """Strict pressure-drop check used by stricter followthrough.
 
-    v2026.5.3: instead of resolving purely on Δp, ``helped`` now
+    2026-04-19: instead of resolving purely on Δp, ``helped`` now
     requires BOTH a real drop AND an expected recovery action. This
     helper isolates the Δp half so each pattern branch can compose it
     with its own recovery test.
@@ -435,7 +435,7 @@ def check_followthrough(
     Returns True if followed, False if ignored, None if inconclusive
     (keep waiting).
 
-    v2026.5.3 tightened the semantics: each pattern has a list of
+    2026-04-19 tightened the semantics: each pattern has a list of
     *strong* recovery signals (e.g. Read of the exact suggested file
     for ``blind_edit``, explicit git-commit / handoff-file write for
     ``context``, Read/Grep for ``bash_retry``, ≥3 distinct tools in a
@@ -449,7 +449,7 @@ def check_followthrough(
     the thing" from "pressure went down."
 
     Note: this is the *dashboard-facing* semantic. The A/B proof
-    layer (v2026.5.4+) uses a simpler pressure-only rule because
+    layer (2026-04-19+) uses a simpler pressure-only rule because
     control-arm agents never saw the message and so can never perform
     the strong recovery signal by definition — the strict semantic
     would systematically under-count the control arm's "recoveries."
@@ -461,7 +461,7 @@ def check_followthrough(
     pattern = pending.get("pattern", "")
     actions_since = pending.get("actions_since", 0) + 1
 
-    # v2026.6.2: short-circuit retired patterns. They were retired
+    # 2026-04-29: short-circuit retired patterns. They were retired
     # 2026-04-25 and never re-fire — but circuit_*.json files written
     # before the retire date can still carry pending rows for them,
     # and the legacy per-pattern resolution logic below would silently
@@ -504,7 +504,7 @@ def check_followthrough(
         # pressure drop is just noise.
         failing_tools = set(pending.get("failing_tools") or [])
         if not failing_tools:
-            # Hooks written before v2026.5.3 don't set failing_tools.
+            # Hooks written before 2026-04-19 don't set failing_tools.
             # Fallback to Bash-heavy cascade heuristic so we never skip
             # evaluation — but this path won't produce a "True" unless
             # pressure drops.
@@ -520,7 +520,7 @@ def check_followthrough(
             return False
         return None
 
-    # `context` branch was here pre-2026.6.2; pattern is retired and the
+    # `context` branch was here pre-2026-04-29; pattern is retired and the
     # guard at the top of this function already returns None for it.
 
     if pattern == "budget":
@@ -534,7 +534,7 @@ def check_followthrough(
     if pattern == "cost_spiral":
         return _resolve_via_pressure(pressure_delta, actions_since)
 
-    # `entropy_drop` branch was here pre-2026.6.2; pattern is retired and
+    # `entropy_drop` branch was here pre-2026-04-29; pattern is retired and
     # the guard at the top of this function already returns None for it.
 
     if pattern == "bash_retry":
@@ -684,7 +684,7 @@ class ContextualGuidance:
     def _check_blind_edit(
         self, action_log: list[dict], current_tool: str, current_input: dict,
     ) -> GuidanceMessage | None:
-        # v2026.5.3 — narrowed to Write / NotebookEdit only. Claude Code
+        # 2026-04-19 — narrowed to Write / NotebookEdit only. Claude Code
         # already forces a Read before Edit, so firing on Edit produced
         # a stream of 0%-helped duplicates (47% "helped" in analytics
         # was almost entirely noise from the built-in guard). Write +
@@ -795,7 +795,7 @@ class ContextualGuidance:
 
         dominant_tool = tool_counts.most_common(1)[0][0] if tool_counts else "Bash"
         heal = _healing_suggestion(dominant_tool)
-        # v2026.5.3 — data-driven suggestion. The healing evidence is
+        # 2026-04-19 — data-driven suggestion. The healing evidence is
         # already baked into `_healing_suggestion`'s string, so the
         # rendered tip now carries the agent's own analytics numbers
         # when available.
@@ -844,7 +844,7 @@ class ContextualGuidance:
 
     def _check_context_window(self, vitals: dict) -> GuidanceMessage | None:
         token_usage = vitals.get("token_usage", 0) or vitals.get("context_usage", 0)
-        # v2026.5.3 — fire at 60% instead of 80%. Firing at 80% in the
+        # 2026-04-19 — fire at 60% instead of 80%. Firing at 80% in the
         # old measurement left no time to wrap up coherently; the
         # dataset showed pressure *rising* after the message, which
         # means it arrived too late for anyone to act on. 60% gives

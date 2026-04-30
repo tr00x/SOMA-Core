@@ -165,7 +165,7 @@ class Mirror:
                 pattern_key, pattern_desc = detected
                 self.track_injection(agent_id, pattern_key, pattern_desc, pressure)
                 return self._wrap(pattern_desc)
-            # v2026.5.0: drop `_stats` user-facing emission. It fatigued
+            # 2026-04-19: drop `_stats` user-facing emission. It fatigued
             # users (31% helped on 242 firings — largest noise source) and
             # reference data shows mirror raw stats don't change agent
             # behavior. Keep internal tracking off too so analytics stop
@@ -180,7 +180,7 @@ class Mirror:
                 agent_id, action, task_description
             )
             if semantic_text is not None:
-                # v2026.5.0: drop the aggregate `_stats` prefix here too.
+                # 2026-04-19: drop the aggregate `_stats` prefix here too.
                 # Semantic output stands on its own; the stats one-liner
                 # was part of the same fatigue surface we already pruned
                 # from the medium-pressure branch.
@@ -198,7 +198,7 @@ class Mirror:
             self.track_injection(agent_id, pattern_key, context_text, pressure)
             return self._wrap(context_text)
 
-        # v2026.5.0: same drop at the high-pressure fallback path. No
+        # 2026-04-19: same drop at the high-pressure fallback path. No
         # pattern matched, no semantic override available — prefer
         # silence over emitting a generic stats block.
         return None

@@ -690,7 +690,7 @@ def _get_guidance_effectiveness() -> dict:
 def _get_pattern_hit_rates() -> list[dict]:
     """Which patterns fire most and which get followed.
 
-    v2026.6.0 also returns three orthogonal helped rates per pattern
+    2026-04-27 also returns three orthogonal helped rates per pattern
     (``rate_pressure_drop``, ``rate_tool_switch``, ``rate_error_resolved``)
     plus a count of rows that actually have those columns populated
     (``n_multi``). Older rows (pre-multi-helped) have NULLs in the new
@@ -926,7 +926,7 @@ def get_pattern_ab_status() -> list[dict]:
                     "helped": legacy["helped"],
                     "helped_rate": round(helped_rate, 3),
                 },
-                # v2026.6.0: three orthogonal helped definitions (rate
+                # 2026-04-27: three orthogonal helped definitions (rate
                 # is None until the n_multi rows accumulate). UI shows
                 # them as a triple beneath the legacy card so a pattern
                 # validated by tool-switch but flat on pressure-drop

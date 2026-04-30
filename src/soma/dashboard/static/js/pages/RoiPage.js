@@ -1,7 +1,7 @@
 /**
  * RoiPage — "Is SOMA worth it?" single-page answer.
  *
- * v2026.5.6 (P1.3): A/B validation verdict becomes the primary pattern
+ * 2026-04-23 (P1.3): A/B validation verdict becomes the primary pattern
  * metric. Cards show status badge (collecting N/30 / validated /
  * refuted / inconclusive), mean Δp, and p-value up front; the legacy
  * helped% stays available under an expand toggle so returning users
@@ -86,7 +86,7 @@ function PatternCard({ card }) {
   const legacy = card.legacy_helped || { fires: 0, helped: 0, helped_rate: 0 };
   const legacyRate = `${(legacy.helped_rate * 100).toFixed(0)}%`;
 
-  // v2026.6.0: three orthogonal helped definitions. Each is null
+  // 2026-04-27: three orthogonal helped definitions. Each is null
   // until n_multi rows have accumulated; render "—" so the UI doesn't
   // claim a 0% rate when there's actually no data yet.
   const multi = card.multi_helped || {};

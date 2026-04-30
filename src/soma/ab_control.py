@@ -66,7 +66,7 @@ Arm = Literal["treatment", "control"]
 Status = Literal["collecting", "validated", "refuted", "inconclusive"]
 
 
-# v2026.6.x: thresholds moved to soma.tunables (single source of
+# 2026-04-27 onward: thresholds moved to soma.tunables (single source of
 # truth). Re-exported here so existing callers
 # (`from soma.ab_control import DEFAULT_MIN_PAIRS`) keep working.
 from soma.tunables import (  # noqa: F401, E402
@@ -278,7 +278,7 @@ def _save_persisted(
     """Best-effort atomic write of both maps. Failure here must not
     break guidance.
 
-    v2026.6.2: write to a temp file in the same directory, fsync, then
+    2026-04-29: write to a temp file in the same directory, fsync, then
     ``os.replace`` so concurrent hook subprocesses can never observe
     a torn-JSON file (which ``_load_persisted`` would silently treat as
     empty, resetting counters and rebiasing the next assignment block).
@@ -349,9 +349,9 @@ class _counter_lock:
 
 
 def reset_counters() -> None:
-    """Wipe the counter file. Used by v2026.5.5 migration and tests.
+    """Wipe the counter file. Used by 2026-04-23 migration and tests.
 
-    v2026.6.x: also purge orphaned ab_counters.json.tmp.<pid>.<tid>
+    2026-04-27 onward: also purge orphaned ab_counters.json.tmp.<pid>.<tid>
     files left behind by hook processes that crashed between fsync
     and os.replace in _save_persisted. Without this, ~/.soma/ slowly
     accumulates cruft from killed sessions.
@@ -401,9 +401,9 @@ def validate(
     ``horizon`` selects which post-firing sample to use for the delta:
 
     - 2 (default): reads ``pressure_after`` — the canonical h=2 sample
-      that maps to all pre-v2026.6.0 verdicts.
+      that maps to all pre-2026-04-27 verdicts.
     - 1, 5, 10: reads ``pressure_after_h{horizon}`` — populated by
-      the multi-horizon recording flow shipped in 2026.6.0. Rows
+      the multi-horizon recording flow shipped in 2026-04-27. Rows
       missing the requested column are skipped (legacy rows / late
       sample never landed).
 

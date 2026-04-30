@@ -13,7 +13,7 @@ from typing import Any
 # and ``test_roi``). When a developer ran those tests against their real
 # ``~/.soma/analytics.db`` the rows leaked into production and polluted
 # the guidance ROI view — 672 rows / ~45 % of the table at the time of
-# the v2026.5.5 migration. Rejecting them on write stops the bleeding;
+# the 2026-04-23 migration. Rejecting them on write stops the bleeding;
 # the 20260424_purge_guidance_test_pollution migration cleans up rows
 # that got in before the guard existed.
 _KNOWN_TEST_PATTERN_KEYS = frozenset({"mixed", "bad_pattern", "maybe_bad"})
@@ -46,7 +46,7 @@ class AnalyticsStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
-        # v2026.6.2: under concurrent hook subprocesses default
+        # 2026-04-29: under concurrent hook subprocesses default
         # busy_timeout=0 yields instant SQLITE_BUSY, the outer except
         # swallows it, and the analytics row is silently dropped.
         # 5000ms is plenty for any realistic write.
@@ -94,7 +94,7 @@ class AnalyticsStore:
                 source TEXT DEFAULT 'hook'
             )
         """)
-        # A/B-controlled outcomes — v2026.5.3. Each firing is assigned to
+        # A/B-controlled outcomes — 2026-04-19. Each firing is assigned to
         # 'treatment' or 'control'; for control we suppress the guidance
         # message but still record pressure_before/after so we can later
         # run a paired-sample test against treatment deltas.
@@ -119,7 +119,7 @@ class AnalyticsStore:
         except sqlite3.OperationalError:
             self._conn.execute("ALTER TABLE actions ADD COLUMN source TEXT DEFAULT 'unknown'")
             self._conn.execute("ALTER TABLE actions ADD COLUMN soma_version TEXT DEFAULT ''")
-        # guidance_outcomes.source was added in v2026.5.5 alongside the
+        # guidance_outcomes.source was added in 2026-04-23 alongside the
         # test-pollution guard; older DBs need the column backfilled.
         try:
             self._conn.execute("SELECT source FROM guidance_outcomes LIMIT 0")
@@ -369,7 +369,7 @@ class AnalyticsStore:
         """Move NULL-firing_id rows out of ab_outcomes into archive.
 
         The 20260424_archive_biased_ab_outcomes migration wiped pre-
-        v2026.5.5 rows. But the gap window between that wipe and the
+        2026-04-23 rows. But the gap window between that wipe and the
         should_inject idempotency fix (commit 2378faa, 2026-04-25) left
         ~60 rows with NULL firing_id in production. They carry the same
         re-entry rebias the firing_id work was meant to kill: pre/post
@@ -408,7 +408,7 @@ class AnalyticsStore:
         return cursor.rowcount
 
     def _add_firing_id_trigger(self) -> int:
-        """v2026.6.x: structural defense against NULL firing_id INSERTs.
+        """2026-04-27 onward: structural defense against NULL firing_id INSERTs.
 
         Python-level dropguards in post_tool_use._record_ab_outcome_at_horizon
         already prevent this at the live writer, but a future code
@@ -433,7 +433,7 @@ class AnalyticsStore:
         return 1
 
     def _add_hotpath_indexes(self) -> int:
-        """v2026.6.x: indexes that match the live read patterns.
+        """2026-04-27 onward: indexes that match the live read patterns.
 
         Two queries dominated the dashboard / release-gate hot path:
 
@@ -470,9 +470,9 @@ class AnalyticsStore:
         return created
 
     def _archive_biased_ab_outcomes(self) -> int:
-        """Move pre-v2026.5.5 A/B rows into an archive table, then truncate.
+        """Move pre-2026-04-23 A/B rows into an archive table, then truncate.
 
-        The MD5-based arm assignment in v2026.5.4 and earlier clustered
+        The MD5-based arm assignment in 2026-04-19 and earlier clustered
         bursts of firings into a single arm — per-pattern splits like
         entropy_drop 44T/3C and budget 3T/30C are provably biased and
         can't be de-biased post-hoc. Mixing them with the clean,
@@ -523,7 +523,7 @@ class AnalyticsStore:
             entry = {
                 "ts": now,
                 "archived_rows": cursor.rowcount,
-                "reason": "v2026.5.5 block-randomized A/B — MD5 bias purged",
+                "reason": "2026-04-23 block-randomized A/B — MD5 bias purged",
                 "soma_version": self._version(),
             }
             with reset_log.open("a") as f:
@@ -622,7 +622,7 @@ class AnalyticsStore:
 
         Writes are rejected when ``pattern_key`` matches a known test
         fixture (see ``_KNOWN_TEST_PATTERN_KEYS`` or the ``test_``
-        prefix) unless ``source='test'`` — this stops the v2026.5.x
+        prefix) unless ``source='test'`` — this stops the 2026-04-19 onward
         pollution pattern where test runs against the user's real DB
         silently injected 672 rows of junk into the ROI view.
         """
@@ -668,7 +668,7 @@ class AnalyticsStore:
         }
 
     def get_ab_reset_ts(self) -> float:
-        """Return the v2026.5.5 archive-migration timestamp, or 0.0.
+        """Return the 2026-04-23 archive-migration timestamp, or 0.0.
 
         Used by the silence refresher so pre-reset (biased) guidance
         outcomes don't keep patterns silenced after the archive migration
@@ -720,7 +720,7 @@ class AnalyticsStore:
         same user's precision cache.
 
         ``since_ts`` filters out rows older than that epoch — callers
-        use it to exclude pre-v2026.5.5 biased outcomes from silence
+        use it to exclude pre-2026-04-23 biased outcomes from silence
         decisions. Default 0 preserves legacy "all-time" semantics.
         """
         cursor = self._conn.execute(
@@ -760,7 +760,7 @@ class AnalyticsStore:
         event; this method is the single write-path used by the A/B
         controller.
 
-        ``firing_id`` is the v2026.6.0 UPDATE key — when set, later
+        ``firing_id`` is the 2026-04-27 UPDATE key — when set, later
         horizons (h5, h10) land via :meth:`update_ab_outcome_horizon`
         against the same row instead of inserting siblings.
         ``pressure_after_h1`` carries the h=1 sample buffered before this
@@ -834,7 +834,7 @@ class AnalyticsStore:
         ``pressure_after IS NULL`` are excluded; they're incomplete
         recordings (next action never arrived, e.g. session ended).
 
-        v2026.6.0: returns multi-horizon columns
+        2026-04-27: returns multi-horizon columns
         (``pressure_after_h1``, ``_h5``, ``_h10``) and ``firing_id``
         too so :func:`ab_control.validate` can pick the right horizon.
         """

@@ -1,7 +1,7 @@
 """A/B coverage release gate (P2.2).
 
 The gate's job is to catch *asymmetric A/B bias* in the analytics
-DB before it reaches PyPI — the failure mode that bit `2026.5.x`
+DB before it reaches PyPI — the failure mode that bit `2026-04-19 onward`
 where one arm got rows and the other didn't, so any "X% helped"
 claim was structurally distorted. It does **not** require that
 every pattern has accumulated coverage: a brand-new pattern with
@@ -167,7 +167,7 @@ def _top_patterns(conn: sqlite3.Connection, reset_ts: float, limit: int) -> list
 def _arm_counts(conn: sqlite3.Connection, pattern: str) -> tuple[int, int]:
     # Keep gate aligned with validate-patterns: only count rows that
     # carry a firing_id. Rows without one are bias-class legacy
-    # (pre-v2026.6.0) or future bugs leaking through unsanctioned
+    # (pre-2026-04-27) or future bugs leaking through unsanctioned
     # call paths — neither should inflate the release gate.
     rows = conn.execute(
         "SELECT arm, COUNT(*) FROM ab_outcomes "
