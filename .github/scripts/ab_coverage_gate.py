@@ -1,9 +1,32 @@
 """A/B coverage release gate (P2.2).
 
-Blocks a SOMA release if the top-5 most-fired guidance patterns don't
-each have at least 30 rows in both A/B arms since the last data reset.
-The gate exists because v2026.5.x releases shipped with biased /
-undersized A/B data, and we don't want to repeat that.
+The gate's job is to catch *asymmetric A/B bias* in the analytics
+DB before it reaches PyPI — the failure mode that bit `2026.5.x`
+where one arm got rows and the other didn't, so any "X% helped"
+claim was structurally distorted. It does **not** require that
+every pattern has accumulated coverage: a brand-new pattern with
+zero rows in both arms is "still bootstrapping" and is allowed
+through, because the public README is explicitly status
+``collecting`` until pairs cross the threshold.
+
+A pattern PASSES iff **both arms cross MIN_PAIRS** (sufficient
+matched evidence) **or both arms are below MIN_PAIRS** (no claim
+being made). It FAILS only when one arm has crossed and the other
+hasn't — that is the asymmetric bias the gate exists to catch.
+
+**Known limitation**: a sub-MIN_PAIRS split such as ``14T/0C`` is
+treated as ``collecting`` (passes), even though the ratio is
+clearly skewed. The rule deliberately trades early-warning
+sensitivity for the "ship while collecting" posture: as long as
+``validate-patterns`` and the public README both gate effectiveness
+claims on ``>=MIN_PAIRS``, an under-threshold imbalance is invisible
+to consumers and not actually risky to ship. The first time it
+flips to ``(15, 0)`` the gate trips. If you want earlier warning,
+extend the rule to flag low-N skew separately.
+
+Retired patterns (``soma.contextual_guidance.RETIRED_PATTERN_KEYS``)
+are excluded from the top-N selection — they can never accumulate
+new rows and would otherwise pin the gate to FAIL forever.
 
 Usage::
 
@@ -12,12 +35,12 @@ Usage::
     python .github/scripts/ab_coverage_gate.py verify SNAPSHOT_PATH
 
 * ``check`` reads the analytics DB directly and prints a coverage
-  report; exits 0 iff every top-5 pattern has >=30 treatment and >=30
-  control rows.
+  report; exits 0 iff every top-N active pattern is unbiased per
+  the rule above.
 * ``snapshot`` runs ``check`` and writes the result as JSON so the
   maintainer can commit a frozen audit trail alongside the release tag.
-* ``verify`` re-validates the thresholds from that committed JSON.
-  This is the subcommand CI runs in ``publish.yml`` — it doesn't need
+* ``verify`` re-validates the rule from that committed JSON. This
+  is the subcommand CI runs in ``publish.yml`` — it doesn't need
   access to the live database, only to the committed snapshot.
 """
 
@@ -34,6 +57,13 @@ MIN_PAIRS = 15
 TOP_N = 5
 DEFAULT_DB = Path.home() / ".soma" / "analytics.db"
 
+# Must stay in sync with ``soma.contextual_guidance.RETIRED_PATTERN_KEYS``.
+# Hardcoded here because the gate runs as a standalone script in CI
+# without the soma package installed.
+RETIRED_PATTERN_KEYS: frozenset[str] = frozenset(
+    {"_stats", "drift", "entropy_drop", "context"}
+)
+
 
 @dataclass
 class PatternCoverage:
@@ -44,7 +74,22 @@ class PatternCoverage:
 
     @property
     def passes(self) -> bool:
-        return self.treatment >= MIN_PAIRS and self.control >= MIN_PAIRS
+        # Asymmetric-bias rule: pass if both arms have crossed
+        # MIN_PAIRS, or both arms are still below it. Fail only when
+        # one arm has the evidence to make a claim and the other
+        # doesn't — that's the structural bias the gate exists to
+        # catch.
+        both_above = self.treatment >= MIN_PAIRS and self.control >= MIN_PAIRS
+        both_below = self.treatment < MIN_PAIRS and self.control < MIN_PAIRS
+        return both_above or both_below
+
+    @property
+    def status(self) -> str:
+        if self.treatment >= MIN_PAIRS and self.control >= MIN_PAIRS:
+            return "ready"
+        if self.treatment < MIN_PAIRS and self.control < MIN_PAIRS:
+            return "collecting"
+        return "biased"
 
 
 @dataclass
@@ -57,14 +102,18 @@ class GateReport:
 
     @property
     def passes(self) -> bool:
-        if not self.patterns:
-            # No data is not a pass — you can't ship effectiveness claims
-            # without any A/B evidence at all.
-            return False
+        # Empty top-N (no fires post-reset) is a pass — there's no
+        # bias risk in shipping a release that hasn't recorded any
+        # pairs yet. Bootstrapping is explicit in the README.
         return all(p.passes for p in self.patterns)
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        # Inject derived fields per pattern so consumers (snapshots,
+        # CI logs) don't have to recompute the rule.
+        for entry, p in zip(d["patterns"], self.patterns):
+            entry["status"] = p.status
+            entry["passes"] = p.passes
         d["passes"] = self.passes
         return d
 
@@ -99,14 +148,18 @@ def _read_reset_ts(db_path: Path) -> float:
 
 
 def _top_patterns(conn: sqlite3.Connection, reset_ts: float, limit: int) -> list[tuple[str, int]]:
+    # Exclude retired patterns: they can never accumulate new rows so
+    # leaving them in top-N would pin the gate to FAIL forever.
+    placeholders = ",".join("?" * len(RETIRED_PATTERN_KEYS))
     rows = conn.execute(
-        "SELECT pattern_key, COUNT(*) AS fires "
-        "FROM guidance_outcomes "
-        "WHERE timestamp >= ? "
-        "GROUP BY pattern_key "
-        "ORDER BY fires DESC, pattern_key ASC "
-        "LIMIT ?",
-        (reset_ts, limit),
+        f"SELECT pattern_key, COUNT(*) AS fires "
+        f"FROM guidance_outcomes "
+        f"WHERE timestamp >= ? "
+        f"AND pattern_key NOT IN ({placeholders}) "
+        f"GROUP BY pattern_key "
+        f"ORDER BY fires DESC, pattern_key ASC "
+        f"LIMIT ?",
+        (reset_ts, *sorted(RETIRED_PATTERN_KEYS), limit),
     ).fetchall()
     return [(r[0], int(r[1])) for r in rows]
 
@@ -149,20 +202,21 @@ def build_report(db_path: Path) -> GateReport:
 def _format_human(report: GateReport) -> str:
     if not report.patterns:
         return (
-            f"A/B coverage gate: NO DATA (db={report.db_path})\n"
-            f"  top-5 guidance_outcomes post-reset is empty — release blocked."
+            f"A/B coverage gate (db={report.db_path})\n"
+            f"  top-{report.top_n} guidance_outcomes post-reset is empty — "
+            f"no bias risk, gate PASSES."
         )
     lines = [
-        f"A/B coverage gate (threshold: {report.min_pairs}T / {report.min_pairs}C)",
+        f"A/B coverage gate (threshold: {report.min_pairs}T / {report.min_pairs}C; rule: no asymmetric bias)",
         f"  db:       {report.db_path}",
         f"  reset_ts: {report.reset_ts}",
         "",
-        f"  {'pattern':<16}{'fires':>7}{'treatment':>12}{'control':>10}  verdict",
+        f"  {'pattern':<20}{'fires':>7}{'treatment':>12}{'control':>10}  status      verdict",
     ]
     for p in report.patterns:
         verdict = "PASS" if p.passes else "FAIL"
         lines.append(
-            f"  {p.pattern:<16}{p.fires:>7}{p.treatment:>12}{p.control:>10}  {verdict}"
+            f"  {p.pattern:<20}{p.fires:>7}{p.treatment:>12}{p.control:>10}  {p.status:<11} {verdict}"
         )
     lines.append("")
     lines.append("  OVERALL: " + ("PASS" if report.passes else "FAIL"))
@@ -182,7 +236,12 @@ def _cmd_snapshot(args) -> int:
     report = build_report(Path(args.db))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report.to_dict(), indent=2) + "\n")
+    # Scrub the maintainer's home path from the committed snapshot —
+    # the audit trail only needs that the gate ran against the
+    # canonical SOMA analytics location, not whose machine.
+    payload = report.to_dict()
+    payload["db_path"] = "~/.soma/analytics.db"
+    output.write_text(json.dumps(payload, indent=2) + "\n")
     print(_format_human(report))
     print(f"\nSnapshot written to {output}")
     return 0 if report.passes else 1

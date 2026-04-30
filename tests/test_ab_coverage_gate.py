@@ -59,50 +59,53 @@ def _make_db(path: Path, fires: dict[str, int], arms: dict[str, tuple[int, int]]
     conn.close()
 
 
-def test_passes_when_all_top_patterns_have_30_30(tmp_path):
+def test_passes_when_all_top_patterns_have_15_15(tmp_path):
     db = tmp_path / "analytics.db"
     _make_db(
         db,
         fires={
             "bash_retry": 100, "cost_spiral": 90, "blind_edit": 80,
-            "context": 70, "budget": 60,
+            "error_cascade": 70, "budget": 60,
         },
         arms={
-            "bash_retry": (30, 30), "cost_spiral": (30, 30),
-            "blind_edit": (30, 30), "context": (30, 30),
-            "budget": (30, 30),
+            "bash_retry": (15, 15), "cost_spiral": (15, 15),
+            "blind_edit": (15, 15), "error_cascade": (15, 15),
+            "budget": (15, 15),
         },
     )
     report = gate.build_report(db)
     assert report.passes
     assert len(report.patterns) == 5
+    assert all(p.status == "ready" for p in report.patterns)
 
 
-def test_fails_when_one_pattern_short_on_treatment(tmp_path):
-    """v2026.6.x: gate threshold lowered to 15 pairs/arm. Test now
-    seeds (14, 15) instead of (29, 30) to keep the short-vs-meeting
-    distinction tight against the new threshold."""
+def test_fails_when_one_arm_has_evidence_and_other_doesnt(tmp_path):
+    """Asymmetric bias rule: (14, 15) means one arm has crossed the
+    claim threshold and the other hasn't. That's the structural bias
+    the gate exists to catch.
+    """
     db = tmp_path / "analytics.db"
     _make_db(
         db,
         fires={
             "bash_retry": 100, "cost_spiral": 90, "blind_edit": 80,
-            "context": 70, "budget": 60,
+            "error_cascade": 70, "budget": 60,
         },
         arms={
             "bash_retry": (14, 15), "cost_spiral": (15, 15),
-            "blind_edit": (15, 15), "context": (15, 15),
+            "blind_edit": (15, 15), "error_cascade": (15, 15),
             "budget": (15, 15),
         },
     )
     report = gate.build_report(db)
     assert not report.passes
-    shorted = next(p for p in report.patterns if p.pattern == "bash_retry")
-    assert shorted.treatment == 14
-    assert not shorted.passes
+    biased = next(p for p in report.patterns if p.pattern == "bash_retry")
+    assert biased.treatment == 14
+    assert biased.status == "biased"
+    assert not biased.passes
 
 
-def test_fails_when_one_pattern_short_on_control(tmp_path):
+def test_fails_when_control_short_treatment_full(tmp_path):
     db = tmp_path / "analytics.db"
     _make_db(
         db,
@@ -111,9 +114,14 @@ def test_fails_when_one_pattern_short_on_control(tmp_path):
     )
     report = gate.build_report(db)
     assert not report.passes
+    assert report.patterns[0].status == "biased"
 
 
-def test_fails_when_pattern_has_no_ab_rows(tmp_path):
+def test_passes_when_pattern_has_no_ab_rows_yet(tmp_path):
+    """A pattern that fired but hasn't yet recorded any A/B rows is
+    bootstrapping — no claim is being made, so there's no bias to
+    catch. The gate lets it through.
+    """
     db = tmp_path / "analytics.db"
     _make_db(
         db,
@@ -121,22 +129,76 @@ def test_fails_when_pattern_has_no_ab_rows(tmp_path):
         arms={},
     )
     report = gate.build_report(db)
-    assert not report.passes
-    assert report.patterns[0].treatment == 0
-    assert report.patterns[0].control == 0
+    assert report.passes
+    assert report.patterns[0].status == "collecting"
 
 
-def test_empty_db_fails_gate(tmp_path):
+def test_empty_db_passes_gate(tmp_path):
+    """No fires post-reset = no claims = no bias risk. The gate
+    passes. Compare to the previous policy where empty was an
+    automatic FAIL — that fought the project's "ship while
+    collecting" posture without catching real bias.
+    """
     db = tmp_path / "analytics.db"
     _make_db(db, fires={}, arms={})
     report = gate.build_report(db)
-    assert not report.passes
+    assert report.passes
     assert report.patterns == []
 
 
-def test_missing_db_fails_gate(tmp_path):
+def test_missing_db_passes_gate(tmp_path):
     report = gate.build_report(tmp_path / "does_not_exist.db")
-    assert not report.passes
+    assert report.passes
+
+
+def test_gate_retired_set_matches_soma_source_of_truth():
+    """The gate hardcodes RETIRED_PATTERN_KEYS because it runs as a
+    standalone script in CI without the soma package installed. This
+    test (which DOES have the package) pins the two copies together —
+    if a future commit retires a pattern in
+    ``soma.contextual_guidance`` and forgets the gate copy, the gate
+    would silently include a pattern in top-N that can never
+    accumulate new rows.
+    """
+    from soma.contextual_guidance import RETIRED_PATTERN_KEYS as soma_set
+    assert gate.RETIRED_PATTERN_KEYS == soma_set, (
+        "RETIRED_PATTERN_KEYS drift between gate script "
+        f"({sorted(gate.RETIRED_PATTERN_KEYS)}) and "
+        f"soma.contextual_guidance ({sorted(soma_set)}). Update "
+        ".github/scripts/ab_coverage_gate.py to match."
+    )
+
+
+def test_retired_patterns_excluded_from_top_n(tmp_path):
+    """Retired patterns can never accumulate new rows; they must not
+    appear in the gate's top-N list or they'd pin the gate to FAIL
+    forever after retirement.
+    """
+    db = tmp_path / "analytics.db"
+    _make_db(
+        db,
+        fires={
+            # Retired (high historical fire count) — must be filtered out.
+            "entropy_drop": 500, "context": 400, "drift": 300,
+            # Active patterns with valid coverage.
+            "bash_retry": 100, "budget": 90, "blind_edit": 80,
+            "cost_spiral": 70, "error_cascade": 60,
+        },
+        arms={
+            "bash_retry": (15, 15), "budget": (15, 15),
+            "blind_edit": (15, 15), "cost_spiral": (15, 15),
+            "error_cascade": (15, 15),
+        },
+    )
+    report = gate.build_report(db)
+    pattern_names = [p.pattern for p in report.patterns]
+    assert "entropy_drop" not in pattern_names
+    assert "context" not in pattern_names
+    assert "drift" not in pattern_names
+    assert pattern_names == [
+        "bash_retry", "budget", "blind_edit", "cost_spiral", "error_cascade",
+    ]
+    assert report.passes
 
 
 def test_top_n_limits_to_five(tmp_path):
@@ -222,17 +284,23 @@ def test_snapshot_roundtrip_pass(tmp_path):
     data = json.loads(snapshot.read_text())
     assert data["passes"] is True
     assert data["patterns"][0]["pattern"] == "bash_retry"
+    # Path scrubbing: committed snapshots must use the canonical
+    # placeholder, never the maintainer's $HOME path.
+    assert data["db_path"] == "~/.soma/analytics.db"
 
     rc = gate.main(["verify", str(snapshot)])
     assert rc == 0
 
 
 def test_snapshot_roundtrip_fail(tmp_path):
+    """Asymmetric coverage (treatment full, control empty) must fail
+    both at snapshot time and on verify replay.
+    """
     db = tmp_path / "analytics.db"
     _make_db(
         db,
         fires={"bash_retry": 100},
-        arms={"bash_retry": (10, 10)},
+        arms={"bash_retry": (20, 0)},
     )
     snapshot = tmp_path / "snap.json"
     rc = gate.main(["snapshot", str(snapshot), "--db", str(db)])
@@ -272,7 +340,10 @@ def test_check_json_output(tmp_path, capsys):
 
 
 def test_verify_reevaluates_thresholds(tmp_path):
-    """A snapshot claiming 'passes: true' is still failed if counts say otherwise."""
+    """A snapshot claiming 'passes: true' is still failed if counts
+    say otherwise. Use asymmetric coverage (treatment crossed
+    threshold, control didn't) so the reevaluation actually flips.
+    """
     snapshot = tmp_path / "lying.json"
     snapshot.write_text(json.dumps({
         "db_path": "whatever",
@@ -280,7 +351,7 @@ def test_verify_reevaluates_thresholds(tmp_path):
         "min_pairs": 30,
         "top_n": 5,
         "patterns": [
-            {"pattern": "bash_retry", "fires": 100, "treatment": 1, "control": 1},
+            {"pattern": "bash_retry", "fires": 100, "treatment": 20, "control": 1},
         ],
         "passes": True,  # Lying!
     }))

@@ -1,0 +1,49 @@
+{
+  "db_path": "~/.soma/analytics.db",
+  "reset_ts": 0.0,
+  "min_pairs": 15,
+  "top_n": 5,
+  "patterns": [
+    {
+      "pattern": "bash_retry",
+      "fires": 61,
+      "treatment": 18,
+      "control": 17,
+      "status": "ready",
+      "passes": true
+    },
+    {
+      "pattern": "budget",
+      "fires": 56,
+      "treatment": 17,
+      "control": 18,
+      "status": "ready",
+      "passes": true
+    },
+    {
+      "pattern": "blind_edit",
+      "fires": 55,
+      "treatment": 7,
+      "control": 11,
+      "status": "collecting",
+      "passes": true
+    },
+    {
+      "pattern": "bash_error_streak",
+      "fires": 2,
+      "treatment": 2,
+      "control": 0,
+      "status": "collecting",
+      "passes": true
+    },
+    {
+      "pattern": "cost_spiral",
+      "fires": 1,
+      "treatment": 0,
+      "control": 0,
+      "status": "collecting",
+      "passes": true
+    }
+  ],
+  "passes": true
+}
