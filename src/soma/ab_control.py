@@ -349,12 +349,31 @@ class _counter_lock:
 
 
 def reset_counters() -> None:
-    """Wipe the counter file. Used by v2026.5.5 migration and tests."""
+    """Wipe the counter file. Used by v2026.5.5 migration and tests.
+
+    v2026.6.x: also purge orphaned ab_counters.json.tmp.<pid>.<tid>
+    files left behind by hook processes that crashed between fsync
+    and os.replace in _save_persisted. Without this, ~/.soma/ slowly
+    accumulates cruft from killed sessions.
+    """
     with _counter_lock():
         try:
             _COUNTERS_PATH.unlink()
         except FileNotFoundError:
             pass
+        except OSError:
+            pass
+        # Glob the tmp siblings — match the exact pattern produced by
+        # _save_persisted so we don't touch sibling files like
+        # ab_counters.json.lock or .bak.
+        try:
+            for tmp in _COUNTERS_PATH.parent.glob(
+                f"{_COUNTERS_PATH.name}.tmp.*"
+            ):
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
         except OSError:
             pass
 

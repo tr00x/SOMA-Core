@@ -3,6 +3,9 @@ Regression for v2026.6.2 fix #2 — _save_persisted must be atomic
 (tmp + fsync + os.replace) so concurrent hooks racing on
 ab_counters.json can never produce a torn-JSON file that
 _load_persisted then silently resets.
+
+v2026.6.x fix #6: reset_counters() must also purge orphaned
+.tmp.<pid>.<tid> files left by killed processes.
 """
 from __future__ import annotations
 
@@ -68,3 +71,43 @@ def test_save_persisted_no_partial_file_on_concurrent_writes(tmp_path: Path) -> 
             f"reader observed {len(torn)} torn-JSON snapshots — "
             f"_save_persisted is not atomic"
         )
+
+
+def test_reset_counters_purges_orphaned_tmp_files(tmp_path: Path) -> None:
+    """reset_counters() must purge ab_counters.json.tmp.<pid>.<tid> files
+    left behind by processes that crashed between fsync and os.replace.
+    Otherwise ~/.soma/ accumulates cruft from killed hooks."""
+    target = tmp_path / "ab_counters.json"
+    target.write_text('{"_counters":{},"_firings":{}}')
+    # Plant three orphaned tmp files matching the v2026.6.2 naming.
+    orphans = [
+        tmp_path / f"ab_counters.json.tmp.99{i}.5{i}" for i in range(3)
+    ]
+    for o in orphans:
+        o.write_text("partial-write")
+    with patch("soma.ab_control._COUNTERS_PATH", target):
+        from soma import ab_control as ab
+        ab.reset_counters()
+    # Main file gone, tmp orphans gone too.
+    assert not target.exists()
+    for o in orphans:
+        assert not o.exists(), f"orphaned tmp file not purged: {o.name}"
+
+
+def test_reset_counters_doesnt_touch_unrelated_files(tmp_path: Path) -> None:
+    """The glob must be tight — sibling files like ab_counters.json.lock
+    or unrelated *.json must survive reset."""
+    target = tmp_path / "ab_counters.json"
+    target.write_text('{}')
+    keep = [
+        tmp_path / "ab_counters.json.lock",
+        tmp_path / "ab_counters.json.bak",
+        tmp_path / "other.json",
+    ]
+    for k in keep:
+        k.write_text("preserve me")
+    with patch("soma.ab_control._COUNTERS_PATH", target):
+        from soma import ab_control as ab
+        ab.reset_counters()
+    for k in keep:
+        assert k.exists(), f"reset_counters removed unrelated file: {k.name}"
