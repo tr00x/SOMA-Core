@@ -69,10 +69,19 @@ Status = Literal["collecting", "validated", "refuted", "inconclusive"]
 # Minimum pairs (per arm) before we'll even consider validating.
 # v2026.6.x: lowered from 30 → 15. Welch's t-test stays valid at n=15
 # (standard scientific minimum is 10–15) and we get first verdicts in
-# half the time. Tradeoff: lower statistical power means a real but
-# weak effect needs more samples to clear ALPHA=0.05. For a system
-# with one agent_family generating data, getting *any* verdict beats
-# waiting for ideal power on imaginary larger samples.
+# half the time.
+#
+# Achieved power numbers (so the next maintainer doesn't relitigate):
+#   d=0.2 (small effect): ~22% — most weak-but-real effects exit as
+#     `inconclusive` at INCONCLUSIVE_AT=30 rather than `validated`.
+#   d=0.5 (medium effect): ~50% — coin-flip on whether n=15 catches it;
+#     ~95% by n=30, so the inconclusive branch will catch real medium
+#     effects at the second checkpoint.
+#   d=0.8 (large effect): ~85% at n=15.
+#
+# Tradeoff is honest: we exchange power for time-to-first-signal. For
+# a system with one agent_family generating data, getting *any*
+# verdict beats waiting for ideal power on imaginary larger samples.
 DEFAULT_MIN_PAIRS = 15
 # After this many pairs with p>=0.05 we stop waiting and call it inconclusive.
 # v2026.6.x: lowered 100 → 30 to match the new MIN_PAIRS=15 ratio
