@@ -53,7 +53,7 @@ DEFAULT_HOOK_CONFIG = {
 def get_hook_config() -> dict:
     """Load hook configuration from soma.toml or use defaults."""
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         config = load_config()
         hook_cfg = config.get("hooks", {})
         merged = dict(DEFAULT_HOOK_CONFIG)
@@ -66,7 +66,7 @@ def get_hook_config() -> dict:
 def get_guidance_thresholds() -> dict[str, float] | None:
     """Load guidance thresholds from soma.toml config."""
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         config = load_config()
         thresholds = config.get("thresholds")
         if thresholds and any(k in thresholds for k in ("guide", "warn", "block")):
@@ -243,7 +243,7 @@ def _maybe_migrate_soma_toml() -> None:
             config = tomllib.load(f)
         thresholds = config.get("thresholds", {})
         if any(k in thresholds for k in ("caution", "degrade", "quarantine")):
-            from soma.cli.config_loader import migrate_config, save_config
+            from soma.config import migrate_config, save_config
             migrated = migrate_config(config)
             save_config(migrated, str(toml_path))
     except Exception:
@@ -261,7 +261,7 @@ def get_engine():
     try:
         from soma.engine import SOMAEngine
         from soma.persistence import load_engine_state
-        from soma.cli.config_loader import CLAUDE_CODE_CONFIG
+        from soma.config import CLAUDE_CODE_CONFIG
     except ImportError:
         return None, None
 
@@ -577,7 +577,7 @@ def get_soma_mode(agent_id: str | None = None) -> str:
     Defaults to 'guide' if config is missing or unreadable.
     """
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         configured = load_config().get("soma", {}).get("mode", "guide")
     except Exception:
         configured = "guide"
@@ -599,7 +599,7 @@ def get_reflex_config() -> dict:
     Returns empty dict on missing config or error.
     """
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         config = load_config()
         return config.get("reflexes", {})
     except Exception:

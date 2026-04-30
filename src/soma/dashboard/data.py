@@ -458,7 +458,7 @@ def get_findings(agent_id: str) -> list[dict]:
 def get_config() -> dict:
     """Read current soma.toml config."""
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         return load_config()
     except Exception:
         return {}

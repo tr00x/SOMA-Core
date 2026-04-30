@@ -35,7 +35,7 @@ def quickstart(budget=None, agents=None):
     """
     if budget is None:
         try:
-            from soma.cli.config_loader import load_config
+            from soma.config import load_config
             config = load_config()
             budget_cfg = config.get("budget", {})
             budget = {k: v for k, v in budget_cfg.items() if v}

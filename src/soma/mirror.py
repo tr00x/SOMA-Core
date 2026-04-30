@@ -702,7 +702,7 @@ class Mirror:
     def _load_mirror_config(self) -> None:
         """Load [mirror] config from soma.toml."""
         try:
-            from soma.cli.config_loader import load_config
+            from soma.config import load_config
             config = load_config()
             mirror_cfg = config.get("mirror", {})
             self._semantic_enabled = mirror_cfg.get("semantic_enabled", True)

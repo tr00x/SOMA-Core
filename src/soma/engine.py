@@ -291,7 +291,7 @@ class SOMAEngine:
     def from_config(cls, config: dict | None = None) -> "SOMAEngine":
         """Create engine from soma.toml config."""
         if config is None:
-            from soma.cli.config_loader import load_config
+            from soma.config import load_config
             config = load_config()
 
         budget = {}

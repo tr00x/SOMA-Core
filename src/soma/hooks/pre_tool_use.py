@@ -224,7 +224,7 @@ def main():
 
     # Load guidance config from soma.toml
     try:
-        from soma.cli.config_loader import load_config
+        from soma.config import load_config
         guidance_cfg = load_config().get("guidance", {})
     except Exception:
         guidance_cfg = {}
