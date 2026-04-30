@@ -133,9 +133,12 @@ _HEALING_TRANSITIONS: dict[str, tuple[str, str]] = {
 
 # Cache for per-user healing transitions measured off analytics.db. Keyed
 # by the failing tool; value is ``(heal_tool, evidence_text)``. Populated
-# lazily on first call and refreshed at most once per SOMAEngine process
-# (re-computing is cheap but we don't want to hit sqlite every hook).
+# lazily on first call and refreshed every HEALING_CACHE_TTL_SECONDS
+# (default 1h) so long-lived processes (dashboard) pick up new analytics
+# instead of serving stale transitions forever.
 _HEALING_CACHE: dict[str, tuple[str, str]] | None = None
+_HEALING_CACHE_TS: float = 0.0
+HEALING_CACHE_TTL_SECONDS: float = 3600.0  # 1 hour
 
 
 def _load_healing_from_analytics() -> dict[str, tuple[str, str]]:
@@ -183,21 +186,26 @@ def _load_healing_from_analytics() -> dict[str, tuple[str, str]]:
 def _healing_table(use_analytics: bool = True) -> dict[str, tuple[str, str]]:
     """Return the active healing-transition table.
 
-    Caches the result on first call; set ``use_analytics=False`` (tests,
-    offline runs) to short-circuit the DB read.
+    Caches the result for HEALING_CACHE_TTL_SECONDS; set
+    ``use_analytics=False`` (tests, offline runs) to short-circuit
+    the DB read entirely.
     """
-    global _HEALING_CACHE
+    global _HEALING_CACHE, _HEALING_CACHE_TS
     if not use_analytics:
         return dict(_HEALING_TRANSITIONS)
-    if _HEALING_CACHE is None:
+    import time as _time
+    now = _time.time()
+    if _HEALING_CACHE is None or (now - _HEALING_CACHE_TS) >= HEALING_CACHE_TTL_SECONDS:
         _HEALING_CACHE = _load_healing_from_analytics()
+        _HEALING_CACHE_TS = now
     return _HEALING_CACHE
 
 
 def _reset_healing_cache() -> None:
     """Test hook: force the healing table to re-read analytics on next call."""
-    global _HEALING_CACHE
+    global _HEALING_CACHE, _HEALING_CACHE_TS
     _HEALING_CACHE = None
+    _HEALING_CACHE_TS = 0.0
 
 
 def _healing_suggestion(failing_tool: str, use_analytics: bool = True) -> str:
