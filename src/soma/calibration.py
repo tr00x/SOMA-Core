@@ -89,6 +89,40 @@ _AGENT_FAMILY_ALIASES = {
 
 SCHEMA_VERSION = 1
 
+# Schema migration registry. Each entry maps from_version → callable
+# that takes a raw dict at that version and returns a dict at
+# from_version+1. Empty today (we're at v=1 since day one); adding an
+# upgrader looks like:
+#
+#   def _migrate_v1_to_v2(d: dict) -> dict:
+#       d = dict(d)
+#       d["new_field"] = compute_default(d)
+#       d["schema_version"] = 2
+#       return d
+#   _SCHEMA_MIGRATORS[1] = _migrate_v1_to_v2
+#
+# Then bump SCHEMA_VERSION to 2 in the same commit.
+from typing import Callable as _Callable
+_SCHEMA_MIGRATORS: dict[int, _Callable[[dict], dict]] = {}
+
+
+def _apply_schema_migrators(
+    data: dict, from_version: int, target_version: int
+) -> dict:
+    """Walk the registered migrators from ``from_version`` up to
+    ``target_version``. Missing intermediate migrator → return data
+    as-is (forward-compat: extra fields will be dropped by from_dict).
+    """
+    current = data
+    v = from_version
+    while v < target_version:
+        migrator = _SCHEMA_MIGRATORS.get(v)
+        if migrator is None:
+            break
+        current = migrator(current)
+        v += 1
+    return current
+
 
 def calibration_family(agent_id: str) -> str:
     """Collapse ephemeral session ids into a stable calibration key.
@@ -297,8 +331,34 @@ class CalibrationProfile:
 
     @classmethod
     def from_dict(cls, data: dict) -> CalibrationProfile:
+        # v2026.6.x: schema migration scaffold. Apply registered
+        # upgraders for any version below SCHEMA_VERSION before
+        # constructing the dataclass. Currently the registry is
+        # empty (we're at v=1 from day one) — adding an entry like
+        # ``_SCHEMA_MIGRATORS[1] = _migrate_v1_to_v2`` keys a future
+        # bump. Profiles persisted at a HIGHER version than this
+        # build understands fall back to defaults (with a debug log
+        # so the maintainer notices the downgrade).
+        from_version = int(data.get("schema_version", 1))
+        if from_version > SCHEMA_VERSION:
+            # Future-version data on an older binary — refuse to
+            # corrupt it by misinterpretation. Return a fresh
+            # default profile so the caller's family stays intact;
+            # the original file isn't touched here.
+            from soma.errors import log_silent_failure
+            log_silent_failure(
+                f"calibration.from_dict (schema v{from_version} > v{SCHEMA_VERSION})",
+                RuntimeError(
+                    f"calibration profile is at v{from_version}, this "
+                    f"build only understands v{SCHEMA_VERSION} — using defaults"
+                ),
+            )
+            return cls(family=str(data.get("family", "default")))
+        elif from_version < SCHEMA_VERSION:
+            data = _apply_schema_migrators(data, from_version, SCHEMA_VERSION)
+
         # Forward-compat: drop unknown fields silently so v2 data never
-        # crashes a v1 reader.
+        # crashes a v1 reader (within the same major-version chain).
         allowed = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         clean = {k: v for k, v in data.items() if k in allowed}
         prof = cls(**clean)
