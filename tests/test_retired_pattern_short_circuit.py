@@ -57,3 +57,26 @@ def test_active_pattern_unchanged() -> None:
         pressure_after=0.5,
     )
     assert result is True
+
+
+def test_calibration_silence_tracked_excludes_retired() -> None:
+    """v2026.6.x — retired patterns must NOT be in the silence-tracking
+    list, otherwise calibration accumulates dead stats forever."""
+    from soma.calibration import _SILENCE_TRACKED_PATTERNS
+    for retired in RETIRED_PATTERN_KEYS:
+        assert retired not in _SILENCE_TRACKED_PATTERNS, (
+            f"retired pattern {retired!r} still in _SILENCE_TRACKED_PATTERNS — "
+            f"calibration will track silence/refute decisions for a pattern "
+            f"that never re-fires"
+        )
+
+
+def test_silence_tracked_subset_of_real() -> None:
+    """And — anything in the silence-tracked list must be a real (live)
+    pattern. Otherwise typos or stale entries silently break calibration."""
+    from soma.calibration import _SILENCE_TRACKED_PATTERNS
+    from soma.contextual_guidance import REAL_PATTERN_KEYS
+    for p in _SILENCE_TRACKED_PATTERNS:
+        assert p in REAL_PATTERN_KEYS, (
+            f"_SILENCE_TRACKED_PATTERNS has unknown pattern {p!r}"
+        )

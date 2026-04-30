@@ -53,9 +53,12 @@ REFUTED_REFRESH_INTERVAL = 100
 
 # Patterns we track for auto-silence. Keep in sync with _PATTERN_PRIORITY
 # in contextual_guidance — hardcoded here to avoid a circular import.
+# v2026.6.x: dropped retired patterns (`entropy_drop`, `context`,
+# retired 2026-04-25) so silence/refute decisions can't accumulate
+# stats for patterns that never re-fire.
 _SILENCE_TRACKED_PATTERNS = (
     "cost_spiral", "budget", "bash_retry", "bash_error_streak",
-    "error_cascade", "entropy_drop", "blind_edit", "context",
+    "error_cascade", "blind_edit",
 )
 
 # Legacy fallback values — personal thresholds clamp to these floors so

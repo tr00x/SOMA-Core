@@ -1133,7 +1133,9 @@ def main(*, _data: dict | None = None, _force_error: bool = False):
                 }
                 if cg_msg.pattern == "blind_edit":
                     followthrough_data["file"] = file_path
-                elif cg_msg.pattern in ("entropy_drop", "bash_retry"):
+                elif cg_msg.pattern == "bash_retry":
+                    # v2026.6.x: dropped `entropy_drop` from this branch —
+                    # the pattern is retired and never reaches followthrough.
                     followthrough_data["tool"] = tool_name
                 elif cg_msg.pattern == "error_cascade":
                     # Track which tools were failing so stricter

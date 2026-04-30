@@ -511,22 +511,8 @@ def check_followthrough(
             return False
         return None
 
-    if pattern == "context":
-        # Two valid recoveries: (a) user compacted, or (b) agent wrote a
-        # NEXT.md / summary file and committed. Pressure-only recovery
-        # for this pattern is nearly always a drift in the transcript
-        # estimate, not an actual fix — so we require evidence.
-        if tool_name == "Bash" and isinstance(tool_input, dict):
-            cmd = tool_input.get("command", "").lower()
-            if any(kw in cmd for kw in ("compact", "summarize", "git commit")):
-                return True
-        if tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
-            fp = (tool_input.get("file_path") or tool_input.get("path") or "").lower()
-            if fp.endswith("next.md") or "handoff" in fp or "summary" in fp:
-                return True
-        if actions_since >= _PRESSURE_FALSE_ACTIONS:
-            return False
-        return None
+    # `context` branch was here pre-2026.6.2; pattern is retired and the
+    # guard at the top of this function already returns None for it.
 
     if pattern == "budget":
         # Did they commit/wrap up?
@@ -539,23 +525,8 @@ def check_followthrough(
     if pattern == "cost_spiral":
         return _resolve_via_pressure(pressure_delta, actions_since)
 
-    if pattern == "entropy_drop":
-        failing_tool = pending.get("tool", "")
-        if tool_name == failing_tool:
-            if actions_since >= 3:
-                return False  # Still monotool after 3 actions — ignored
-            return None
-        # Different tool — but require actual diversity to have risen
-        # over the followthrough window, not just one odd tool then back
-        # to the monotool.
-        if recent_actions is not None and len(recent_actions) >= 3:
-            window = recent_actions[-3:]
-            distinct = {a.get("tool") for a in window if a.get("tool")}
-            if len(distinct) < 2:
-                return None  # One-off; keep waiting
-            return True if _pressure_dropped(pressure_delta) or len(distinct) >= 3 else None
-        # No recent_actions context — legacy fallback: one-step switch counts.
-        return True
+    # `entropy_drop` branch was here pre-2026.6.2; pattern is retired and
+    # the guard at the top of this function already returns None for it.
 
     if pattern == "bash_retry":
         # Required recovery = Read OR a different command family (not
