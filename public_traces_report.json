@@ -1,0 +1,83 @@
+{
+  "total_traces": 1000,
+  "failed_traces": 931,
+  "successful_traces": 69,
+  "patterns": {
+    "entropy_drop": {
+      "fires": 2669,
+      "fires_on_failed": 2530,
+      "fires_on_successful": 139,
+      "precision_failed": 0.9479,
+      "base_fail_rate": 0.931,
+      "lift": 1.018,
+      "traces_fired_failed": 314,
+      "traces_fired_successful": 22,
+      "prevalence_failed": 0.3373,
+      "prevalence_successful": 0.3188,
+      "natural_recovery_rate_3": 0.3503
+    },
+    "bash_retry": {
+      "fires": 1271,
+      "fires_on_failed": 1148,
+      "fires_on_successful": 123,
+      "precision_failed": 0.9032,
+      "base_fail_rate": 0.931,
+      "lift": 0.97,
+      "traces_fired_failed": 327,
+      "traces_fired_successful": 38,
+      "prevalence_failed": 0.3512,
+      "prevalence_successful": 0.5507,
+      "natural_recovery_rate_3": 0.9536
+    },
+    "bash_error_streak": {
+      "fires": 35,
+      "fires_on_failed": 32,
+      "fires_on_successful": 3,
+      "precision_failed": 0.9143,
+      "base_fail_rate": 0.931,
+      "lift": 0.982,
+      "traces_fired_failed": 26,
+      "traces_fired_successful": 1,
+      "prevalence_failed": 0.0279,
+      "prevalence_successful": 0.0145,
+      "natural_recovery_rate_3": 0.8286
+    },
+    "error_cascade": {
+      "fires": 58,
+      "fires_on_failed": 58,
+      "fires_on_successful": 0,
+      "precision_failed": 1.0,
+      "base_fail_rate": 0.931,
+      "lift": 1.074,
+      "traces_fired_failed": 24,
+      "traces_fired_successful": 0,
+      "prevalence_failed": 0.0258,
+      "prevalence_successful": 0.0,
+      "natural_recovery_rate_3": 0.4483
+    }
+  },
+  "meta": {
+    "dataset": "SWE-Gym/OpenHands-Sampled-Trajectories",
+    "split": "train.raw",
+    "total_actions": 13510,
+    "total_errors": 1729,
+    "active_patterns": [
+      "cost_spiral",
+      "bash_error_streak",
+      "budget",
+      "bash_retry",
+      "error_cascade",
+      "context",
+      "blind_edit",
+      "entropy_drop",
+      "drift"
+    ],
+    "tool_distribution": {
+      "Read": 7520,
+      "Finish": 306,
+      "Bash": 2780,
+      "Write": 632,
+      "Edit": 2272
+    }
+  }
+}
